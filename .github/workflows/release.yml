@@ -72,7 +72,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # The rust-version in src-tauri/Cargo.toml, the toolchain CI tests with.
-      - uses: dtolnay/rust-toolchain@1.95
+      - uses: dtolnay/rust-toolchain@1.120
 
       - name: Install the Tauri CLI
         run: npm install --global @tauri-apps/cli@${{ env.TAURI_CLI_VERSION }}

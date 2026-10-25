@@ -29,7 +29,7 @@ jobs:
 
       # The rust-version in src-tauri/Cargo.toml. A fixed toolchain keeps a new Clippy lint from failing every PR on
       # the day a Rust release adds it; raise both together.
-      - uses: dtolnay/rust-toolchain@1.95
+      - uses: dtolnay/rust-toolchain@1.120
         with:
           components: clippy, rustfmt
 
