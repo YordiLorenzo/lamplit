@@ -1,0 +1,104 @@
+[package]
+name = "lamplit"
+version = "0.1.0"
+description = "A console-style full-screen game home screen for Windows PCs on a TV"
+license = "MIT"
+repository = "https://github.com/YordiLorenzo/lamplit"
+edition = "2024"
+rust-version = "1.95"
+
+# The app is a library that main.rs (lamplit.exe) starts, so tests can link it. The suffix keeps the library's
+# build files apart from the binary's, which share a name on Windows otherwise.
+[lib]
+name = "lamplit_lib"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset", "custom-protocol"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+# A mutex that never poisons: one panicking thread must not take every later command down with it.
+parking_lot = "0.12"
+log = "0.4"
+# The app's log. Its fern re-export also logs the supervisor and --setup, which run without Tauri.
+tauri-plugin-log = "2"
+# Local timestamps in the log lines (the version and features tauri-plugin-log already builds).
+time = { version = "0.3", features = ["formatting", "local-offset", "macros"] }
+hidapi = { version = "2.6", default-features = false, features = ["windows-native"] }
+winreg = "0.56"
+sysinfo = "0.39"
+ureq = { version = "3", features = ["json"] }
+# Steam's DevTools (Runtime.evaluate in its SharedJSContext); plain ws:// on localhost, no TLS.
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+# windows and windows-core stay on the version Tauri uses: one copy to build, and Tauri's HWND is the same type.
+# windows-core is named because the `interface` macro (IPolicyConfig in win/audio.rs) expands to it.
+windows-core = "0.62"
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_Devices_Bluetooth",
+  "Win32_Globalization",
+  "Win32_Graphics_Gdi",
+  "Win32_System_IO",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_System_Threading",
+  "Win32_System_Power",
+  "Win32_System_Registry",
+  "Win32_System_Com",
+  "Win32_System_Console",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Variant",
+  "Win32_System_TaskScheduler",
+  "Win32_System_Ole",
+  "Win32_Media_Audio",
+  "Win32_Media_Audio_Endpoints",
+  "Win32_Devices_FunctionDiscovery",
+  "Win32_UI_Shell_PropertiesSystem",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Security_Cryptography",
+  "Win32_Security_Cryptography_Catalog",
+  "Win32_Security_Cryptography_Sip",
+  "Win32_Security_WinTrust",
+  "Win32_Storage_FileSystem",
+  "Win32_UI_Shell",
+] }
+
+[dev-dependencies]
+# Each enum the page branches on lists its variants for the tests that pin them to tests/ipc/values.json, so a new
+# variant fails those tests until the page knows it.
+strum = { version = "0.28", features = ["derive"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+
+[lints.rust]
+# Unsafe code lives only in src/win, which allows it; every unsafe block there says why it is sound.
+unsafe_code = "deny"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+undocumented_unsafe_blocks = "warn"
+# Pedantic lints that fight this code more than they help it.
+# HID reports, protocol frames and Win32 struct sizes are cast on purpose.
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+# Comments name products and Windows APIs (DevTools, WinVerifyTrust) in plain prose.
+doc_markdown = "allow"
+# Tauri commands take their arguments by value.
+needless_pass_by_value = "allow"
+# The names checked are lower-cased first, or written by a store in lower case.
+case_sensitive_file_extension_comparisons = "allow"
+# A controller's buttons are bools.
+struct_excessive_bools = "allow"
+# map(f).unwrap_or_else(g) reads in the order it runs.
+map_unwrap_or = "allow"
+

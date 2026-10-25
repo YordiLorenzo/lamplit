@@ -1,0 +1,23 @@
+{
+  "outputs": [
+    {
+      "id": "{0.0.0.00000000}.{tv}",
+      "windows_name": "TV (NVIDIA High Definition Audio)",
+      "name": "TV",
+      "kind": "tv",
+      "default": true
+    }
+  ],
+  "inputs": [
+    {
+      "id": "{0.0.1.00000000}.{headset}",
+      "windows_name": "Microphone (PRO X 2 LIGHTSPEED)",
+      "name": "PRO X 2 headset",
+      "kind": "headset",
+      "default": true
+    }
+  ],
+  "volume": 45,
+  "muted": false,
+  "mic_muted": false
+}

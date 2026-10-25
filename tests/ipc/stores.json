@@ -1,0 +1,4 @@
+[
+  { "store": "steam", "name": "Steam", "installed": true, "running": true, "account": "signed-in" },
+  { "store": "ea", "name": "EA app", "installed": true, "running": false, "account": "signed-out" }
+]

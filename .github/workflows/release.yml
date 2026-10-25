@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep in step with TAURI_CLI_VERSION in ci.yml.
+  TAURI_CLI_VERSION: 2.12.4
+
+jobs:
+  release:
+    name: Build the installer and draft a release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the tag against the version in Cargo.toml
+        shell: bash
+        run: |
+          version=$(sed -n 's/^version = "\([^"]*\)".*/\1/p' src-tauri/Cargo.toml | head -n 1)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::The tag is $GITHUB_REF_NAME, but src-tauri/Cargo.toml has version $version."
+            exit 1
+          fi
+
+      # The release notes are the tag's section of CHANGELOG.md (under a heading such as "## 0.1.0 - 2026-11-02" or
+      # "## [0.1.0]"), followed by the install notes.
+      - name: Write the release notes
+        id: notes
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          notes="$RUNNER_TEMP/notes.md"
+          awk -v version="$version" '
+            { sub(/\r$/, "") }
+            /^## / {
+              if (found) exit
+              heading = $2
+              gsub(/^\[|\]$/, "", heading)
+              sub(/^v/, "", heading)
+              if (heading == version) { found = 1; next }
+            }
+            found { print }
+          ' CHANGELOG.md > "$notes"
+          if ! grep -q '[^[:space:]]' "$notes"; then
+            echo "::error::CHANGELOG.md has no section for $version."
+            exit 1
+          fi
+          cat >> "$notes" <<EOF
+
+          ## Install
+
+          Download \`Lamplit_${version}_x64-setup.exe\` below and run it. It installs Lamplit for your Windows account
+          only and doesn't ask for admin rights.
+
+          This build isn't code-signed yet, so Windows shows "Windows protected your PC". Click **More info**, then
+          **Run anyway**. If Smart App Control is on, Windows blocks the installer and offers no way to run it.
+
+          All changes: [CHANGELOG.md]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/CHANGELOG.md)
+          EOF
+          {
+            echo 'body<<LAMPLIT_RELEASE_NOTES'
+            cat "$notes"
+            echo 'LAMPLIT_RELEASE_NOTES'
+          } >> "$GITHUB_OUTPUT"
+
+      # The rust-version in src-tauri/Cargo.toml, the toolchain CI tests with.
+      - uses: dtolnay/rust-toolchain@1.95
+
+      - name: Install the Tauri CLI
+        run: npm install --global @tauri-apps/cli@${{ env.TAURI_CLI_VERSION }}
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tauriScript: tauri
+          args: --bundles nsis -- --locked
+          tagName: ${{ github.ref_name }}
+          releaseName: Lamplit ${{ github.ref_name }}
+          releaseBody: ${{ steps.notes.outputs.body }}
+          releaseDraft: true
+          uploadUpdaterJson: false

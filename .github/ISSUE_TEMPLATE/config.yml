@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions
+    url: https://github.com/YordiLorenzo/lamplit#faq
+    about: The FAQ in the README answers the common ones, such as which controllers work and where the logs are.

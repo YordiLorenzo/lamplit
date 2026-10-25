@@ -1,0 +1,103 @@
+name: Bug report
+description: Something in Lamplit doesn't work the way it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the open issues first, in case someone has reported it already. One problem per report helps.
+        For a security problem, follow [SECURITY.md](https://github.com/YordiLorenzo/lamplit/blob/main/SECURITY.md) instead, so the report stays private.
+
+  - type: input
+    id: lamplit-version
+    attributes:
+      label: Lamplit version
+      description: >-
+        Windows Settings > Apps > Installed apps shows it under Lamplit. The log also has it at each start, in a line
+        such as "Lamplit 0.1.0 starting".
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: windows-version
+    attributes:
+      label: Windows version
+      description: Press Win+R, type `winver` and press Enter. Copy the version and the OS build.
+      placeholder: Windows 11 25H2, OS build 26200.6584
+    validations:
+      required: true
+
+  - type: dropdown
+    id: controller
+    attributes:
+      label: Controller
+      description: What you used when it happened.
+      options:
+        - DualSense
+        - DualSense Edge
+        - Keyboard and mouse
+        - Another controller (write which one below)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: connection
+    attributes:
+      label: How the controller is connected
+      options:
+        - USB cable
+        - Bluetooth
+        - Doesn't apply (keyboard and mouse)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stores
+    attributes:
+      label: Store
+      description: The store of the game it happened with, if it has to do with a game.
+      multiple: true
+      options:
+        - Steam
+        - Epic Games Launcher
+        - EA app
+        - Ubisoft Connect
+        - Rockstar Games Launcher
+        - GOG Galaxy
+        - Xbox app
+        - A game outside any store
+        - Not about a game
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: >-
+        What you did, step by step, what you expected, and what Lamplit did instead. For a game Lamplit doesn't find,
+        name its store and its install folder.
+      placeholder: |
+        1. Started a game from Epic with Cross.
+        2. Quit the game from its own menu.
+        I expected Lamplit to come back to the front. The Windows desktop showed instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Lamplit writes its logs to `%LOCALAPPDATA%\lamplit\`. To open that folder, press Win+R, paste `%LOCALAPPDATA%\lamplit` and press Enter.
+        Drag `lamplit.log` into this box to attach it. Attach `setup.log` too for a problem with first-time setup, and `supervisor.log` when Lamplit closed by itself.
+        The logs name your games and their folders, and a folder path can include your Windows user name. Read them first and remove anything you don't want to share.
+    validations:
+      required: false
+
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Screenshots, a photo of the TV, which headset you use, or what you already tried.
+    validations:
+      required: false

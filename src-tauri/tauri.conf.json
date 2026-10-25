@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Lamplit",
+  "identifier": "io.github.yordilorenzo.lamplit",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Lamplit",
+        "fullscreen": true,
+        "decorations": false,
+        "resizable": false,
+        "focus": true,
+        "backgroundColor": "#07060b",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "img-src": "'self' asset: http://asset.localhost",
+        "style-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost"
+      },
+      "assetProtocol": { "enable": true, "scope": [] }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "YordiLorenzo",
+    "copyright": "Copyright (c) 2026 YordiLorenzo",
+    "license": "MIT",
+    "homepage": "https://github.com/YordiLorenzo/lamplit",
+    "shortDescription": "A console-style game home screen for Windows PCs on a TV",
+    "longDescription": "Lamplit is a full-screen home screen for the games on a Windows PC, made for a TV and a controller. It finds the games from Steam, Epic, GOG, EA, Ubisoft, Rockstar and Xbox, and games outside any store, shows their art and starts them.",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png", "icons/icon.ico"],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "windows/installer-hooks.nsh"
+      }
+    }
+  }
+}

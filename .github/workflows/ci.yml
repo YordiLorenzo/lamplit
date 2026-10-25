@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # The Tauri CLI that builds the installer. Keep it on the same 2.x line as the tauri crates in src-tauri/Cargo.lock.
+  TAURI_CLI_VERSION: 2.12.4
+
+jobs:
+  rust:
+    name: Rust (Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v7
+
+      # The rust-version in src-tauri/Cargo.toml. A fixed toolchain keeps a new Clippy lint from failing every PR on
+      # the day a Rust release adds it; raise both together.
+      - uses: dtolnay/rust-toolchain@1.95
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Install the Tauri CLI
+        run: npm install --global @tauri-apps/cli@${{ env.TAURI_CLI_VERSION }}
+
+      # A debug build is enough to compile the installer script with windows/installer-hooks.nsh, and it reuses the
+      # dependencies the steps above built.
+      - name: Build the installer
+        run: tauri build --debug --bundles nsis
+
+  page:
+    name: Page tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tests
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      - run: npm ci
+
+      # The tests launch Playwright's own Chromium (the `chromium` channel), not the headless shell.
+      - name: Install Chromium
+        run: npx playwright-core install --with-deps --no-shell chromium
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Upload screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: page-screenshots
+          path: tests/shots/
+          if-no-files-found: ignore

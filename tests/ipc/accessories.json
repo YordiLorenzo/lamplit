@@ -1,0 +1,10 @@
+{
+  "headset": { "receiver": true, "on": true, "battery": 80, "charge": "charging", "sidetone": 40, "auto_off": 30 },
+  "controllers": [
+    {
+      "id": "\\\\?\\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0002054c_pid&0ce6",
+      "bluetooth": true,
+      "status": { "battery": 60, "charge": "battery", "headphones": false }
+    }
+  ]
+}

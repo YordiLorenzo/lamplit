@@ -1,0 +1,11 @@
+{
+  "games": [
+    { "name": "Zuma", "last_played": 0 },
+    { "name": "Ōkami HD", "last_played": 0 },
+    { "name": "portal 2", "last_played": 0 },
+    { "name": "Édith Finch", "last_played": 0 },
+    { "name": "Recent", "last_played": 50 },
+    { "name": "Older", "last_played": 10 }
+  ],
+  "sorted": ["Recent", "Older", "portal 2", "Zuma", "Édith Finch", "Ōkami HD"]
+}

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Lamplit's single window: besides Lamplit's own commands, the page only listens to events and writes to the log. The devtools shortcut works in debug builds.",
+  "windows": ["main"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "core:webview:allow-internal-toggle-devtools", "log:default"]
+}

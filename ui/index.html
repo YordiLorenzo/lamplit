@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Lamplit</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="stage">
+    <div class="hero" id="heroA"></div>
+    <div class="hero" id="heroB"></div>
+    <div class="shade"></div>
+  </div>
+
+  <header id="info">
+    <img id="logo" alt="">
+    <h1 id="title"></h1>
+    <div id="meta">
+      <span id="store" class="pill"></span>
+      <span id="note" class="pill quiet"></span>
+      <span id="played"></span>
+    </div>
+  </header>
+
+  <div id="clock"></div>
+  <div id="empty">Looking for games…</div>
+
+  <div id="overlay">
+    <div class="spinner"></div>
+    <div id="overlayTitle"></div>
+    <div id="overlaySub"></div>
+    <ul id="steps"></ul>
+  </div>
+
+  <main id="row"><div id="track"></div></main>
+
+  <aside id="details" class="panel">
+    <h2 id="dName"></h2>
+    <dl>
+      <dt>Store</dt><dd id="dStore"></dd>
+      <dt>Last played</dt><dd id="dPlayed"></dd>
+      <dt>Folder</dt><dd id="dDir"></dd>
+    </dl>
+  </aside>
+
+  <aside id="settings" class="panel">
+    <h2 id="settingsTitle">Settings</h2>
+    <div id="settingsList"></div>
+  </aside>
+
+  <div id="toast"></div>
+  <footer id="hint"></footer>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+# Text files are stored with LF and checked out with LF, also on Windows, so rustfmt, the raw strings in the Rust
+# tests and the page's files read the same on every machine.
+* text=auto eol=lf
+
+# PowerShell scripts are run and edited on Windows.
+*.ps1 text eol=crlf

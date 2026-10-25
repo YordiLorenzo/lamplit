@@ -1,0 +1,7 @@
+src-tauri/target/
+src-tauri/gen/
+.claude/
+tests/node_modules/
+tests/art/
+tests/shots/
+tests/fixture-game/target/

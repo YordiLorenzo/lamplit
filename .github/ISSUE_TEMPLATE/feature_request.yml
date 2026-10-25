@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest something Lamplit could do.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check the open issues first, in case someone has asked for it already.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you want to do
+      description: What you are trying to do on the TV, and what gets in the way today.
+      placeholder: I play with a pad from the couch, and to do X I still have to walk to the keyboard.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: How Lamplit could help
+      description: What you would like Lamplit to do. A sketch or a screenshot of another app is welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you use now
+      description: Any workaround, setting or other app you use for this today.
+    validations:
+      required: false
+
+  - type: input
+    id: setup
+    attributes:
+      label: Your setup
+      description: Controller, stores and Windows version, if they matter for this request.
+      placeholder: DualSense over Bluetooth, Steam and Epic, Windows 11
+    validations:
+      required: false

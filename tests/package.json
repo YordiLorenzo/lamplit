@@ -1,0 +1,13 @@
+{
+  "name": "lamplit-ui-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test logic.test.mjs contract.test.mjs && node ui.test.mjs",
+    "typecheck": "tsc -p ../ui/jsconfig.json"
+  },
+  "devDependencies": {
+    "playwright-core": "1.63.0",
+    "typescript": "6.0.3"
+  }
+}

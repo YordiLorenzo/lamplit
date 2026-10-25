@@ -1,0 +1,5 @@
+max_width = 120
+# Lets a short struct literal, call chain or closure stay on one line up to max_width.
+use_small_heuristics = "Max"
+# Keeps lists of file and folder names packed several to a line.
+short_array_element_width_threshold = 40
