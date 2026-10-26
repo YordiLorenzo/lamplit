@@ -184,9 +184,19 @@ const browser = await chromium.launch(process.env.CHROME ? { executablePath: pro
   await emit(page, 'stores', stores);
   await artLoaded(page);
   await emit(page, 'pad', 'square');
-  // From a: down to the k row, along to r; up to the a row, back to d; down again, along to r.
-  for (const step of ['down', ...Array(7).fill('right'), 'ok', 'up', ...Array(4).fill('left'), 'ok', 'down', ...Array(4).fill('right'), 'ok']) {
-    await emit(page, 'pad', step);
+  // Each letter reached with the d-pad, a row at a time, the way a player would, then pressed with ✕.
+  for (const letter of 'rdr') {
+    for (let i = 0; i < 30; i++) {
+      const way = await page.evaluate((id) => {
+        const from = document.querySelector('#find .focus').getBoundingClientRect();
+        const to = document.querySelector(`#find [data-id="${id}"]`).getBoundingClientRect();
+        if (Math.abs(to.y - from.y) > 2) return to.y > from.y ? 'down' : 'up';
+        return Math.abs(to.x - from.x) > 2 ? (to.x > from.x ? 'right' : 'left') : null;
+      }, letter);
+      if (!way) break;
+      await emit(page, 'pad', way);
+    }
+    await emit(page, 'pad', 'ok');
   }
   await artLoaded(page);
   await shoot(page, 'find');

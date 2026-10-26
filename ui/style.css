@@ -427,7 +427,8 @@ body.launching .cover.focus { scale: 1.1; }
   #findQuery::after { animation: none; }
 }
 
-#findKeys { display: grid; grid-template-columns: repeat(10, 1fr); gap: .8vh; }
+/* Half-key columns, so the QWERTY rows can step right by half a key (find.js KEYBOARD). */
+#findKeys { display: grid; grid-template-columns: repeat(20, 1fr); gap: .8vh; }
 .key {
   display: grid;
   place-items: center;
