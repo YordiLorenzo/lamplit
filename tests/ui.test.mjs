@@ -1056,6 +1056,35 @@ const findView = (page) =>
   await page.mouse.click(cover.x, cover.y);
   v = await findView(page);
   check('a click on the focused result closes Find and plays it', !v.open && v.lastCall?.[0] === 'launch_start' && v.lastCall[1].id === 'pc:3', JSON.stringify(v.lastCall));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('f');
+  await page.click('#find [data-id="store:all"]');
+  v = await findView(page);
+  check('a click on the choice already made still moves focus there', v.focus === 'store:all' && v.chosen.includes('store:all'), v.focus);
+  await page.keyboard.press('Backspace');
+  v = await findView(page);
+  check('Backspace on an empty search moves focus to Done too', v.open && v.focus === 'done' && v.query === '', `${v.focus} ${v.query}`);
+  await close(page);
+}
+{
+  // A 4:3 screen and a game from every store: the store choices take three lines and the panel scrolls, and the
+  // focused choice stays in view.
+  const stores = ['steam', 'epic', 'ea', 'ubisoft', 'rockstar', 'gog', 'xbox', null];
+  const page = await open({ games: stores.map((store, i) => game(i + 1, { store, requires: store ? [store] : [] })) }, { width: 1440, height: 1080 });
+  await emit(page, 'pad', 'square');
+  for (let i = 0; i < 12; i++) await emit(page, 'pad', 'down');
+  await settled(page);
+  const seen = await page.evaluate(() => {
+    const panel = document.getElementById('find');
+    const focus = document.querySelector('#find .focus');
+    const [p, f] = [panel.getBoundingClientRect(), focus.getBoundingClientRect()];
+    // Inside the panel's padding, not pressed against its rounded edge.
+    const pad = parseFloat(getComputedStyle(panel).paddingBottom);
+    return { id: /** @type {HTMLElement} */ (focus).dataset.id, scrolls: panel.scrollHeight > panel.clientHeight, inside: f.top >= p.top + pad && f.bottom <= p.bottom - pad + 1, pageX: scrollX };
+  });
+  check('4:3: the panel scrolls to keep the focused choice in view, clear of its edge', seen.id.startsWith('sort:') && seen.scrolls && seen.inside && seen.pageX === 0, JSON.stringify(seen));
+  await page.screenshot({ path: path.join(shots, 'find-4x3.png') });
   await close(page);
 }
 

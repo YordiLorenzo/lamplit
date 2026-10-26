@@ -63,21 +63,28 @@ function renderFind() {
   );
   // A store whose games have all gone takes its choice with it.
   if (!targets().some((t) => t.dataset.id === state.findFocus)) state.findFocus = 'store:all';
-  for (const t of targets()) t.classList.toggle('focus', t.dataset.id === state.findFocus);
+  for (const t of targets()) {
+    t.classList.toggle('focus', t.dataset.id === state.findFocus);
+    // Store choices that wrap onto a third line (a 4:3 screen) push Sort below the panel's edge, which then scrolls.
+    if (t.dataset.id === state.findFocus) t.scrollIntoView({ block: 'nearest' });
+  }
   showHints();
 }
 
 /**
- * The search, the store or the sort changes: the row follows, with focus on its first game.
+ * The search, the store or the sort changes: the row follows, with focus on its first game. Drawn also when nothing
+ * changes, since a click or the PC's keyboard has moved focus to the key it pressed.
  * @param {Partial<Find>} change
  */
 function setFind(change) {
   const next = { ...state.find, ...change };
   const { query, store, sort } = state.find;
-  if (next.query === query && next.store === store && next.sort === sort) return sfx.edge();
-  state.find = next;
-  sfx.move();
-  showRow();
+  if (next.query === query && next.store === store && next.sort === sort) sfx.edge();
+  else {
+    state.find = next;
+    sfx.move();
+    showRow();
+  }
   renderFind();
 }
 

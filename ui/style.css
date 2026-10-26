@@ -386,7 +386,7 @@ body.launching .cover.focus { scale: 1.1; }
 /* ---------- find ---------- */
 
 /* Wider than Settings for a keyboard ten keys across; the row's first covers stay in view beside it. */
-#find { width: 46vw; padding: 4.4vh 4vh; overflow-y: auto; scrollbar-width: none; }
+#find { width: 46vw; padding: 4.4vh 4vh; overflow-y: auto; scroll-padding: 4.4vh 0; scrollbar-width: none; }
 #find.on { pointer-events: auto; }
 #find h2 { margin-bottom: 2.4vh; }
 #find h3 { margin: 2.4vh 0 1.2vh; }
