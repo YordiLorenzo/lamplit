@@ -1,10 +1,8 @@
 # Roadmap
 
-What comes next for Lamplit, and what stays out. This list was made on 2026-10-26 by comparing Lamplit with Steam
-Big Picture and Playnite, the two most used TV home screens on Windows. Plans can change; to suggest something, open
-an issue.
+What comes next for Lamplit, and what stays out. Plans can change; to suggest something, open an issue.
 
-## 0.2.0: what Big Picture and Playnite both have
+## 0.2.0
 
 1. **Other controllers.** Xbox and other pads, as well as the DualSense. The button hints follow the controller you
    use, and a controller button brings Lamplit forward during a game, as holding PS does now.
@@ -23,9 +21,12 @@ an issue.
 
 ## Not planned
 
-Lamplit stays a home screen for the games you already have. Steam and Playnite do these well:
+Lamplit stays a home screen for the games you already have. If you're looking for one of these, other tools do it
+well:
 
-- themes, add-ons and emulators;
-- a store, friends and chat, or Remote Play;
-- button remapping: Steam Input already does it;
-- achievements.
+- **Themes, add-ons and emulators:** [Playnite](https://playnite.link), or [ES-DE](https://www.es-de.org) for
+  emulators.
+- **A store, friends and chat:** [Steam's Big Picture mode](https://store.steampowered.com/bigpicture).
+- **Playing on another screen in the house:** [Steam Remote Play](https://store.steampowered.com/remoteplay).
+- **Button remapping:** Steam Input, in Steam's controller settings. Lamplit leaves your controller to it.
+- **Achievements:** the store apps already show them.
