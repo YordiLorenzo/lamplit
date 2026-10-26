@@ -5,7 +5,28 @@
 ; Lamplit's data folder, %LOCALAPPDATA%\lamplit. The default install folder, %LOCALAPPDATA%\Lamplit, is that same
 ; folder.
 
-; After the files are gone, so an uninstall that stops early (the player keeps Lamplit running) changes nothing.
+; Lamplit runs as two processes of the same lamplit.exe: a supervisor that restarts the app after a crash, and the app.
+; Tauri's check that runs next closes them through Windows' Restart Manager, which failed on that pair ("Failed to kill
+; Lamplit") and aborted uninstalls. So the copy in $INSTDIR is ended here first, the supervisor before the app so it
+; can't start the app again. By force: asked to close (taskkill without /F), the app lost its window but kept
+; running, and a forced end loses nothing, since Lamplit writes each file in one step and has nothing to undo when it
+; ends. Only those two processes: a game started from Lamplit keeps running, and so does a lamplit.exe elsewhere. The
+; path goes in through the environment because it may hold a quote.
+!macro LAMPLIT_CLOSE
+  System::Call 'Kernel32::SetEnvironmentVariable(t "LAMPLIT_EXE", t "$INSTDIR\${MAINBINARYNAME}.exe")'
+  nsExec::Exec `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$lamplit = @(Get-CimInstance Win32_Process -Filter 'Name=''${MAINBINARYNAME}.exe''' | Where-Object ExecutablePath -eq $$env:LAMPLIT_EXE | Sort-Object { $$_.CommandLine -like '*--app*' }); foreach ($$p in $$lamplit) { Stop-Process -Id $$p.ProcessId -Force -ErrorAction SilentlyContinue }; if ($$lamplit) { Wait-Process -Id $$lamplit.ProcessId -Timeout 5 -ErrorAction SilentlyContinue }"`
+  Pop $0
+!macroend
+
+!macro NSIS_HOOK_PREINSTALL
+  !insertmacro LAMPLIT_CLOSE
+!macroend
+
+!macro NSIS_HOOK_PREUNINSTALL
+  !insertmacro LAMPLIT_CLOSE
+!macroend
+
+; After the files are gone, so an uninstall that stops early changes nothing.
 !macro NSIS_HOOK_POSTUNINSTALL
   ; An update (/UPDATE), or a newer installer that runs this uninstaller in place before it installs again, keeps the
   ; task: the new lamplit.exe lands where the old one was. Any other uninstall removes the task and the setup record,

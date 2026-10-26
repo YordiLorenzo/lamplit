@@ -177,8 +177,12 @@ Lamplit runs with your normal rights. Two jobs need admin rights, so it asks Win
    rights when it updates that service, with a prompt you can't answer from the sofa.
 
 Open Settings (Triangle, or C on a keyboard), go to **System**, and choose **First-time setup**. Answer the Windows
-prompt with a mouse or keyboard: it runs on a secure screen that a controller can't reach. You can also run
-`lamplit.exe --setup` from a terminal opened as administrator.
+prompt with a mouse or keyboard: it runs on a secure screen that a controller can't reach. You can also run it
+from PowerShell opened as administrator; the pipe makes PowerShell wait and show what setup did:
+
+```powershell
+& "$env:LOCALAPPDATA\Lamplit\lamplit.exe" --setup | Out-Host
+```
 
 On a standard Windows account, the prompt asks for an administrator's password; the logon task is still made for
 your own account. Without setup Lamplit works the same, but you start it yourself.
