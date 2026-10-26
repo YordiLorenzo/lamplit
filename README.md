@@ -347,8 +347,10 @@ it, or bundling it into something you sell, isn't allowed; for any commercial us
 It is built with [Tauri](https://tauri.app). The DualSense and headset code follows protocol notes published by
 [HeadsetControl](https://github.com/Sapd/HeadsetControl), [Solaar](https://github.com/pwr-Solaar/Solaar),
 [SDL](https://github.com/libsdl-org/SDL), [SpecialK](https://github.com/SpecialKO/SpecialK) and the Linux kernel's
-`hid-playstation` driver; [docs/accessories.md](docs/accessories.md) lists the sources.
+`hid-playstation` driver; [docs/accessories.md](docs/accessories.md) lists the sources. The store logos come from
+[Simple Icons](https://simpleicons.org) (CC0), and the Xbox logo from
+[Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache License 2.0).
 
 Lamplit is not affiliated with or endorsed by Sony, Valve, Microsoft, Logitech, NVIDIA, Epic Games, Electronic Arts,
-Ubisoft, Rockstar Games or GOG. Their names and products are trademarks of their owners and appear here only to say
-what Lamplit works with. Game art in the screenshots belongs to its publishers.
+Ubisoft, Rockstar Games or GOG. Their names, logos and products are trademarks of their owners and appear here only
+to say what Lamplit works with. Game art in the screenshots belongs to its publishers.
