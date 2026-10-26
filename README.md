@@ -251,6 +251,8 @@ Choose Big Picture if nearly everything you play is on Steam, or if your control
 Playnite if you want themes, emulators, or a library you shape yourself. Lamplit is for a TV PC that already has
 games in several stores and should show them all without setup.
 
+What comes next, including other controllers, a power menu and search: [ROADMAP.md](ROADMAP.md).
+
 ## FAQ
 
 ### Does Lamplit replace Steam?
