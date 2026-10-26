@@ -20,6 +20,11 @@ Every release of Lamplit, newest first. The format follows
   It matches the start of any word in a game's name, or its first letters, such as "rdr" for Red Dead Redemption 2.
   It also shows one store's games, and sorts the row A to Z. The home screen shows what narrows the row, and Circle
   brings every game back.
+- Xbox controllers and others that work like one, read through XInput, and other controllers Windows knows (a
+  DualShock 4, a Switch Pro Controller), read through Windows.Gaming.Input. Holding View and Menu for a second brings
+  Lamplit over a game from an Xbox-style controller. The button hints show A, B, X and Y when one of these was used last,
+  and Settings > Controllers lists every controller with its name, connection and battery. Not yet tested on real
+  Xbox or other controllers.
 
 ### Changed
 

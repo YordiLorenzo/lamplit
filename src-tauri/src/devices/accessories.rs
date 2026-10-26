@@ -162,16 +162,35 @@ mod tests {
             sidetone: Some(40),
             auto_off: Some(30),
         };
-        let pad = Controller {
+        let dualsense = Controller {
             id: r"\\?\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0002054c_pid&0ce6".into(),
-            bluetooth: true,
-            status: Some(pad::Status { battery: 60, charge: Charge::Battery, headphones: false }),
+            kind: pad::Kind::DualSense,
+            name: "DualSense".into(),
+            connection: pad::Connection::Bluetooth,
+            battery: Some(pad::Battery { percent: Some(60), level: None, charge: Some(Charge::Battery) }),
+            headphones: Some(false),
             address: Some(1),
         };
-        let accessories = Accessories { headset, controllers: vec![pad] };
+        let xbox = Controller {
+            id: "xinput:0".into(),
+            kind: pad::Kind::Xbox,
+            name: "Xbox controller".into(),
+            connection: pad::Connection::Wireless,
+            battery: Some(pad::Battery { percent: None, level: Some(pad::Level::Medium), charge: None }),
+            headphones: None,
+            address: None,
+        };
+        let accessories = Accessories { headset, controllers: vec![dualsense, xbox] };
         assert_eq!(serde_json::to_value(accessories).unwrap(), ipc_fixture!("accessories"));
+        let values = ipc_fixture!("values");
         let charges = <Charge as strum::VariantArray>::VARIANTS;
-        assert_eq!(serde_json::to_value(charges).unwrap(), ipc_fixture!("values")["charge"]);
+        assert_eq!(serde_json::to_value(charges).unwrap(), values["charge"]);
+        let kinds = <pad::Kind as strum::VariantArray>::VARIANTS;
+        assert_eq!(serde_json::to_value(kinds).unwrap(), values["pad_kind"]);
+        let connections = <pad::Connection as strum::VariantArray>::VARIANTS;
+        assert_eq!(serde_json::to_value(connections).unwrap(), values["connection"]);
+        let levels = <pad::Level as strum::VariantArray>::VARIANTS;
+        assert_eq!(serde_json::to_value(levels).unwrap(), values["battery_level"]);
     }
 
     fn device(id: &str, kind: Kind, default: bool) -> Device {

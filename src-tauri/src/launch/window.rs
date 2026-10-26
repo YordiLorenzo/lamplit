@@ -35,9 +35,9 @@ pub fn minimize_lamplit(app: &AppHandle) {
     }
 }
 
-/// Holding PS: Lamplit comes forward even over a game.
+/// Holding PS, or View and Menu: Lamplit comes forward even over a game.
 pub fn summon(app: &AppHandle) {
-    log::info!("summoned with the PS button");
+    log::info!("summoned with a controller");
     bring_lamplit_forward(app);
     events::emit(app, Event::Summoned(app.state::<Launcher>().running_id()));
 }

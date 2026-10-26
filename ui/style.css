@@ -483,6 +483,10 @@ body.launching .cover.focus { scale: 1.1; }
 #hint b.cross { color: #8fb0ff; }
 #hint b.circle { color: #ff7a7a; }
 #hint b.options { color: var(--ink); }
+#hint b.xbox-a { color: #7fd36e; }
+#hint b.xbox-b { color: #ff7a7a; }
+#hint b.xbox-x { color: #8fb0ff; }
+#hint b.xbox-y { color: #ffd166; }
 
 #toast {
   position: fixed;

@@ -3,5 +3,8 @@
   "account": ["signed-in", "remembered", "signed-out", "unknown"],
   "charge": ["battery", "charging", "full", "not-charging"],
   "quiet_state": ["on", "off", "partly"],
-  "pad": ["up", "down", "left", "right", "ok", "back", "menu", "triangle", "l1", "r1", "square"]
+  "pad": ["up", "down", "left", "right", "ok", "back", "menu", "triangle", "l1", "r1", "square"],
+  "pad_kind": ["dualsense", "playstation", "xbox", "other"],
+  "connection": ["usb", "bluetooth", "wireless"],
+  "battery_level": ["empty", "low", "medium", "full"]
 }

@@ -32,7 +32,16 @@ test('the page listens to exactly the events Rust sends', () => {
 });
 
 test("the page's types allow exactly the values Rust sends", () => {
-  const types = { step_state: 'LaunchStep.state', account: 'StoreStatus.account', charge: 'Charge', quiet_state: 'Quiet.state', pad: 'Action' };
+  const types = {
+    step_state: 'LaunchStep.state',
+    account: 'StoreStatus.account',
+    charge: 'Charge',
+    quiet_state: 'Quiet.state',
+    pad: 'Action',
+    pad_kind: 'PadKind',
+    connection: 'Controller.connection',
+    battery_level: 'BatteryLevel',
+  };
   for (const [kind, type] of Object.entries(types)) assert.deepEqual(sorted(pageValues(type)), sorted(values[kind]), type);
 });
 

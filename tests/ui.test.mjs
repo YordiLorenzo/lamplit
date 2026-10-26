@@ -319,7 +319,24 @@ const state = (page) =>
   await page.evaluate(() => window.__emit('pad', 'back'));
   s = await state(page);
   check('Circle closes details', !s.details);
+  check('the hints show PlayStation symbols at first', s.hint === '✕Play≡Details△Settings□Find', s.hint);
+  await emit(page, 'pad-kind', known('pad_kind', 'xbox'));
+  s = await state(page);
+  const colour = await page.evaluate(() => getComputedStyle(document.querySelector('#hint b')).color);
+  check('an Xbox controller turns the hints into its letters', s.hint === 'APlay≡DetailsYSettingsXFind' && colour === 'rgb(127, 211, 110)', `${s.hint} ${colour}`);
+  await page.evaluate(() => window.__emit('pad', 'menu'));
+  await emit(page, 'pad-kind', known('pad_kind', 'other'));
+  s = await state(page);
+  check('other controllers keep the letters, also in Details', s.details && s.hint === 'APlayBClose', s.hint);
+  await emit(page, 'pad-kind', known('pad_kind', 'dualsense'));
+  s = await state(page);
+  check('a DualSense brings the symbols back', s.hint === '✕Play○Close', s.hint);
   await close(page);
+  // Rust reads the controllers before the page listens: the page asks which kind was used last.
+  const early = await open({ games: [game(1), game(2)], padKind: known('pad_kind', 'xbox') });
+  s = await state(early);
+  check('the hints start in the letters of a controller used before the page listened', s.hint === 'APlay≡DetailsYSettingsXFind', s.hint);
+  await close(early);
 }
 
 // 9. 300 games with long names: layout at 1080p and 4K, no horizontal scroll, and with PERF=1 the speed of moving.
@@ -445,7 +462,10 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
     }),
     accessories: like(accessories, {
       headset: like(accessories.headset, { on: true, battery: 80, charge: known('charge', 'charging'), sidetone: 40, auto_off: 30 }),
-      controllers: [like(accessories.controllers[0], { id: 'bt-pad', status: { battery: 65, charge: known('charge', 'battery'), headphones: false } })],
+      controllers: [
+        like(accessories.controllers[0], { id: 'bt-pad', battery: { percent: 65, level: null, charge: known('charge', 'battery') }, headphones: false }),
+        accessories.controllers[1],
+      ],
     }),
     prefs: like(ipc('prefs'), { touchpad_mouse: false }),
   });
@@ -463,7 +483,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await idle(page);
   let v = await view();
   check('settings open on the list of sections, Power last', v.open && v.title === 'Settings' && v.rows.length === 7 && v.rows[6].startsWith('Power'), JSON.stringify(v.rows));
-  check('section summaries say what is going on', v.rows[0].includes('PRO X 2 headset · 45%') && v.rows[1].includes('On · 80% · charging') && v.rows[2].includes('1 connected · 65%') && v.rows[4].includes('EA app: sign in'), JSON.stringify(v.rows));
+  check('section summaries say what is going on', v.rows[0].includes('PRO X 2 headset · 45%') && v.rows[1].includes('On · 80% · charging') && v.rows[2].includes('2 connected · 65%, medium') && v.rows[4].includes('EA app: sign in'), JSON.stringify(v.rows));
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   v = await view();
@@ -559,6 +579,15 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('ArrowDown');
   v = await view();
   check('a Bluetooth controller can be turned off', v.focus === 'Turn off', JSON.stringify(v.rows));
+  const headings = await page.evaluate(() => [...document.querySelectorAll('#settingsList h3')].map((h) => h.textContent));
+  check(
+    'an Xbox controller shows its name, connection and battery level, and nothing to turn off',
+    headings[1] === 'Controller 2 · Xbox controller · Wireless' && v.rows.at(-1) === 'BatteryMedium' && v.rows.filter((r) => r === 'Turn off').length === 1,
+    JSON.stringify({ headings, rows: v.rows })
+  );
+  await page.keyboard.press('ArrowDown');
+  v = await view();
+  check('↓ stays on the last row that can take focus', v.focus === 'Turn off', v.focus);
   await page.keyboard.press('Enter');
   await idle(page);
   v = await view();

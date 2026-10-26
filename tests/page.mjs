@@ -21,13 +21,16 @@ export const commands = Object.fromEntries(rust().defined);
 // Installed before the page's own scripts: records calls and log lines, lets tests emit events. A command answers
 // from window.__settings, else from `replies`, else with null. Like Tauri, it refuses a command Rust doesn't register
 // or arguments that aren't the command's, and hands over copies (the page never shares an object with the test). An
-// event with a pad step, step state or account Rust never sends (tests/ipc/values.json) is a mistake in the test.
+// event with a pad step, controller kind, step state or account Rust never sends (tests/ipc/values.json) is a mistake
+// in the test.
 // earlyGames: a 'games' event brings this list while the answer to library_games (`games`) is still on its way.
-const fakeTauri = ({ games, running = null, launchError = null, earlyGames = null }) => `
+// padKind: the kind of controller Rust says was used last, before the page listened.
+const fakeTauri = ({ games, running = null, launchError = null, earlyGames = null, padKind = null }) => `
   const commands = ${JSON.stringify(commands)};
   const values = ${JSON.stringify(values)};
   const sent = {
     pad: (step) => values.pad.includes(step),
+    'pad-kind': (kind) => values.pad_kind.includes(kind),
     'launch-step': (step) => values.step_state.includes(step.state),
     stores: (list) => list.every((s) => values.account.includes(s.account)),
   };
@@ -39,7 +42,12 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
   window.addEventListener('error', (e) => window.__errors.push(String(e.message)));
   document.addEventListener('securitypolicyviolation', (e) =>
     window.__errors.push('CSP blocked ' + e.blockedURI + ' (' + e.violatedDirective + ')'));
-  const replies = { library_games: ${JSON.stringify(games)}, launch_running: ${JSON.stringify(running)}, stores_status: [] };
+  const replies = {
+    library_games: ${JSON.stringify(games)},
+    launch_running: ${JSON.stringify(running)},
+    stores_status: [],
+    controller_kind: ${JSON.stringify(padKind)},
+  };
   const early = ${JSON.stringify(earlyGames)};
   window.__TAURI__ = {
     core: {

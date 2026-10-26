@@ -1,5 +1,6 @@
 // What Rust tells the page without being asked. Each event has one name (see `Event::name`) and one payload shape.
 
+use crate::devices::pad;
 use crate::library::{Art, Game};
 use crate::stores::{self, Store};
 use crate::system::setup;
@@ -15,9 +16,11 @@ pub enum Event<'a> {
     Art { id: &'a str, art: &'a Art },
     /// A controller press for the page while Lamplit is in front: "up", "ok", "back" and so on.
     Pad(&'a str),
+    /// Another kind of controller than before was used, so the hints show its buttons.
+    PadKind(pad::Kind),
     /// A launched game started, stopped, or couldn't be launched.
     Play(Play<'a>),
-    /// The PS button brought Lamplit forward; the running game's id, if any.
+    /// A controller brought Lamplit forward (PS held, or View and Menu); the running game's id, if any.
     Summoned(Option<String>),
     /// One line of the starting screen.
     LaunchStep(LaunchStep<'a>),
@@ -74,6 +77,7 @@ impl Event<'_> {
             Event::Games(_) => "games",
             Event::Art { .. } => "art",
             Event::Pad(_) => "pad",
+            Event::PadKind(_) => "pad-kind",
             Event::Play(_) => "play",
             Event::Summoned(_) => "summoned",
             Event::LaunchStep(_) => "launch-step",
@@ -124,6 +128,7 @@ mod tests {
         assert_eq!(payload(&Event::Setup(setup::Status { needed: true })), ipc_fixture!("setup"));
         assert_eq!(payload(&Event::Accessories), Value::Null);
         assert_eq!(payload(&Event::Pad("ok")), json!("ok"));
+        assert_eq!(payload(&Event::PadKind(pad::Kind::Xbox)), ipc_fixture!("pad-kind"));
         assert_eq!(payload(&Event::Summoned(None)), Value::Null);
     }
 

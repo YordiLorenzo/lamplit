@@ -1,14 +1,16 @@
 # Accessories: what Lamplit talks to, and how
 
 This page describes the hardware protocols behind the code in `src-tauri/src/devices/`: `pad/` (DualSense reports,
-navigation, the touchpad as a mouse), `headset/`, `audio.rs` (sound devices) and `accessories.rs` (where the sound
-goes). Read it before you change that code or add a device. Everything here comes from public sources, listed under
-each part.
+Xbox-style and other controllers, navigation, the touchpad as a mouse), `headset/`, `audio.rs` (sound devices) and
+`accessories.rs` (where the sound goes). Read it before you change that code or add a device. Everything here comes
+from public sources, listed under each part.
 
 What has been tested:
 
 - **DualSense:** over USB and Bluetooth.
 - **DualSense Edge:** not tested. It sends the same reports as the DualSense, and Lamplit reads it the same way.
+- **Xbox-style controllers (XInput) and other controllers (Windows.Gaming.Input):** not tested on real controllers;
+  the mapping and navigation have unit tests.
 - **Logitech G PRO X 2 LIGHTSPEED:** built from public sources only. Finding the receiver and reading the headset
   as off work; battery, sidetone, auto-off and the on and off messages are not yet confirmed on a real headset. If
   you have one, please open an issue with the `headset:` lines from `%LOCALAPPDATA%\lamplit\lamplit.log`.
@@ -74,7 +76,8 @@ DualSense and 0DF2 DualSense Edge) every 2 seconds.
 | Plugged flags | 54 | 55 | none |
 
 - Buttons: first byte d-pad in the low nibble (0 up, 1 to 3 right, 4 down, 5 to 7 left, 8 none), 0x10 square, 0x20
-  cross, 0x40 circle, 0x80 triangle; second byte 0x01 L1, 0x02 R1, 0x20 options; third byte 0x01 PS, 0x02 touchpad pressed.
+  cross, 0x40 circle, 0x80 triangle; second byte 0x01 L1, 0x02 R1, 0x10 create, 0x20 options; third byte 0x01 PS,
+  0x02 touchpad pressed.
 - Touch points: two of 4 bytes each: a contact byte (bit 7 set when the finger is up), then 12-bit x (0 to 1919)
   and 12-bit y (0 to 1079): `x = b1 | (b2 & 0x0F) << 8`, `y = b2 >> 4 | b3 << 4`.
 - Battery byte: low nibble 0 to 10 (Lamplit shows `n × 10 + 5`, at most 100 %); high nibble 0 battery, 1 charging,
@@ -90,6 +93,48 @@ DualSense and 0DF2 DualSense Edge) every 2 seconds.
 
 Sources: Linux `drivers/hid/hid-playstation.c`, SDL `SDL_hidapi_ps5.c` and `SDL_hints.h`, SpecialK
 `src/input/bluetooth.cpp`, Microsoft's IOCTL_BTH_DISCONNECT_DEVICE page.
+
+## Xbox-style controllers (XInput)
+
+Xbox controllers, and others that present themselves the same way, sit in XInput's four slots (xinput1_4.dll, in
+every Windows from 8 on). Lamplit reads them with `XInputGetState` every 15 ms while one is connected, and looks at
+empty slots every 2 seconds, since asking an empty slot is slow. It never calls `XInputSetState` (rumble) or
+`XInputEnable`.
+
+- XInput keeps working while another window is in front, unlike Windows.Gaming.Input, so View and Menu held for a
+  second can bring Lamplit over a game. The Xbox button belongs to Windows' Game Bar, and XInput documents no way to
+  read it (SDL reads it through the undocumented `XInputGetStateEx`, ordinal 100; Lamplit doesn't).
+- Connection: `XINPUT_CAPS_WIRELESS` in `XInputGetCapabilities`; XInput doesn't say Bluetooth or the wireless
+  adapter.
+- Battery: `XInputGetBatteryInformation` gives only a level (empty, low, medium, full), and only for alkaline or
+  NiMH batteries; a wired controller reports `BATTERY_TYPE_WIRED`.
+- USB ids: `XInputGetCapabilitiesEx`, exported by ordinal 108 only, adds the vendor and product id to
+  `XINPUT_CAPABILITIES` (SDL reads it the same way). Lamplit uses them to name a Microsoft controller and to tell
+  Steam Input's virtual controllers apart.
+- Steam Input: while a Steam game runs, Steam adds a virtual controller (Valve's ids, `28DE:11FF`) to XInput for each
+  controller it handles. Lamplit leaves those slots alone: it reads the real controller already, a DualSense over HID
+  or an Xbox controller in its own slot. Steam hides the real controller only from the game's own process.
+
+## Other controllers (Windows.Gaming.Input)
+
+Every other controller Windows knows comes through `RawGameController` (Windows.Gaming.Input), with its name
+(`DisplayName`), whether it is wireless, and a battery report when it has one. Lamplit leaves out controllers it reads
+another way: the DualSense, Valve's (Steam Input's own), and the Xbox-style ones, which Windows.Gaming.Input also
+offers as a `Gamepad`. A driver can make another controller a `Gamepad` too, without an XInput slot, so a gamepad is
+left out only while it is Microsoft's or XInput has a controller with its USB ids; otherwise Lamplit reads it as a
+`Gamepad`, whose buttons have names.
+
+- Windows hands Windows.Gaming.Input's input only to the program in front, so these controllers are read only while
+  Lamplit is, and reading starts over each time it comes back, so a button already held isn't a press.
+- The buttons come as a numbered list without names (`GetButtonLabel` knows only a few controllers). Lamplit takes
+  the order most DirectInput controllers use, the DualShock 4's and Logitech's: 1 west (Square), 2 south (Cross), 3
+  east (Circle), 4 north (Triangle), 5 L1, 6 R1, 9 view (Share), 10 menu (Options). The direction comes from the
+  first hat switch, else the first two axes.
+- A Sony controller other than the DualSense gets PlayStation symbols in the hints; the others get Xbox letters.
+
+Sources: Microsoft's XInput and Windows.Gaming.Input reference; SDL `src/core/windows/SDL_xinput.c`,
+`src/joystick/windows/SDL_xinputjoystick.c` and its gamecontrollerdb entries for the DualShock 4 and Logitech's
+DirectInput mode; Unity's issue tracker on Windows.Gaming.Input and background input.
 
 ## Default sound device
 

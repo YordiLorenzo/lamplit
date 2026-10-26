@@ -6,6 +6,7 @@ import * as api from './api.js';
 import { closeFind } from './find.js';
 import { showHints, toast } from './hints.js';
 import { closeDetails, focusGame, paintCover, render, showRow } from './library.js';
+import { buttonFace } from './logic.js';
 import { sfx } from './sounds.js';
 import { byId, els, focused, state, storeName, withStoreLogo } from './state.js';
 
@@ -105,7 +106,7 @@ export function onPlay(play) {
       if (state.mode === 'details') closeDetails();
       if (state.mode === 'find') closeFind();
       focusGame(id);
-      showStarting(g, 'Waiting for the game to come back. ○ stops waiting.');
+      showStarting(g, `Waiting for the game to come back. ${buttonFace(state.padKind, 'back')[1]} stops waiting.`);
     }
   } else if (play.state === 'ended') {
     if (state.running === id) state.running = null;
@@ -126,7 +127,7 @@ export function onPlay(play) {
   render();
 }
 
-/** The PS button brought Lamplit forward while `runningId` runs. @param {string | null} runningId */
+/** A controller brought Lamplit forward while `runningId` runs. @param {string | null} runningId */
 export function onSummoned(runningId) {
   state.running = runningId;
   if (state.mode === 'details') closeDetails();

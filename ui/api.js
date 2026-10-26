@@ -89,10 +89,29 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  */
 
 /**
+ * What kind of controller: a DualSense (read over HID, with its headphone jack and touchpad), another PlayStation
+ * controller, an Xbox controller or one that works like one, or any other.
+ * @typedef {'dualsense' | 'playstation' | 'xbox' | 'other'} PadKind
+ */
+
+/** @typedef {'empty' | 'low' | 'medium' | 'full'} BatteryLevel */
+
+/**
+ * A controller's battery: the percent and charge state, or only a rough level (Xbox-style controllers).
+ * @typedef {object} PadBattery
+ * @property {number | null} percent
+ * @property {BatteryLevel | null} level
+ * @property {Charge | null} charge
+ */
+
+/**
  * @typedef {object} Controller
  * @property {string} id
- * @property {boolean} bluetooth
- * @property {{ battery: number, charge: Charge, headphones: boolean } | null} status  null until a full report came
+ * @property {PadKind} kind
+ * @property {string} name  e.g. "DualSense", "Xbox controller", or the name Windows gives it
+ * @property {'usb' | 'bluetooth' | 'wireless'} connection  wireless: Bluetooth or Microsoft's adapter
+ * @property {PadBattery | null} battery  null while the controller reports none over this link
+ * @property {boolean | null} headphones  a DualSense's jack, once a full report came; null for other controllers
  */
 
 /**
@@ -221,6 +240,8 @@ export const accessoriesState = () => call('accessories_state');
 export const headsetSet = (setting, value) => call('headset_set', { setting, value });
 /** @param {string} id @returns {Promise<void>} */
 export const controllerTurnOff = (id) => call('controller_turn_off', { id });
+/** @returns {Promise<PadKind | null>} the kind of controller used last, null before any was */
+export const controllerKind = () => call('controller_kind');
 /** @returns {Promise<Prefs>} */
 export const prefsState = () => call('prefs_state');
 /** @param {boolean} on @returns {Promise<Prefs>} */
@@ -256,9 +277,11 @@ export const onGames = (handle) => on('games', handle);
 export const onArt = (handle) => on('art', handle);
 /** A controller press while Lamplit is in front. @param {(action: Action) => void} handle */
 export const onPad = (handle) => on('pad', handle);
+/** Another kind of controller than before was used: the hints show its buttons. @param {(kind: PadKind) => void} handle */
+export const onPadKind = (handle) => on('pad-kind', handle);
 /** @param {(play: Play) => void} handle */
 export const onPlay = (handle) => on('play', handle);
-/** The PS button brought Lamplit forward. @param {(runningId: string | null) => void} handle */
+/** A controller brought Lamplit forward. @param {(runningId: string | null) => void} handle */
 export const onSummoned = (handle) => on('summoned', handle);
 /** @param {(step: LaunchStep) => void} handle */
 export const onLaunchStep = (handle) => on('launch-step', handle);

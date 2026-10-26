@@ -79,6 +79,7 @@ profile in `%LOCALAPPDATA%\io.github.yordilorenzo.lamplit`.
 | Library scan | Reads every store side by side, then games outside any store, then art on disk, then missing art online. Runs at start and when the page asks (each time Lamplit comes forward), at most every 30 seconds. |
 | Headset | Looks for the PRO X 2 receiver every 10 seconds and owns it while it is plugged in. |
 | Controllers | Looks for DualSense controllers every 2 seconds and reads each one on a thread of its own. |
+| Other controllers | Reads XInput and Windows.Gaming.Input every 15 ms while one of their controllers is connected, and looks for new ones every 2 seconds. |
 | Upkeep | Every 10 seconds: Steam's DevTools port and PS button setting, and quiet-mode changes that had to wait. |
 | Big Picture guard | Every 2 seconds: closes Steam's Big Picture mode if it is open. |
 | Shell | Opens links and exes with ShellExecute, one at a time. |
@@ -88,7 +89,8 @@ navigation. So every command that touches the disk, the registry, COM, HID, a so
 and does its work on Tauri's pool for blocking work.
 
 Controller presses reach the page as `pad` events only while Lamplit's window is in front, so a game never moves the
-menu behind it. Holding PS is the exception: it brings Lamplit forward from anywhere.
+menu behind it. Holding PS, or View and Menu, is the exception: it brings Lamplit forward from anywhere. Each kind of
+controller is read into the same buttons, by position (south is Cross or A), so navigation doesn't care which it is.
 
 ## How a launch works
 
@@ -150,6 +152,7 @@ message is written for the player, and the page shows it.
 | `accessories_state` | | The headset and the controllers |
 | `headset_set` | `setting` (`sidetone` or `auto-off`), `value` | The headset's state, read back |
 | `controller_turn_off` | `id` | Nothing |
+| `controller_kind` | | The kind of controller used last (`dualsense`, `playstation`, `xbox`, `other`), or `null` before any was |
 | `prefs_state` | | The prefs |
 | `prefs_set_sound_follows`, `prefs_set_touchpad_mouse`, `prefs_set_steam_devtools`, `prefs_set_online_art` | `on` | The prefs after the change |
 | `power_sleep` | | Nothing, once the PC has woken up again |
@@ -165,8 +168,9 @@ Rust sends these without being asked (`events.rs`):
 | `games` | Every game | The game list changed, or a game that ran has ended with more play time |
 | `art` | `{ id, art }` | Art for one game came in |
 | `pad` | `up`, `down`, `left`, `right`, `ok`, `back`, `menu`, `triangle`, `l1`, `r1` or `square` | A controller press, while Lamplit is in front |
+| `pad-kind` | `dualsense`, `playstation`, `xbox` or `other` | Another kind of controller than before was used; the hints show its buttons |
 | `play` | `{ state, id }`, plus `message` when `state` is `failed` | A launched game is `running`, `starting` again, `ended` or `failed` |
-| `summoned` | The running game's id, or `null` | Holding PS brought Lamplit forward |
+| `summoned` | The running game's id, or `null` | Holding PS, or View and Menu, brought Lamplit forward |
 | `launch-step` | `{ id, key, state, label, store }` | A line of the starting screen; a step with the same `key` replaces the line |
 | `stores` | Every store app's status | After each library scan |
 | `accessories` | `null` | The headset, a controller or a sound device changed; the page asks for the details |
