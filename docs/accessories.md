@@ -119,17 +119,23 @@ empty slots every 2 seconds, since asking an empty slot is slow. It never calls 
 
 Every other controller Windows knows comes through `RawGameController` (Windows.Gaming.Input), with its name
 (`DisplayName`), whether it is wireless, and a battery report when it has one. Lamplit leaves out controllers it reads
-another way: the DualSense, Valve's (Steam Input's own), and the Xbox-style ones, which Windows.Gaming.Input also
-offers as a `Gamepad`. A driver can make another controller a `Gamepad` too, without an XInput slot, so a gamepad is
-left out only while it is Microsoft's or XInput has a controller with its USB ids; otherwise Lamplit reads it as a
-`Gamepad`, whose buttons have names.
+another way, by their USB ids: the DualSense, Valve's (Steam Input's own), Microsoft's Xbox controllers (product ids
+from 0x0200 up; the older SideWinder ones are DirectInput controllers, read here), and any controller XInput holds in
+a slot. When an XInput slot's ids are unknown, it also leaves out controllers whose buttons Windows names as an
+Xbox controller's.
 
+- Lamplit never uses Windows.Gaming.Input's `Gamepad` (nor its arcade stick, flight stick or wheel classes): starting
+  the `Gamepad` interface switches a DualShock 4 on Bluetooth into its enhanced mode, which breaks DirectInput games.
+  SDL loads only the `RawGameController` statics at start for the same reason (`SDL_windows_gaming_input.c`).
 - Windows hands Windows.Gaming.Input's input only to the program in front, so these controllers are read only while
   Lamplit is, and reading starts over each time it comes back, so a button already held isn't a press.
-- The buttons come as a numbered list without names (`GetButtonLabel` knows only a few controllers). Lamplit takes
-  the order most DirectInput controllers use, the DualShock 4's and Logitech's: 1 west (Square), 2 south (Cross), 3
-  east (Circle), 4 north (Triangle), 5 L1, 6 R1, 9 view (Share), 10 menu (Options). The direction comes from the
-  first hat switch, else the first two axes.
+- The buttons come as a numbered list. Windows names them (`GetButtonLabel`) for the controllers it has a mapping for,
+  and Lamplit uses those names when they include the bottom and right face buttons (Xbox or PlayStation names;
+  letters alone don't say where a button sits). Sony's controllers aren't asked, to keep clear of the DualShock 4's
+  mode switch. Otherwise Lamplit takes the order most DirectInput controllers use, the DualShock 4's and Logitech's:
+  1 west (Square), 2 south (Cross), 3 east (Circle), 4 north (Triangle), 5 L1, 6 R1, 9 view (Share), 10 menu
+  (Options). The direction comes from the first hat switch, else d-pad buttons Windows names, else the first two
+  axes.
 - A Sony controller other than the DualSense gets PlayStation symbols in the hints; the others get Xbox letters.
 
 Sources: Microsoft's XInput and Windows.Gaming.Input reference; SDL `src/core/windows/SDL_xinput.c`,
