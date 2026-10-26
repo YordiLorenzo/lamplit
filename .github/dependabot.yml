@@ -31,3 +31,6 @@ updates:
     groups:
       github-actions:
         patterns: ['*']
+    ignore:
+      # Its tag is the Rust version CI builds with, the rust-version in src-tauri/Cargo.toml: it moves when that does.
+      - dependency-name: dtolnay/rust-toolchain
