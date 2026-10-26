@@ -150,13 +150,6 @@ pub fn add_play_time(app: &AppHandle, id: &str, seconds: u64) {
     }
 }
 
-/// Sends the page every game as Lamplit has them now, after a game's play time changed.
-pub fn send(app: &AppHandle) {
-    if let Some(games) = app.state::<Library>().games() {
-        events::emit(app, Event::Games(&games));
-    }
-}
-
 /// Lets Lamplit find art online, or not. Switched on, a scan fetches what is missing now; switched off, a pass that
 /// is going online stops at its next request.
 pub fn set_online_art(app: &AppHandle, on: bool) -> Result<()> {

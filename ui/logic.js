@@ -328,7 +328,7 @@ export function batteryText(level, charge) {
 /** A controller's battery: the percent, else the rough level an Xbox-style controller gives. @param {PadBattery | null} b */
 export function padBatteryText(b) {
   if (!b) return 'Not reported over this link';
-  return b.percent != null ? batteryText(b.percent, b.charge) : LEVEL[b.level] ?? 'Unknown';
+  return b.percent != null ? batteryText(b.percent, b.charge) : LEVEL[b.level];
 }
 
 /**
@@ -447,7 +447,7 @@ export function sectionRows(key, state) {
     }
     if (!pads.length) rows.push({ label: 'No controller connected', value: '' });
     pads.forEach((c, i) => {
-      rows.push({ heading: `Controller ${i + 1} · ${c.name} · ${CONNECTION[c.connection] ?? c.connection}` });
+      rows.push({ heading: `Controller ${i + 1} · ${c.name} · ${CONNECTION[c.connection]}` });
       rows.push({ label: 'Battery', value: padBatteryText(c.battery) });
       if (c.kind !== 'dualsense') return;
       const bluetooth = c.connection === 'bluetooth';

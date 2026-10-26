@@ -35,6 +35,22 @@ impl Dir {
         }
     }
 
+    /// The direction of a d-pad read as four buttons, up, down, left and right. A diagonal is sideways, as on the
+    /// DualSense.
+    pub fn of_dpad([up, down, left, right]: [bool; 4]) -> Option<Dir> {
+        if left {
+            Some(Dir::Left)
+        } else if right {
+            Some(Dir::Right)
+        } else if up {
+            Some(Dir::Up)
+        } else if down {
+            Some(Dir::Down)
+        } else {
+            None
+        }
+    }
+
     /// The direction a stick leans in: `x` and `y` from -1 to 1, `y` positive towards the player.
     pub fn of_stick(x: f32, y: f32) -> Option<Dir> {
         if x.abs().max(y.abs()) < STICK_LEAN {
@@ -101,23 +117,20 @@ pub struct Navigation {
 #[derive(Default)]
 struct Hold {
     since: Option<Instant>,
-    fired: bool,
 }
 
 impl Hold {
     fn update(&mut self, down: bool, was: bool, now: Instant) {
         if down && !was {
-            *self = Hold { since: Some(now), fired: false };
+            self.since = Some(now);
         } else if !down {
             self.since = None;
         }
     }
 
-    /// True once, when it has been held for `long`.
+    /// True once, when it has been held for `long`: that takes the hold, so the next one needs a new press.
     fn held(&mut self, long: Duration, now: Instant) -> bool {
-        let done = !self.fired && self.since.is_some_and(|since| now - since >= long);
-        self.fired |= done;
-        done
+        self.since.take_if(|since| now - *since >= long).is_some()
     }
 }
 

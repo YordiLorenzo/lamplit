@@ -275,18 +275,7 @@ fn input(layout: &Layout, buttons: &[bool], hat: Option<GameControllerSwitchPosi
         ) => Some(Dir::Left),
         _ => None,
     };
-    let [up, down, left, right] = layout.dpad.map(pressed);
-    let dpad = if left {
-        Some(Dir::Left)
-    } else if right {
-        Some(Dir::Right)
-    } else if up {
-        Some(Dir::Up)
-    } else if down {
-        Some(Dir::Down)
-    } else {
-        None
-    };
+    let dpad = Dir::of_dpad(layout.dpad.map(pressed));
     let stick = match axes {
         [x, y, ..] => Dir::of_stick((*x as f32 - 0.5) * 2.0, (*y as f32 - 0.5) * 2.0),
         _ => None,

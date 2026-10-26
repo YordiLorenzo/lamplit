@@ -123,18 +123,10 @@ fn controller(slot: u32, ids: Option<(u16, u16)>) -> Controller {
 /// Buttons, and the direction from the d-pad or else the left stick (whose y grows away from the player).
 fn input(pad: &XINPUT_GAMEPAD) -> Input {
     let down = |button: XINPUT_GAMEPAD_BUTTON_FLAGS| pad.wButtons.contains(button);
-    // A diagonal is sideways, as on the DualSense.
-    let dpad = if down(XINPUT_GAMEPAD_DPAD_LEFT) {
-        Some(Dir::Left)
-    } else if down(XINPUT_GAMEPAD_DPAD_RIGHT) {
-        Some(Dir::Right)
-    } else if down(XINPUT_GAMEPAD_DPAD_UP) {
-        Some(Dir::Up)
-    } else if down(XINPUT_GAMEPAD_DPAD_DOWN) {
-        Some(Dir::Down)
-    } else {
-        None
-    };
+    let dpad = Dir::of_dpad(
+        [XINPUT_GAMEPAD_DPAD_UP, XINPUT_GAMEPAD_DPAD_DOWN, XINPUT_GAMEPAD_DPAD_LEFT, XINPUT_GAMEPAD_DPAD_RIGHT]
+            .map(down),
+    );
     let axis = |v: i16| f32::from(v) / 32768.0;
     Input {
         dir: dpad.or(Dir::of_stick(axis(pad.sThumbLX), -axis(pad.sThumbLY))),
