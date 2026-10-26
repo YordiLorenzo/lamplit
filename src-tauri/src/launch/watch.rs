@@ -143,10 +143,10 @@ pub fn watch_game(app: &AppHandle, generation: u64, game: &Game) {
             Step::Ended => {
                 log::info!("{name} closed; Lamplit is back");
                 launcher.clear_running(id);
-                // Every game, with this one's play time, saved when its processes went.
-                if let Some(games) = app.state::<library::Library>().games() {
-                    events::emit(app, Event::Games(&games));
-                }
+                // Every game, with this one's play time, saved when its processes went. A game only starts once the
+                // library is loaded, and it stays loaded.
+                let games = app.state::<library::Library>().games().expect("the library is loaded");
+                events::emit(app, Event::Games(&games));
                 events::emit(app, Event::Play(Play::Ended { id }));
                 // Right after a game's window closes Windows may not hand the foreground over yet. Steam's window,
                 // if a Steam launch opened it, shouldn't end up over Lamplit either.

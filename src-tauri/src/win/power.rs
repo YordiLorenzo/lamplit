@@ -2,7 +2,7 @@
 // token. A standard account holds that privilege, disabled, so this process enables it first.
 
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
-use windows::Win32::Foundation::{ERROR_NOT_ALL_ASSIGNED, GetLastError, HANDLE, LUID, WIN32_ERROR};
+use windows::Win32::Foundation::{GetLastError, HANDLE, LUID, WIN32_ERROR};
 use windows::Win32::Security::{
     AdjustTokenPrivileges, LUID_AND_ATTRIBUTES, LookupPrivilegeValueW, SE_PRIVILEGE_ENABLED, SE_SHUTDOWN_NAME,
     TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES,
@@ -61,7 +61,7 @@ fn enable_shutdown_privilege() -> Result<()> {
     // asked for, so no buffer goes with it.
     unsafe { AdjustTokenPrivileges(HANDLE(token.as_raw_handle()), false, Some(&raw const enable), 0, None, None) }?;
     // A token without the privilege still succeeds, and says so only in the last error.
-    // SAFETY: reads this thread's last error, which AdjustTokenPrivileges just set.
-    let error = unsafe { GetLastError() };
-    if error == ERROR_NOT_ALL_ASSIGNED { error.ok() } else { Ok(()) }
+    // SAFETY: reads this thread's last error, which AdjustTokenPrivileges just set: ERROR_SUCCESS or
+    // ERROR_NOT_ALL_ASSIGNED.
+    unsafe { GetLastError() }.ok()
 }
