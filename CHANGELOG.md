@@ -10,6 +10,11 @@ Every release of Lamplit, newest first. The format follows
 
 - Store logos: in the store badge on the home screen, in a game's details, on the starting screen and in
   Settings > Stores.
+- Xbox controllers and others that work like one, read through XInput, and other controllers Windows knows (a
+  DualShock 4, a Switch Pro Controller), read through Windows.Gaming.Input. Holding View and Menu for a second brings
+  Lamplit over a game from an Xbox-style controller. The button hints show A, B and Y when one of these was used last,
+  and Settings > Controllers lists every controller with its name, connection and battery. Not yet tested on real
+  Xbox or other controllers.
 
 ## 0.1.0 - 2026-10-26
 

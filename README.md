@@ -54,7 +54,8 @@ while you play. When the game closes, Lamplit is back on screen.
   carries on once you have signed in. A Steam update shows its progress before the game starts.
 - **Out of the way while you play.** Lamplit minimises itself once the game runs and comes back when the game
   closes. A launcher that hands over to the game a few seconds after starting doesn't fool it.
-- **Hold the PS button to come back.** Lamplit appears over the running game; press Cross to return to the game.
+- **Hold the PS button to come back,** or View and Menu together on an Xbox controller. Lamplit appears over the
+  running game; press Cross (A) to return to the game.
 - **Awake while it waits.** The PC and the TV don't go to sleep while a store app starts or Steam downloads an
   update.
 - **Steam stays in the background.** Lamplit closes Steam's Big Picture mode whenever Steam opens it, and minimises
@@ -69,6 +70,7 @@ while you play. When the game closes, Lamplit is back on screen.
   sidetone (how much of your own voice you hear) and its auto-off timer. Other headsets work as normal Windows sound
   devices.
 - **DualSense:** battery, whether headphones are plugged in, and Turn off for a controller on Bluetooth.
+- **Xbox and other controllers:** name, connection and battery, as far as Windows reports them.
 - **The touchpad as a mouse,** for store apps and Windows dialogs. One finger moves the pointer, pressing the left
   or right half of the pad clicks, two fingers scroll. Off by default, and never active over a full-screen game.
 - **NVIDIA's performance stats** (frame rate, GPU and CPU load) on and off, when NVIDIA's overlay is installed.
@@ -83,9 +85,11 @@ while you play. When the game closes, Lamplit is back on screen.
 
 ### Controller
 
-- **DualSense and DualSense Edge,** over USB or Bluetooth, several at once. Lamplit only reads the controller: it
-  doesn't touch its lights, rumble or mode, so Steam and your games see it as before.
-- **Console-style navigation:** a held direction repeats and speeds up, and L1 and R1 jump five games at a time.
+- **DualSense, Xbox and other controllers,** several at once. Lamplit only reads a controller: it doesn't touch its
+  lights, rumble or mode, so Steam and your games see it as before.
+- **Hints in your controller's buttons:** PlayStation symbols on a PlayStation controller, A, B and Y on the others.
+- **Console-style navigation:** a held direction repeats and speeds up, and L1 and R1 (LB and RB) jump five games at a
+  time.
 - **A keyboard and mouse work too.**
 
 ## Supported stores and hardware
@@ -111,21 +115,39 @@ outside any store, but Lamplit then starts the game's exe directly, which some o
 
 ### Controllers
 
-| | USB cable | Bluetooth |
-| --- | --- | --- |
-| Buttons, d-pad and left stick | Yes | Yes |
-| Hold PS to bring Lamplit forward | Yes | Yes |
-| Battery level | Yes | Usually (see below) |
-| Touchpad as a mouse | Yes | Usually (see below) |
-| Sound through the headphone jack | Yes | No: the controller is a sound device only over USB |
-| Turn off from Lamplit | No: unplug it | Yes |
+| | DualSense | Xbox and Xbox-style | Other controllers |
+| --- | --- | --- | --- |
+| Buttons, d-pad and left stick | Yes | Yes | Yes, while Lamplit is in front (see below) |
+| Bring Lamplit over a running game | Hold PS for 0.6 seconds | Hold View and Menu for 1 second | No |
+| Button hints | Cross, Circle, Triangle | A, B, Y | A, B, Y; PlayStation symbols on a Sony controller |
+| Battery level | Over USB; over Bluetooth usually (see below) | A rough level, when wireless | When Windows reports it |
+| Touchpad as a mouse | Over USB; over Bluetooth usually | No | No |
+| Sound through the headphone jack | Over USB only | No | No |
+| Turn off from Lamplit | Over Bluetooth only | No | No |
 
-Over Bluetooth, a DualSense sends its battery level and touchpad only after a program has asked for its full
-reports. Steam usually has done this already. Lamplit never asks itself: the switch lasts until the controller turns
-off, and older games that read the controller through DirectInput stop working with it.
+**DualSense and DualSense Edge,** over USB or Bluetooth, read over HID. Over Bluetooth, a DualSense sends its battery
+level and touchpad only after a program has asked for its full reports. Steam usually has done this already. Lamplit
+never asks itself: the switch lasts until the controller turns off, and older games that read the controller through
+DirectInput stop working with it. The sound reaches the headphone jack only over USB, where the controller is a sound
+device.
+
+**Xbox controllers, and the many that work like one** (8BitDo, PowerA and others in their X mode), over USB,
+Bluetooth or Microsoft's wireless adapter, read through XInput. The Xbox button belongs to Windows' Game Bar, so hold
+View and Menu together to bring Lamplit forward. Windows reports only a rough battery level for them: empty, low,
+medium or full.
+
+**Other controllers** Windows knows, such as a DualShock 4, a Switch Pro Controller or a plain USB pad, are read
+through Windows.Gaming.Input. Windows hands their input only to the window in front, so they move around Lamplit but
+can't bring it over a game: use Alt+Tab or another controller. Windows doesn't say which of their buttons is which,
+so Lamplit takes the order most of them use, the DualShock 4's. If yours confirms with the wrong button, please open
+an issue with its name from Settings > Controllers.
+
+While a Steam game runs, Steam Input adds a virtual Xbox controller for each controller it handles. Lamplit leaves
+those out, since it reads the real one. Tools such as DS4Windows that add virtual controllers of their own can make
+one controller count twice; hide the real one from other programs (HidHide does this) or close the tool.
 
 The DualSense is tested over USB and Bluetooth. The DualSense Edge sends the same reports and is read the same way,
-but hasn't been tested. Xbox, Switch and other controllers aren't read yet (see the [FAQ](#faq)).
+but hasn't been tested. Xbox and other controllers are new in this version and not yet tested on real hardware.
 
 ### Headset
 
@@ -176,7 +198,7 @@ Lamplit runs with your normal rights. Two jobs need admin rights, so it asks Win
 2. **Steam's background service repaired** with Valve's own repair tool. Otherwise Steam stops to ask for admin
    rights when it updates that service, with a prompt you can't answer from the sofa.
 
-Open Settings (Triangle, or C on a keyboard), go to **System**, and choose **First-time setup**. Answer the Windows
+Open Settings (Triangle or Y, or C on a keyboard), go to **System**, and choose **First-time setup**. Answer the Windows
 prompt with a mouse or keyboard: it runs on a secure screen that a controller can't reach. You can also run it
 from PowerShell opened as administrator; the pipe makes PowerShell wait and show what setup did:
 
@@ -200,21 +222,24 @@ logon task.
 
 ## Controls
 
-| | DualSense | Keyboard |
-| --- | --- | --- |
-| Move along the row | D-pad or left stick, left and right | Left and Right arrows |
-| Jump five games | L1, R1 | Page Up, Page Down |
-| Play the game, or return to it while it runs | Cross | Enter |
-| Game details | Options | I |
-| Settings | Triangle | C |
-| Back, close, or cancel a launch | Circle | Esc or Backspace |
-| Return to the running game from the row | Circle | Esc |
-| Bring Lamplit over a running game | Hold PS for 0.6 seconds | Alt+Tab |
-| Close Lamplit | | Alt+F4 |
+| | DualSense | Xbox controller | Keyboard |
+| --- | --- | --- | --- |
+| Move along the row | D-pad or left stick, left and right | D-pad or left stick, left and right | Left and Right arrows |
+| Jump five games | L1, R1 | LB, RB | Page Up, Page Down |
+| Play the game, or return to it while it runs | Cross | A | Enter |
+| Game details | Options | Menu | I |
+| Settings | Triangle | Y | C |
+| Back, close, or cancel a launch | Circle | B | Esc or Backspace |
+| Return to the running game from the row | Circle | B | Esc |
+| Bring Lamplit over a running game | Hold PS for 0.6 seconds | Hold View and Menu for 1 second | Alt+Tab |
+| Close Lamplit | | | Alt+F4 |
 
-While a game starts, Cross opens the store app that needs you, Triangle goes ahead without a confirmed sign-in, and
-Circle cancels. In Settings, Up and Down move, Cross or Right opens a section, Left and Right change the volume,
-sidetone and auto-off timer, Circle goes back, and Triangle closes Settings.
+Other controllers follow the same layout by position: the bottom face button plays, the right one goes back, the top
+one opens Settings.
+
+While a game starts, Cross (A) opens the store app that needs you, Triangle (Y) goes ahead without a confirmed
+sign-in, and Circle (B) cancels. In Settings, Up and Down move, Cross or Right opens a section, Left and Right change
+the volume, sidetone and auto-off timer, Circle goes back, and Triangle closes Settings.
 
 With a mouse, click a cover to select it and click it again to play. Settings rows take a click too.
 
@@ -243,13 +268,13 @@ including the risk of Steam's DevTools port.
 | Runs on | Windows | Windows, macOS, Linux, SteamOS | Windows |
 | Games it lists | Installed games from seven stores and outside any store, found by itself | Steam games; others as shortcuts you add by hand | Games from the libraries you connect through its add-ons, and emulated games |
 | Before a game starts | Starts the store apps it needs, waits for sign-in, shows Steam's update progress | Steam updates its own games first | Starts the game through its store or its exe |
-| Controllers | DualSense and DualSense Edge; keyboard and mouse | Most controllers, through Steam Input | Many controllers, through SDL |
+| Controllers | DualSense, Xbox and other controllers Windows knows; keyboard and mouse | Most controllers, through Steam Input | Many controllers, through SDL |
 | Themes, add-ons, emulators | No | No themes or add-ons; emulators as shortcuts you add | Yes, with an add-on browser |
 | Also does | Quiet mode, sound that follows the headset, PRO X 2 headset settings, NVIDIA stats switch | Store, friends and chat, Steam Input remapping, Remote Play | Metadata, filters and collections, play time |
 
-Choose Big Picture if nearly everything you play is on Steam, or if your controller isn't a DualSense. Choose
-Playnite if you want themes, emulators, or a library you shape yourself. Lamplit is for a TV PC that already has
-games in several stores and should show them all without setup.
+Choose Big Picture if nearly everything you play is on Steam. Choose Playnite if you want themes, emulators, or a
+library you shape yourself. Lamplit is for a TV PC that already has games in several stores and should show them all
+without setup.
 
 What comes next, including other controllers, a power menu and search: [ROADMAP.md](ROADMAP.md).
 
@@ -270,10 +295,11 @@ objects to Lamplit, please open an issue.
 
 ### Which controllers work?
 
-The DualSense and DualSense Edge, over USB or Bluetooth. Xbox, Switch and other controllers aren't read yet. Anything
-that turns a controller's buttons into keys (Steam's desktop controller layout can do this) works through the
-keyboard controls, but holding PS to bring Lamplit forward and the controller rows in Settings need a DualSense.
-Support for more controllers is welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
+The DualSense and DualSense Edge, Xbox controllers and the many that work like one, and other controllers Windows
+knows, such as a DualShock 4 or a Switch Pro Controller. A DualSense (hold PS) or an Xbox-style controller (hold View
+and Menu) can bring Lamplit over a game; other controllers work only while Lamplit is in front. The headphone and
+Turn off rows in Settings are a DualSense's. [Controllers](#controllers) has what each kind can do. Better support
+for a controller you have is welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Why only Windows?
 
