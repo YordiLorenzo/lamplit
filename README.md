@@ -327,6 +327,13 @@ Bug reports, games Lamplit misses, new stores, other controllers and headsets ar
 [CONTRIBUTING.md](CONTRIBUTING.md) explains how to build, test and send a change. Please report security problems
 privately, as [SECURITY.md](SECURITY.md) describes, not in a public issue.
 
+## Support Lamplit
+
+If Lamplit is how you start your games now, you can support it through
+[GitHub Sponsors](https://github.com/sponsors/YordiLorenzo). Sponsorship pays for code signing, so Windows names the
+publisher and each new version keeps the trust SmartScreen gave the last one. It also buys more headsets and
+controllers for Lamplit to support, and time to work on it.
+
 ## Licence
 
 Lamplit is free to use, change and share for any noncommercial purpose, under the
