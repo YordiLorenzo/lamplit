@@ -1,9 +1,9 @@
 // @ts-check
 // The home screen: the cover row, and the hero art, logo and details of the focused game.
 
-import { assetUrl } from './api.js';
-import { showHints } from './hints.js';
-import { byPlayed, playedText, readable, storeWarning } from './logic.js';
+import { assetUrl, librarySetFavourite, librarySetHidden } from './api.js';
+import { showHints, toast } from './hints.js';
+import { byPlayed, detailChoices, playTimeText, playedText, readable, rowGames, storeWarning } from './logic.js';
 import { sfx } from './sounds.js';
 import { byId, els, focused, state, storeName, withStoreLogo } from './state.js';
 
@@ -119,7 +119,7 @@ function setLogo(g) {
 
 export function showInfo() {
   const g = focused();
-  if (!g) return;
+  if (!g) return showHints();
   setLogo(g);
   // The pill shows the store's logo and key, which the stylesheet upper-cases: STEAM, EPIC, and PC outside any store.
   els.store.replaceChildren(...withStoreLogo(g.store, g.store ?? 'pc'));
@@ -127,6 +127,8 @@ export function showInfo() {
   els.note.textContent = state.running === g.id ? 'Playing' : warning ?? g.note ?? '';
   els.note.classList.toggle('warn', state.running !== g.id && !!warning);
   els.played.textContent = playedText(g.last_played);
+  const time = playTimeText(g.play_minutes);
+  els.playtime.textContent = time && `${time} played`;
   if (state.accents.has(g.id)) applyAccent(state.accents.get(g.id));
   clearTimeout(heroTimer);
   heroTimer = setTimeout(() => setHero(g), 140);
@@ -138,7 +140,11 @@ export function openDetails() {
   els.dName.textContent = g.name;
   els.dStore.replaceChildren(...withStoreLogo(g.store, storeName(g.store) ?? 'Not from a store'));
   els.dPlayed.textContent = playedText(g.last_played).replace(/^Played /, '') || 'Not yet';
+  // Lamplit counts from 0.2.0 on, so a game played before has no count of its own.
+  els.dTime.textContent = playTimeText(g.play_minutes, true) || 'Not counted yet';
   els.dDir.textContent = g.dir;
+  state.detailsIdx = 0;
+  renderChoices();
   state.mode = 'details';
   els.details.classList.add('on');
   sfx.open();
@@ -150,6 +156,55 @@ export function closeDetails() {
   els.details.classList.remove('on');
   sfx.back();
   showHints();
+}
+
+/** The choices under the details, the focused one marked. */
+function renderChoices() {
+  const rows = detailChoices(focused(), state.running).map((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'row' + (i === state.detailsIdx ? ' focus' : '');
+    row.textContent = c.label;
+    return row;
+  });
+  els.dChoices.replaceChildren(...rows);
+}
+
+/** The choice ✕ picks in Details. */
+export const detailChoice = () => detailChoices(focused(), state.running)[state.detailsIdx];
+
+/** @param {number} delta */
+export function moveDetails(delta) {
+  const next = Math.max(0, Math.min(detailChoices(focused(), state.running).length - 1, state.detailsIdx + delta));
+  if (next === state.detailsIdx) return sfx.edge();
+  state.detailsIdx = next;
+  sfx.move();
+  renderChoices();
+  showHints();
+}
+
+/** Details' choices other than Play: the focused game in or out of the favourites, or hidden. */
+export async function markGame() {
+  const g = focused();
+  const { kind } = detailChoice();
+  try {
+    if (kind === 'favourite') {
+      sfx.open();
+      // The row moves around the game, and focus stays on it.
+      setGames(await librarySetFavourite(g.id, !g.favourite));
+      renderChoices();
+      showHints();
+    } else {
+      const at = state.idx;
+      closeDetails();
+      setGames(await librarySetHidden(g.id, true));
+      // Focus goes to the game that took its place.
+      state.idx = Math.max(0, Math.min(at, state.games.length - 1));
+      render();
+      toast(`${g.name} is hidden. Settings > Hidden games shows it again.`);
+    }
+  } catch (e) {
+    toast(e.message);
+  }
 }
 
 // ---------- the cover row ----------
@@ -209,20 +264,21 @@ export function render() {
 /** @param {Game[]} list */
 export function setGames(list) {
   const keep = focused()?.id;
-  state.games = list.map((g) => ({ ...g, el: newCover(g.name) }));
+  state.library = list;
+  state.games = rowGames(list).map((g) => ({ ...g, el: newCover(g.name) }));
   const k = state.games.findIndex((g) => g.id === keep);
   state.idx = Math.max(0, k);
   // Details still names the game that is gone, and ✕ there would start whatever is focused now.
   if (k < 0 && state.mode === 'details') closeDetails();
   els.empty.hidden = state.games.length > 0;
-  els.empty.textContent = 'No games found';
+  els.empty.textContent = list.length ? 'Every game is hidden. Settings > Hidden games shows them again.' : 'No games found';
   state.games.forEach(paintCover);
   els.track.replaceChildren(...state.games.map((g) => g.el));
   render();
 }
 
 export function sortByPlayed() {
-  state.games.sort(byPlayed);
+  state.games = rowGames(state.games.sort(byPlayed));
   els.track.append(...state.games.map((g) => g.el));
 }
 

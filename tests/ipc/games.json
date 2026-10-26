@@ -6,6 +6,9 @@
     "dir": "D:\\SteamLibrary\\steamapps\\common\\Example Game",
     "note": "Update pending",
     "last_played": 1760000000,
+    "play_minutes": 754,
+    "favourite": true,
+    "hidden": false,
     "art": {
       "portrait": "C:\\Users\\player\\AppData\\Local\\lamplit\\art\\70\\portrait.jpg",
       "hero": null,

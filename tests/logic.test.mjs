@@ -4,9 +4,12 @@ import { describe, test } from 'node:test';
 import {
   batteryText,
   byPlayed,
+  detailChoices,
   focusIndex,
+  playTimeText,
   playedText,
   readable,
+  rowGames,
   rowKey,
   sectionRows,
   sectionSummary,
@@ -34,8 +37,14 @@ const settingsState = (extra = {}) => ({
   display: null,
   overlays: overlays(false, null),
   stores: new Map(),
+  library: [],
+  running: null,
+  settings: { section: null, focus: null, idx: 0, rows: [], confirm: null },
   ...extra,
 });
+/** A game as Rust sends it. */
+const game = (id, name, changes = {}) =>
+  like(ipc('games')[0], { id, name, last_played: 0, play_minutes: 0, favourite: false, hidden: false, ...changes });
 
 const { headset: headsetBase, controllers: [controllerBase] } = ipc('accessories');
 /** The headset, on battery unless `extra` says otherwise. */
@@ -81,11 +90,45 @@ describe('playedText', () => {
   test('a clock that is behind still says today', () => assert.equal(playedText(now + 3600, now), 'Played today'));
 });
 
+describe('playTimeText', () => {
+  test('nothing under a minute', () => {
+    assert.equal(playTimeText(0), '');
+    assert.equal(playTimeText(0, true), '');
+  });
+  test('minutes up to an hour', () => assert.equal(playTimeText(59), '59 min'));
+  test('whole hours on the home screen, hours and minutes in Details', () => {
+    assert.equal(playTimeText(754), '12 h');
+    assert.equal(playTimeText(754, true), '12 h 34 min');
+    assert.equal(playTimeText(120, true), '2 h');
+  });
+});
+
 describe('byPlayed', () => {
   test('sorts the names Rust sorts in tests/ipc/order.json the same way', () => {
     const { games, sorted } = ipc('order');
     assert.deepEqual(games.sort(byPlayed).map((g) => g.name), sorted);
   });
+});
+
+describe('rowGames', () => {
+  const names = (list) => rowGames(list).map((g) => g.name);
+  test('favourites come first, each group in the order given', () => {
+    const list = [game('a', 'A'), game('b', 'B', { favourite: true }), game('c', 'C'), game('d', 'D', { favourite: true })];
+    assert.deepEqual(names(list), ['B', 'D', 'A', 'C']);
+  });
+  test('hidden games are left out, favourite or not', () => {
+    const list = [game('a', 'A', { hidden: true }), game('b', 'B', { favourite: true, hidden: true }), game('c', 'C')];
+    assert.deepEqual(names(list), ['C']);
+  });
+});
+
+describe('detailChoices', () => {
+  const labels = (g, running = null) => detailChoices(g, running).map((c) => c.label);
+  test('Play first, then the favourite and hide choices', () => {
+    assert.deepEqual(labels(game('a', 'A')), ['Play', 'Add to favourites', 'Hide this game']);
+    assert.deepEqual(labels(game('a', 'A', { favourite: true })), ['Play', 'Remove from favourites', 'Hide this game']);
+  });
+  test('the running game goes back to the game', () => assert.equal(labels(game('a', 'A'), 'a')[0], 'Back to game'));
 });
 
 describe('storeWarning', () => {
@@ -274,6 +317,53 @@ describe('Stores', () => {
       assert.ok(!['Running', 'Not running'].includes(row.value), account);
     }
   });
+});
+
+describe('Hidden games', () => {
+  const library = [game('z', 'Zuma', { hidden: true }), game('t', 'Tool, not a game', { hidden: true }), game('p', 'Portal 2')];
+  test('the section shows only while a game is hidden', () => {
+    const keys = (state) => visibleSections(state).map((s) => s.key);
+    assert.ok(!keys(settingsState({ library: [game('p', 'Portal 2')] })).includes('hidden'));
+    assert.ok(keys(settingsState({ library })).includes('hidden'));
+  });
+  test('the summary counts them', () => {
+    assert.deepEqual(sectionSummary('hidden', settingsState({ library })), ['2 games']);
+    assert.deepEqual(sectionSummary('hidden', settingsState({ library: library.slice(1) })), ['1 game']);
+  });
+  test('each one can be shown again, by name', () => {
+    const rows = sectionRows('hidden', settingsState({ library }));
+    assert.deepEqual(rows.map((r) => [r.kind, r.id, r.label, r.value]), [['unhide', 't', 'Tool, not a game', 'Show'], ['unhide', 'z', 'Zuma', 'Show']]);
+  });
+  test('after the last one is shown again, the open section says so', () =>
+    assert.deepEqual(sectionRows('hidden', settingsState()), [{ label: 'No hidden games', value: '' }]));
+});
+
+describe('Power', () => {
+  const library = [game('cp', 'Cyberpunk 2077')];
+  /** The rows with ✕ pressed once on `confirm`, while `running` runs. */
+  const rows = (confirm, running = null) =>
+    sectionRows('power', settingsState({ library, running, settings: { section: 'power', focus: null, idx: 0, rows: [], confirm } }));
+  test('Power is the last section, always there', () => {
+    assert.equal(visibleSections(settingsState()).at(-1).key, 'power');
+    assert.deepEqual(rows(null).map((r) => [r.kind, r.id, r.label, r.value]), [
+      ['power', 'sleep', 'Sleep', ''],
+      ['power', 'restart', 'Restart', ''],
+      ['power', 'shutdown', 'Shut down', ''],
+    ]);
+  });
+  test('✕ once asks to confirm, on that row only', () => {
+    const asked = rows('shutdown');
+    assert.deepEqual(asked.filter((r) => r.value).map((r) => [r.id, r.value, r.tone]), [['shutdown', 'Press again to confirm', 'warn']]);
+    assert.equal(asked.length, 3);
+  });
+  test('restart and shut down name the running game that will close', () => {
+    for (const id of ['restart', 'shutdown']) {
+      const asked = rows(id, 'cp');
+      const at = asked.findIndex((r) => r.id === id);
+      assert.deepEqual(asked[at + 1], { label: 'Cyberpunk 2077 is running and will close', value: '' }, id);
+    }
+  });
+  test('sleep leaves the running game open, so it names none', () => assert.equal(rows('sleep', 'cp').length, 3));
 });
 
 describe('focus in Settings', () => {

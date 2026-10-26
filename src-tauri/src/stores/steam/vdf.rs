@@ -1,4 +1,5 @@
-// Just enough of Valve's KeyValues text format for libraryfolders.vdf and appmanifest_*.acf.
+// Just enough of Valve's KeyValues text format for libraryfolders.vdf, appmanifest_*.acf, loginusers.vdf and
+// localconfig.vdf.
 
 pub enum Vdf {
     Str(String),

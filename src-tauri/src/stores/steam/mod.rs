@@ -1,5 +1,5 @@
-// Steam: its games (appmanifest files in each library folder), its signed-in account, a game's pending update, and
-// keeping Steam out of Lamplit's way. The PS button must not pull up Steam or Big Picture, Big Picture never stays
+// Steam: its games (appmanifest files in each library folder) and their play time, its signed-in account, a game's
+// pending update, and keeping Steam out of Lamplit's way. The PS button must not pull up Steam or Big Picture, Big Picture never stays
 // open, and Steam's window doesn't sit over Lamplit once a game is done. devtools.rs changes Steam's settings.
 
 pub mod devtools;
@@ -12,6 +12,7 @@ use crate::files::{folder_key, inside, on_a_drive, read_text};
 use crate::library::{Game, Launch};
 use crate::win::region;
 use crate::win::window::{self, HWND};
+use std::collections::HashMap;
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -81,6 +82,7 @@ pub fn games() -> Vec<Game> {
             }
         }
     }
+    let minutes = play_minutes(&root);
     let mut out = Vec::new();
     for lib in libs {
         let Ok(rd) = std::fs::read_dir(lib.join("steamapps")) else { continue };
@@ -88,13 +90,47 @@ pub fn games() -> Vec<Game> {
             let fname = entry.file_name().to_string_lossy().into_owned();
             if fname.starts_with("appmanifest_")
                 && fname.ends_with(".acf")
-                && let Some(game) = read_text(&entry.path()).and_then(|text| installed_game(&lib, &text))
+                && let Some(mut game) = read_text(&entry.path()).and_then(|text| installed_game(&lib, &text))
             {
+                game.store_minutes = game.steam_appid.and_then(|a| minutes.get(&a)).copied().unwrap_or(0);
                 out.push(game);
             }
         }
     }
     out
+}
+
+/// Minutes played per app, as Steam counts them for the account that signed in last: `Playtime` in that account's
+/// localconfig.vdf. Steam's count includes play that Lamplit didn't see, from Steam's own library or before
+/// Lamplit was installed.
+fn play_minutes(root: &Path) -> HashMap<u32, u64> {
+    let Some(account) = read_text(&root.join(r"config\loginusers.vdf")).and_then(|text| last_account(&text)) else {
+        return HashMap::new();
+    };
+    read_text(&root.join(format!(r"userdata\{account}\config\localconfig.vdf")))
+        .map(|text| playtimes(&text))
+        .unwrap_or_default()
+}
+
+/// The account that signed in last, as its folder in userdata is named: the account id, which is the low 32 bits of
+/// the SteamID64 that loginusers.vdf lists it by. Older Steam marks that account `MostRecent`; newer Steam (as on
+/// 2026-10-26) only gives each account the `timestamp` of its last sign-in.
+fn last_account(loginusers: &str) -> Option<u32> {
+    let users = vdf::parse(loginusers);
+    let last = |u: &vdf::Vdf| Some((u.str("MostRecent") == Some("1"), u.str("Timestamp")?.parse::<u64>().ok()?));
+    let (_, steam_id) = users.get("users")?.entries().iter().filter_map(|(id, u)| Some((last(u)?, id))).max()?;
+    steam_id.parse::<u64>().ok().map(|id| id as u32)
+}
+
+/// `Playtime` (minutes) of each app in a localconfig.vdf.
+fn playtimes(localconfig: &str) -> HashMap<u32, u64> {
+    let vdf = vdf::parse(localconfig);
+    let path = ["UserLocalConfigStore", "Software", "Valve", "Steam", "apps"];
+    let Some(apps) = path.iter().try_fold(&vdf, |v, key| v.get(key)) else { return HashMap::new() };
+    apps.entries()
+        .iter()
+        .filter_map(|(appid, app)| Some((appid.parse().ok()?, app.str("Playtime")?.parse().ok()?)))
+        .collect()
 }
 
 /// The game an appmanifest in the library `lib` describes, when its folder is there.
@@ -321,6 +357,84 @@ mod tests {
         assert!(!remembers(loginusers, "nobody"));
         // No account set to sign in by itself.
         assert!(!remembers(loginusers, ""));
+    }
+
+    #[test]
+    fn reads_the_play_time_of_the_last_account() {
+        let older_steam = r#"
+"users"
+{
+	"76561197960265729"
+	{
+		"AccountName"		"older"
+		"MostRecent"		"0"
+		"Timestamp"		"1792900000"
+	}
+	"76561198000000005"
+	{
+		"AccountName"		"player_one"
+		"MostRecent"		"1"
+		"Timestamp"		"1700000000"
+	}
+}
+"#;
+        // 76561198000000005 - 76561197960265728, the base of every individual account's SteamID64.
+        assert_eq!(last_account(older_steam), Some(39_734_277));
+        let newer_steam = r#"
+"users"
+{
+	"76561197960265729"
+	{
+		"AccountName"		"older"
+		"timestamp"		"1700000000"
+	}
+	"76561198000000005"
+	{
+		"AccountName"		"player_one"
+		"AutoLogin"		"1"
+		"timestamp"		"1792920366"
+	}
+}
+"#;
+        assert_eq!(last_account(newer_steam), Some(39_734_277));
+        // Nothing says when it signed in.
+        assert_eq!(last_account(r#""users" { "76561198000000005" { "AccountName" "x" } }"#), None);
+        let localconfig = r#"
+"UserLocalConfigStore"
+{
+	"Software"
+	{
+		"Valve"
+		{
+			"Steam"
+			{
+				"apps"
+				{
+					"70"
+					{
+						"LastPlayed"		"1760000000"
+						"Playtime2wks"		"95"
+						"Playtime"		"754"
+					}
+					"220"
+					{
+						"cloud"
+						{
+							"last_sync_state"		"synchronized"
+						}
+					}
+					"not-an-app"
+					{
+						"Playtime"		"3"
+					}
+				}
+			}
+		}
+	}
+}
+"#;
+        assert_eq!(playtimes(localconfig), HashMap::from([(70, 754)]));
+        assert!(playtimes(r#""UserLocalConfigStore" { "friends" { } }"#).is_empty());
     }
 
     #[test]

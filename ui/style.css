@@ -126,6 +126,8 @@ body.pointer { cursor: default; }
   text-transform: uppercase;
   transition: background 500ms, border-color 500ms;
 }
+#played:not(:empty) + #playtime:not(:empty)::before { content: '·'; margin-right: 1.4vh; }
+
 .pill.quiet { background: rgb(255 255 255 / .1); border-color: rgb(255 255 255 / .25); }
 .pill.warn { background: rgb(255 190 80 / .2); border-color: rgb(255 190 80 / .6); color: #ffd58a; }
 .pill:empty { display: none; }
@@ -356,6 +358,9 @@ body.launching .cover.focus { scale: 1.1; }
 #details dl { display: grid; grid-template-columns: auto 1fr; gap: 2.2vh 3vh; font-size: 2.4vh; }
 #details dt { color: var(--ink-dim); }
 #details dd { overflow-wrap: anywhere; }
+/* Play, favourite and hide; these take clicks, the rest of Details doesn't. */
+#dChoices { display: grid; gap: .8vh; margin-top: 4vh; padding: .4vh; }
+#details.on #dChoices { pointer-events: auto; }
 
 /* ---------- hints and messages ---------- */
 

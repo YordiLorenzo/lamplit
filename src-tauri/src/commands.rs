@@ -13,7 +13,7 @@ use crate::library::{self, Game, Library};
 use crate::prefs::{self, Prefs};
 use crate::stores::steam::devtools;
 use crate::stores::{self, Store};
-use crate::system::{overlay, quiet, setup};
+use crate::system::{overlay, power, quiet, setup};
 use crate::win;
 use tauri::{AppHandle, Manager, State};
 
@@ -30,6 +30,18 @@ pub fn library_games(library: State<Library>) -> Option<Vec<Game>> {
 #[tauri::command]
 pub fn library_rescan(app: AppHandle) {
     library::rescan(&app);
+}
+
+/// Returns every game, with the change.
+#[tauri::command]
+pub async fn library_set_favourite(app: AppHandle, id: String, on: bool) -> Result<Vec<Game>> {
+    blocking(move || library::set_favourite(&app, &id, on)).await?
+}
+
+/// Returns every game, with the change.
+#[tauri::command]
+pub async fn library_set_hidden(app: AppHandle, id: String, on: bool) -> Result<Vec<Game>> {
+    blocking(move || library::set_hidden(&app, &id, on)).await?
 }
 
 /// Starts the launch checks; the page follows them through `launch-step` and `play` events.
@@ -188,6 +200,24 @@ pub async fn prefs_set_steam_devtools(app: AppHandle, on: bool) -> Result<Prefs>
 #[tauri::command]
 pub async fn prefs_set_online_art(app: AppHandle, on: bool) -> Result<Prefs> {
     blocking(move || library::set_online_art(&app, on).map(|()| prefs::get(&app))).await?
+}
+
+/// Returns once the PC has woken up again.
+#[tauri::command]
+pub async fn power_sleep() -> Result<()> {
+    blocking(power::sleep).await?
+}
+
+/// Returns once Windows has started to restart.
+#[tauri::command]
+pub async fn power_restart() -> Result<()> {
+    blocking(power::restart).await?
+}
+
+/// Returns once Windows has started to shut down.
+#[tauri::command]
+pub async fn power_shut_down() -> Result<()> {
+    blocking(power::shut_down).await?
 }
 
 /// The screen's mode now, e.g. "3840 × 2160 at 120 Hz".

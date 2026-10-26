@@ -38,7 +38,12 @@ while you play. When the game closes, Lamplit is back on screen.
 - **Every installed game in one row.** Lamplit reads what Steam, the Epic Games Launcher, GOG, the EA app, Ubisoft
   Connect, the Rockstar Games Launcher and the Xbox app have installed, and finds games outside any store too. There
   is nothing to import, connect or sign in to.
-- **Last played first,** then by name, so the game you're in the middle of is the first cover.
+- **Favourites first, then last played,** then by name, so the game you're in the middle of is near the front.
+- **Favourites and hidden games.** In a game's details (Options), add it to your favourites to keep it at the front,
+  or hide something Lamplit found that isn't a game. **Settings > Hidden games** shows a hidden game again.
+- **Play time** for each game, on the home screen and in its details. For a Steam game it is Steam's own count, which
+  includes play outside Lamplit. For other games it is the time Lamplit has seen the game running, from version
+  0.2.0 on.
 - **Cover, background and logo art.** Lamplit takes it from Steam's own library cache when it can, and otherwise
   from Steam's public store, which it also searches by name for games from other stores. A game with no match shows
   its name instead. You can switch online art off.
@@ -80,6 +85,12 @@ while you play. When the game closes, Lamplit is back on screen.
   Steam's notifications (that part needs Steam's DevTools port, see
   [What Lamplit changes on your PC](#what-lamplit-changes-on-your-pc)). It also turns off Game Bar's recording.
   Switch it off and every setting goes back to what it was.
+
+### Power
+
+- **Sleep, restart and shut down** from **Settings > Power**. Press Cross once more to confirm; if a game is
+  running, Lamplit names it first, since restarting or shutting down closes it. Apps get the chance to close, as
+  with the Start menu.
 
 ### Controller
 
@@ -213,8 +224,9 @@ logon task.
 | Close Lamplit | | Alt+F4 |
 
 While a game starts, Cross opens the store app that needs you, Triangle goes ahead without a confirmed sign-in, and
-Circle cancels. In Settings, Up and Down move, Cross or Right opens a section, Left and Right change the volume,
-sidetone and auto-off timer, Circle goes back, and Triangle closes Settings.
+Circle cancels. In a game's details, Up and Down pick Play, Add to favourites or Hide this game, and Cross does it.
+In Settings, Up and Down move, Cross or Right opens a section, Left and Right change the volume, sidetone and
+auto-off timer, Circle goes back, and Triangle closes Settings.
 
 With a mouse, click a cover to select it and click it again to play. Settings rows take a click too.
 
@@ -229,7 +241,7 @@ With a mouse, click a cover to select it and click it again to play. Settings ro
 | Steam's **Guide Button Focuses Steam** turned off | Whenever Steam's DevTools port is open | Steam > Settings > Controller |
 | Windows' default sound output and microphone | When the headset or controller headphones come and go (on by default) | Switch **Sound follows** off in Settings > Sound |
 | Mouse input from the DualSense touchpad | While **Touchpad as mouse** is on (off by default) | Switch it off in Settings > Controllers |
-| Prefs, logs and art in `%LOCALAPPDATA%\lamplit` | Always | Tick **Delete the application data** when you uninstall |
+| Prefs, favourites, hidden games, play time, logs and art in `%LOCALAPPDATA%\lamplit` | Always | Tick **Delete the application data** when you uninstall |
 
 Lamplit goes online only to fetch game art from Steam's store, and you can switch that off. No accounts, no
 telemetry. [What Lamplit changes on your PC, and what it sends](docs/security-and-privacy.md) has every detail,
