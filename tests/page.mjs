@@ -21,13 +21,15 @@ export const commands = Object.fromEntries(rust().defined);
 // Installed before the page's own scripts: records calls and log lines, lets tests emit events. A command answers
 // from window.__settings, else from `replies`, else with null. Like Tauri, it refuses a command Rust doesn't register
 // or arguments that aren't the command's, and hands over copies (the page never shares an object with the test). An
-// event with a pad step, step state or account Rust never sends (tests/ipc/values.json) is a mistake in the test.
+// event with a pad step, controller kind, step state or account Rust never sends (tests/ipc/values.json) is a mistake
+// in the test.
 // earlyGames: a 'games' event brings this list while the answer to library_games (`games`) is still on its way.
 const fakeTauri = ({ games, running = null, launchError = null, earlyGames = null }) => `
   const commands = ${JSON.stringify(commands)};
   const values = ${JSON.stringify(values)};
   const sent = {
     pad: (step) => values.pad.includes(step),
+    'pad-kind': (kind) => values.pad_kind.includes(kind),
     'launch-step': (step) => values.step_state.includes(step.state),
     stores: (list) => list.every((s) => values.account.includes(s.account)),
   };

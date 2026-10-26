@@ -6,42 +6,24 @@
 // 0x01 is the reduced report a DualSense sends until someone switches it to full mode: buttons only.
 
 use super::gestures::Touch;
+use super::navigation::{Dir, Input};
 use crate::devices::Charge;
-use serde::Serialize;
+
+pub const SONY: u16 = 0x054C;
+/// DualSense, DualSense Edge.
+const PRODUCTS: [u16; 2] = [0x0CE6, 0x0DF2];
+
+/// The controller with these USB ids is a DualSense.
+pub fn is(vendor: u16, product: u16) -> bool {
+    vendor == SONY && PRODUCTS.contains(&product)
+}
+
+/// What the Settings screen calls it.
+pub fn name(product: u16) -> &'static str {
+    if product == PRODUCTS[1] { "DualSense Edge" } else { "DualSense" }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[cfg_attr(test, derive(strum::VariantArray))]
-pub enum Dir {
-    Up,
-    Down,
-    Left,
-    Right,
-}
-
-impl Dir {
-    pub fn action(self) -> &'static str {
-        match self {
-            Dir::Up => "up",
-            Dir::Down => "down",
-            Dir::Left => "left",
-            Dir::Right => "right",
-        }
-    }
-}
-
-#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Input {
-    pub dir: Option<Dir>,
-    pub cross: bool,
-    pub circle: bool,
-    pub triangle: bool,
-    pub options: bool,
-    pub l1: bool,
-    pub r1: bool,
-    pub ps: bool,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
 pub struct Status {
     /// Percent, in steps of 10 (the controller reports 0 to 10).
     pub battery: u8,
@@ -89,23 +71,18 @@ fn input(lx: u8, ly: u8, [b0, b1, b2]: [u8; 3]) -> Input {
         5..=7 => Some(Dir::Left),
         _ => None,
     };
-    let (dx, dy) = (i16::from(lx) - 128, i16::from(ly) - 128);
-    let stick = if dx.abs().max(dy.abs()) < 70 {
-        None
-    } else if dx.abs() > dy.abs() {
-        Some(if dx > 0 { Dir::Right } else { Dir::Left })
-    } else {
-        Some(if dy > 0 { Dir::Down } else { Dir::Up })
-    };
+    let axis = |v: u8| (f32::from(v) - 128.0) / 128.0;
     Input {
-        dir: hat.or(stick),
-        cross: b0 & 0x20 != 0,
-        circle: b0 & 0x40 != 0,
-        triangle: b0 & 0x80 != 0,
-        options: b1 & 0x20 != 0,
+        dir: hat.or(Dir::of_stick(axis(lx), axis(ly))),
+        west: b0 & 0x10 != 0,
+        south: b0 & 0x20 != 0,
+        east: b0 & 0x40 != 0,
+        north: b0 & 0x80 != 0,
         l1: b1 & 0x01 != 0,
         r1: b1 & 0x02 != 0,
-        ps: b2 & 0x01 != 0,
+        view: b1 & 0x10 != 0,
+        menu: b1 & 0x20 != 0,
+        home: b2 & 0x01 != 0,
     }
 }
 
@@ -159,10 +136,15 @@ mod tests {
     fn usb_report() {
         let i = input_of(&usb(128, 128, 0x08 | 0x20, 0, 0x01), false);
         assert_eq!(i.dir, None);
-        assert!(i.cross && i.ps && !i.circle);
+        assert!(i.south && i.home && !i.east);
         let i = input_of(&usb(255, 128, 0x08, 0x20, 0), false);
         assert_eq!(i.dir, Some(Dir::Right));
-        assert!(i.options);
+        assert!(i.menu && !i.view);
+        // Square and Create, and the stick just past its dead zone, or just short of it.
+        let i = input_of(&usb(128, 128 - 70, 0x08 | 0x10, 0x10, 0), false);
+        assert_eq!(i.dir, Some(Dir::Up));
+        assert!(i.west && i.view && !i.south);
+        assert_eq!(input_of(&usb(128 + 69, 128, 0x08, 0, 0), false).dir, None);
         assert_eq!(parse(&usb(128, 128, 0x08, 0, 0)[..10], false), None);
     }
 
@@ -173,11 +155,11 @@ mod tests {
         (full[2], full[3], full[9], full[10], full[11]) = (128, 128, 0x06 | 0x40, 0, 0);
         let i = input_of(&full, true);
         assert_eq!(i.dir, Some(Dir::Left));
-        assert!(i.circle);
+        assert!(i.east);
         let simple = [0x01, 128, 0, 128, 128, 0x08, 0, 0x01, 0, 0];
         let reduced = parse(&simple, true).unwrap();
         assert_eq!(reduced.input.dir, Some(Dir::Up));
-        assert!(reduced.input.ps);
+        assert!(reduced.input.home);
         assert_eq!((reduced.touch, reduced.status), (None, None));
     }
 

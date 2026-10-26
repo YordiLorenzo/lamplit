@@ -14,3 +14,4 @@ pub mod task;
 pub mod token;
 pub mod trust;
 pub mod window;
+pub mod xinput;

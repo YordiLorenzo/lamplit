@@ -316,6 +316,18 @@ const state = (page) =>
   await page.evaluate(() => window.__emit('pad', 'back'));
   s = await state(page);
   check('Circle closes details', !s.details);
+  check('the hints show PlayStation symbols at first', s.hint === '✕Play≡Details△Settings', s.hint);
+  await emit(page, 'pad-kind', known('pad_kind', 'xbox'));
+  s = await state(page);
+  const colour = await page.evaluate(() => getComputedStyle(document.querySelector('#hint b')).color);
+  check('an Xbox controller turns the hints into its letters', s.hint === 'APlay≡DetailsYSettings' && colour === 'rgb(127, 211, 110)', `${s.hint} ${colour}`);
+  await page.evaluate(() => window.__emit('pad', 'menu'));
+  await emit(page, 'pad-kind', known('pad_kind', 'other'));
+  s = await state(page);
+  check('other controllers keep the letters, also in Details', s.details && s.hint === 'APlayBClose', s.hint);
+  await emit(page, 'pad-kind', known('pad_kind', 'dualsense'));
+  s = await state(page);
+  check('a DualSense brings the symbols back', s.hint === '✕Play○Close', s.hint);
   await close(page);
 }
 
@@ -442,7 +454,10 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
     }),
     accessories: like(accessories, {
       headset: like(accessories.headset, { on: true, battery: 80, charge: known('charge', 'charging'), sidetone: 40, auto_off: 30 }),
-      controllers: [like(accessories.controllers[0], { id: 'bt-pad', status: { battery: 65, charge: known('charge', 'battery'), headphones: false } })],
+      controllers: [
+        like(accessories.controllers[0], { id: 'bt-pad', battery: { percent: 65, level: null, charge: known('charge', 'battery') }, headphones: false }),
+        accessories.controllers[1],
+      ],
     }),
     prefs: like(ipc('prefs'), { touchpad_mouse: false }),
   });
@@ -460,7 +475,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await idle(page);
   let v = await view();
   check('settings open on the list of sections', v.open && v.title === 'Settings' && v.rows.length === 6, JSON.stringify(v.rows));
-  check('section summaries say what is going on', v.rows[0].includes('PRO X 2 headset · 45%') && v.rows[1].includes('On · 80% · charging') && v.rows[2].includes('1 connected · 65%') && v.rows[4].includes('EA app: sign in'), JSON.stringify(v.rows));
+  check('section summaries say what is going on', v.rows[0].includes('PRO X 2 headset · 45%') && v.rows[1].includes('On · 80% · charging') && v.rows[2].includes('2 connected · 65%, medium') && v.rows[4].includes('EA app: sign in'), JSON.stringify(v.rows));
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   v = await view();
@@ -556,6 +571,15 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('ArrowDown');
   v = await view();
   check('a Bluetooth controller can be turned off', v.focus === 'Turn off', JSON.stringify(v.rows));
+  const headings = await page.evaluate(() => [...document.querySelectorAll('#settingsList h3')].map((h) => h.textContent));
+  check(
+    'an Xbox controller shows its name, connection and battery level, and nothing to turn off',
+    headings[1] === 'Controller 2 · Xbox controller · Wireless' && v.rows.at(-1) === 'BatteryMedium' && v.rows.filter((r) => r === 'Turn off').length === 1,
+    JSON.stringify({ headings, rows: v.rows })
+  );
+  await page.keyboard.press('ArrowDown');
+  v = await view();
+  check('↓ stays on the last row that can take focus', v.focus === 'Turn off', v.focus);
   await page.keyboard.press('Enter');
   await idle(page);
   v = await view();
@@ -856,6 +880,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
     ['left', 'moves to the game before', (v) => browsing(v, 0)],
     ['up', 'does nothing in the row', (v, calls) => browsing(v, 0) && v.calls.length === calls],
     ['down', 'does nothing in the row', (v, calls) => browsing(v, 0) && v.calls.length === calls],
+    ['square', 'does nothing in the row yet', (v, calls) => browsing(v, 0) && v.calls.length === calls],
     ['back', 'does nothing while no game runs', (v, calls) => browsing(v, 0) && v.calls.length === calls],
     ['menu', 'opens Details', (v) => v.details],
     ['back', 'closes Details', (v) => browsing(v, 0)],

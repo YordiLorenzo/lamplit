@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   batteryText,
+  buttonFace,
   byPlayed,
   focusIndex,
+  padBatteryText,
   playedText,
   readable,
   rowKey,
@@ -37,7 +39,7 @@ const settingsState = (extra = {}) => ({
   ...extra,
 });
 
-const { headset: headsetBase, controllers: [controllerBase] } = ipc('accessories');
+const { headset: headsetBase, controllers: [controllerBase, xboxBase] } = ipc('accessories');
 /** The headset, on battery unless `extra` says otherwise. */
 const headset = (extra = {}) =>
   like(headsetBase, { receiver: true, on: true, battery: 80, charge: known('charge', 'battery'), sidetone: 40, auto_off: 30, ...extra });
@@ -116,6 +118,27 @@ describe('batteryText', () => {
   });
 });
 
+describe('padBatteryText', () => {
+  const [dualsense, xbox] = ipc('accessories').controllers;
+  test('a percent, with the charge state', () => assert.equal(padBatteryText(dualsense.battery), '60%'));
+  test('a rough level from an Xbox-style controller', () => assert.equal(padBatteryText(xbox.battery), 'Medium'));
+  test('every level Rust sends is named', () => {
+    for (const level of values.battery_level) {
+      assert.notEqual(padBatteryText(like(xbox.battery, { level })), 'Unknown', level);
+    }
+  });
+  test('none reported', () => assert.equal(padBatteryText(null), 'Not reported over this link'));
+});
+
+describe('buttonFace', () => {
+  test('PlayStation controllers show their symbols, every other kind the Xbox letters', () => {
+    const faces = Object.fromEntries(values.pad_kind.map((kind) => [kind, buttonFace(kind, 'ok')[1]]));
+    assert.deepEqual(faces, { dualsense: '✕', playstation: '✕', xbox: 'A', other: 'A' });
+    assert.deepEqual(['back', 'triangle', 'square', 'menu'].map((b) => buttonFace('xbox', b)[1]), ['B', 'Y', 'X', '≡']);
+    assert.deepEqual(['back', 'triangle', 'square', 'menu'].map((b) => buttonFace('dualsense', b)[1]), ['○', '△', '□', '≡']);
+  });
+});
+
 describe('stepAutoOff', () => {
   test('steps through the listed times', () => {
     assert.equal(stepAutoOff(30, 1), 60);
@@ -163,12 +186,21 @@ describe('Settings sections', () => {
 });
 
 describe('Controllers', () => {
-  const pad = (bluetooth, status) => like(controllerBase, { id: bluetooth ? 'bt' : 'usb', bluetooth, status });
-  const status = (charge, headphones) => like(controllerBase.status, { battery: 60, charge: known('charge', charge), headphones });
-  const rows = (...controllers) => sectionRows('controllers', settingsState({ accessories: { headset: headset(), controllers } }));
+  /** A DualSense, with its battery and jack once a full report came (`headphones` not null). */
+  const pad = (bluetooth, headphones, charge = 'battery') =>
+    like(controllerBase, {
+      id: bluetooth ? 'bt' : 'usb',
+      connection: known('connection', bluetooth ? 'bluetooth' : 'usb'),
+      battery: headphones === null ? null : like(controllerBase.battery, { percent: 60, charge: known('charge', charge) }),
+      headphones,
+    });
+  const xbox = (connection, level) =>
+    like(xboxBase, { connection: known('connection', connection), battery: level && like(xboxBase.battery, { level: known('battery_level', level) }) });
+  const state = (...controllers) => settingsState({ accessories: { headset: headset(), controllers } });
+  const rows = (...controllers) => sectionRows('controllers', state(...controllers));
   const row = (list, label) => list.find((r) => r.label === label);
   test('headphones in a Bluetooth controller get no sound, and say so', () => {
-    const list = rows(pad(true, status('battery', true)));
+    const list = rows(pad(true, true));
     assert.deepEqual(row(list, 'Headphones'), { label: 'Headphones', value: 'Plugged in · sound needs the USB cable', tone: 'warn' });
     assert.ok(list.some((r) => r.kind === 'padoff'));
   });
@@ -176,9 +208,26 @@ describe('Controllers', () => {
     assert.equal(row(rows(pad(true, null)), 'Battery').value, 'Not reported over this link');
   });
   test('a controller on a cable can only be unplugged, not turned off', () => {
-    const list = rows(pad(false, status('charging', true)));
+    const list = rows(pad(false, true, 'charging'));
     assert.deepEqual(row(list, 'Headphones'), { label: 'Headphones', value: 'Plugged in', tone: '' });
     assert.ok(!list.some((r) => r.kind === 'padoff'));
+  });
+  test('each controller is headed with its name and connection', () => {
+    const headings = rows(pad(true, false), xbox('wireless', 'low'), xbox('usb', null)).filter((r) => r.heading).map((r) => r.heading);
+    assert.deepEqual(headings, [
+      'Controller 1 · DualSense · Bluetooth',
+      'Controller 2 · Xbox controller · Wireless',
+      'Controller 3 · Xbox controller · USB cable',
+    ]);
+  });
+  test('an Xbox-style controller has a battery row only, and no touchpad switch on its own', () => {
+    const list = rows(xbox('wireless', 'low'));
+    assert.deepEqual(list.filter((r) => !r.heading), [{ label: 'Battery', value: 'Low' }]);
+    assert.ok(rows(xbox('usb', null), pad(false, false)).some((r) => r.kind === 'touchmouse'));
+    assert.ok(rows().some((r) => r.kind === 'touchmouse'));
+  });
+  test('the summary gives each battery', () => {
+    assert.deepEqual(sectionSummary('controllers', state(pad(true, false), xbox('wireless', 'medium'), xbox('usb', null))), ['3 connected · 60%, medium, ?']);
   });
 });
 

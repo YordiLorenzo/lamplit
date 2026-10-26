@@ -10,7 +10,10 @@ const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ipc');
 /** A payload as Rust sends it. @param {string} name */
 export const ipc = (name) => JSON.parse(readFileSync(path.join(dir, `${name}.json`), 'utf8'));
 
-/** Every value of the enums the page branches on: step states, accounts, charge states, quiet states, pad steps. */
+/**
+ * Every value of the enums the page branches on: step states, accounts, charge states, quiet states, pad steps,
+ * controller kinds, connections and battery levels.
+ */
 export const values = ipc('values');
 
 /** `value`, checked against the values Rust sends for `kind` (a key of values.json). */

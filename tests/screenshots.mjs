@@ -89,7 +89,13 @@ const settings = {
   }),
   accessories_state: like(accessories, {
     headset: like(accessories.headset, { receiver: true, on: true, battery: 80, charge: known('charge', 'battery'), sidetone: 30, auto_off: 30 }),
-    controllers: [like(accessories.controllers[0], { bluetooth: true, status: { battery: 70, charge: known('charge', 'battery'), headphones: false } })],
+    controllers: [
+      like(accessories.controllers[0], {
+        connection: known('connection', 'bluetooth'),
+        battery: like(accessories.controllers[0].battery, { percent: 70, charge: known('charge', 'battery') }),
+        headphones: false,
+      }),
+    ],
   }),
   prefs_state: like(ipc('prefs'), { sound_follows: true, touchpad_mouse: true, steam_devtools: false, online_art: true }),
   display_mode: '3840 × 2160 at 120 Hz',

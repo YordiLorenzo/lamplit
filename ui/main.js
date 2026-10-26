@@ -2,7 +2,7 @@
 // Starts the page: listens to Rust's events, then fetches what happened before the page was ready.
 
 import * as api from './api.js';
-import { toast } from './hints.js';
+import { setPadKind, toast } from './hints.js';
 import { act } from './input.js';
 import { onPlay, onStep, onSummoned } from './launch.js';
 import { layout, onArt, setGames } from './library.js';
@@ -34,6 +34,7 @@ async function init() {
     }),
     api.onArt(onArt),
     api.onPad((action) => act(action, 'pad')),
+    api.onPadKind(setPadKind),
     api.onPlay(onPlay),
     api.onSummoned(onSummoned),
     api.onLaunchStep(onStep),

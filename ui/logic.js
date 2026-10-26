@@ -7,9 +7,47 @@
  * @typedef {import('./api.js').StoreKey} StoreKey
  * @typedef {import('./api.js').StoreStatus} StoreStatus
  * @typedef {import('./api.js').Charge} Charge
+ * @typedef {import('./api.js').PadKind} PadKind
+ * @typedef {import('./api.js').PadBattery} PadBattery
  * @typedef {import('./state.js').Row} Row
  * @typedef {typeof import('./state.js').state} State
  */
+
+// ---------- the button hints ----------
+
+/** @typedef {'ok' | 'back' | 'triangle' | 'square' | 'menu' | 'adjust'} HintButton */
+
+/**
+ * How each button the hints name looks, as [class, glyph]: PlayStation's symbols, or Xbox's letters, which most
+ * other controllers share.
+ * @type {Record<'playstation' | 'xbox', Record<HintButton, [string, string]>>}
+ */
+const FACES = {
+  playstation: {
+    ok: ['cross', '✕'],
+    back: ['circle', '○'],
+    triangle: ['options', '△'],
+    square: ['options', '□'],
+    menu: ['options', '≡'],
+    adjust: ['options', '↔'],
+  },
+  xbox: {
+    ok: ['xbox-a', 'A'],
+    back: ['xbox-b', 'B'],
+    triangle: ['xbox-y', 'Y'],
+    square: ['xbox-x', 'X'],
+    menu: ['options', '≡'],
+    adjust: ['options', '↔'],
+  },
+};
+
+/**
+ * The class and glyph of a button on the kind of controller in use.
+ * @param {PadKind} kind
+ * @param {HintButton} button
+ */
+export const buttonFace = (kind, button) =>
+  FACES[kind === 'dualsense' || kind === 'playstation' ? 'playstation' : 'xbox'][button];
 
 // ---------- the focused game ----------
 
@@ -81,6 +119,8 @@ export const SECTIONS = [
 /** The auto-off times the headset offers, in minutes; 0 is never. */
 const AUTO_OFF = [0, 5, 10, 15, 20, 30, 60];
 const CHARGE = { charging: 'charging', full: 'full', 'not-charging': 'not charging' };
+const LEVEL = { empty: 'Empty', low: 'Low', medium: 'Medium', full: 'Full' };
+const CONNECTION = { usb: 'USB cable', bluetooth: 'Bluetooth', wireless: 'Wireless' };
 const ACCOUNT = {
   'signed-in': ['Signed in', 'good'],
   remembered: ['Signs in when started', ''],
@@ -100,6 +140,12 @@ const storeApps = (state) => [...state.stores.values()].filter((s) => s.installe
 export function batteryText(level, charge) {
   if (level == null) return 'Unknown';
   return CHARGE[charge] ? `${level}% · ${CHARGE[charge]}` : `${level}%`;
+}
+
+/** A controller's battery: the percent, else the rough level an Xbox-style controller gives. @param {PadBattery | null} b */
+export function padBatteryText(b) {
+  if (!b) return 'Not reported over this link';
+  return b.percent != null ? batteryText(b.percent, b.charge) : LEVEL[b.level] ?? 'Unknown';
 }
 
 /**
@@ -141,7 +187,9 @@ export function sectionSummary(key, state) {
   if (key === 'controllers') {
     const pads = acc?.controllers ?? [];
     if (!pads.length) return ['None connected'];
-    const levels = pads.map((c) => (c.status ? `${c.status.battery}%` : '?')).join(', ');
+    const short = (/** @type {PadBattery | null} */ b) =>
+      b?.percent != null ? `${b.percent}%` : b?.level ? LEVEL[b.level].toLowerCase() : '?';
+    const levels = pads.map((c) => short(c.battery)).join(', ');
     return [`${pads.length} connected · ${levels}`];
   }
   if (key === 'popups') {
@@ -197,15 +245,20 @@ export function sectionRows(key, state) {
     }
   } else if (key === 'controllers') {
     const pads = acc?.controllers ?? [];
-    rows.push({ kind: 'touchmouse', label: 'Touchpad as mouse (not over games)', value: onOff(prefs?.touchpad_mouse) });
+    // The touchpad is a DualSense's; the switch stays while no controller is connected, to change it beforehand.
+    if (!pads.length || pads.some((c) => c.kind === 'dualsense')) {
+      rows.push({ kind: 'touchmouse', label: 'Touchpad as mouse (not over games)', value: onOff(prefs?.touchpad_mouse) });
+    }
     if (!pads.length) rows.push({ label: 'No controller connected', value: '' });
     pads.forEach((c, i) => {
-      rows.push({ heading: `Controller ${i + 1} · ${c.bluetooth ? 'Bluetooth' : 'USB cable'}` });
-      rows.push({ label: 'Battery', value: c.status ? batteryText(c.status.battery, c.status.charge) : 'Not reported over this link' });
-      const jack = c.status?.headphones;
-      const where = !jack ? 'Not plugged in' : c.bluetooth ? 'Plugged in · sound needs the USB cable' : 'Plugged in';
-      rows.push({ label: 'Headphones', value: where, tone: jack && c.bluetooth ? 'warn' : '' });
-      if (c.bluetooth) rows.push({ kind: 'padoff', id: c.id, label: 'Turn off', value: '' });
+      rows.push({ heading: `Controller ${i + 1} · ${c.name} · ${CONNECTION[c.connection] ?? c.connection}` });
+      rows.push({ label: 'Battery', value: padBatteryText(c.battery) });
+      if (c.kind !== 'dualsense') return;
+      const bluetooth = c.connection === 'bluetooth';
+      const jack = c.headphones;
+      const where = !jack ? 'Not plugged in' : bluetooth ? 'Plugged in · sound needs the USB cable' : 'Plugged in';
+      rows.push({ label: 'Headphones', value: where, tone: jack && bluetooth ? 'warn' : '' });
+      if (bluetooth) rows.push({ kind: 'padoff', id: c.id, label: 'Turn off', value: '' });
     });
   } else if (key === 'popups') {
     const { nvidia_overlay: installed, nvidia_stats: on } = state.overlays;

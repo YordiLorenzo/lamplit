@@ -3,8 +3,19 @@
   "controllers": [
     {
       "id": "\\\\?\\hid#{00001124-0000-1000-8000-00805f9b34fb}_vid&0002054c_pid&0ce6",
-      "bluetooth": true,
-      "status": { "battery": 60, "charge": "battery", "headphones": false }
+      "kind": "dualsense",
+      "name": "DualSense",
+      "connection": "bluetooth",
+      "battery": { "percent": 60, "level": null, "charge": "battery" },
+      "headphones": false
+    },
+    {
+      "id": "xinput:0",
+      "kind": "xbox",
+      "name": "Xbox controller",
+      "connection": "wireless",
+      "battery": { "percent": null, "level": "medium", "charge": null },
+      "headphones": null
     }
   ]
 }
