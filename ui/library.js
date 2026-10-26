@@ -305,13 +305,12 @@ export function showRow(keep = null) {
  * @param {string} id
  */
 export function focusGame(id) {
-  if (!byId(id)) return;
-  if (!state.games.some((g) => g.id === id)) {
+  const k = state.games.findIndex((g) => g.id === id);
+  if (k >= 0) state.idx = k;
+  else if (byId(id)) {
     state.find = { ...state.find, query: '', store: null };
     showRow(id);
   }
-  const k = state.games.findIndex((g) => g.id === id);
-  if (k >= 0) state.idx = k;
 }
 
 /** ○ on a narrowed row: every game again, still on the focused one. */
