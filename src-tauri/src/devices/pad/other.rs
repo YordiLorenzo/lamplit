@@ -22,6 +22,9 @@ use windows::Gaming::Input::{GameControllerButtonLabel, GameControllerSwitchPosi
 use windows::System::Power::BatteryStatus;
 
 const VALVE: u16 = 0x28DE;
+/// Microsoft's controllers from this product id on are Xbox ones (the first Xbox controller is 0x0202). The SideWinder
+/// controllers below it are DirectInput controllers, which XInput can't read.
+const FIRST_XBOX: u16 = 0x0200;
 
 /// The controllers being read.
 #[derive(Default)]
@@ -167,9 +170,9 @@ fn connected() -> windows::core::Result<Vec<(String, RawGameController)>> {
 }
 
 /// Controllers read another way, told by their USB ids: a DualSense over HID, Valve's, which are Steam Input's own
-/// (its virtual controllers among them), and Microsoft's, which are Xbox controllers that XInput reads.
+/// (its virtual controllers among them), and Microsoft's Xbox controllers, which XInput reads.
 fn read_elsewhere(vendor: u16, product: u16) -> bool {
-    dualsense::is(vendor, product) || vendor == VALVE || vendor == xbox::MICROSOFT
+    dualsense::is(vendor, product) || vendor == VALVE || (vendor == xbox::MICROSOFT && product >= FIRST_XBOX)
 }
 
 /// Which button index is which. None for a button the controller doesn't have, or Windows doesn't name.
@@ -358,10 +361,14 @@ mod tests {
 
     #[test]
     fn controllers_read_another_way_are_left_out_by_their_ids() {
+        // An Xbox Wireless Controller, an Xbox 360 controller, Steam Input's virtual one, a DualSense.
         assert!(read_elsewhere(0x045E, 0x0B13));
+        assert!(read_elsewhere(0x045E, 0x028E));
         assert!(read_elsewhere(0x28DE, 0x11FF));
         assert!(read_elsewhere(dualsense::SONY, 0x0CE6));
-        // A DualShock 4, a Switch Pro Controller, an 8BitDo pad (left out only while XInput holds it: xbox.rs).
+        // A SideWinder Force Feedback 2, which XInput can't read, a DualShock 4, a Switch Pro Controller, an 8BitDo pad
+        // (left out only while XInput holds it: xbox.rs).
+        assert!(!read_elsewhere(0x045E, 0x001B));
         assert!(!read_elsewhere(dualsense::SONY, 0x09CC));
         assert!(!read_elsewhere(0x057E, 0x2009));
         assert!(!read_elsewhere(0x2DC8, 0x3106));
