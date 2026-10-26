@@ -1373,9 +1373,33 @@ const findView = (page) =>
   await page.evaluate(() => window.dispatchEvent(new Event('blur')));
   d = await drift();
   check('another window in front holds the art still', d.still && d.play === 'paused', JSON.stringify(d));
+  // The pointer passing over Lamplit behind another window mustn't start it again.
+  await page.evaluate(() => {
+    document.hasFocus = () => false;
+    window.dispatchEvent(new Event('blur'));
+  });
+  await page.mouse.move(400, 300);
+  await page.mouse.move(600, 400);
+  d = await drift();
+  check('the pointer over Lamplit behind another window leaves the art still', d.still && d.play === 'paused', JSON.stringify(d));
+  await page.evaluate(() => {
+    document.hasFocus = () => true;
+  });
   await page.keyboard.press('ArrowRight');
   d = await drift();
   check('a press moves the art again', !d.still && d.play === 'running', JSON.stringify(d));
+  await close(page);
+}
+
+// 27. A key Steam mirrors and the pad's own press count once, but a real second press right after still counts.
+{
+  const page = await open({ games: [game(1), game(2), game(3), game(4)] });
+  await page.waitForTimeout(2100);
+  await page.keyboard.press('ArrowRight');
+  await emit(page, 'pad', 'right');
+  await emit(page, 'pad', 'right');
+  const s = await state(page);
+  check('a mirrored key counts once, and the next real press after it still moves', s.focusIndex === 2, `focus ${s.focusIndex}`);
   await close(page);
 }
 

@@ -53,7 +53,11 @@ export function act(action, source) {
   const now = performance.now();
   if (source === 'pad') {
     state.lastPad = now;
-    if (action === lastKey.action && now - lastKey.at < MIRROR_MS) return;
+    if (action === lastKey.action && now - lastKey.at < MIRROR_MS) {
+      // That key had one press behind it: a second press right after is a real one.
+      lastKey = { action: '', at: 0 };
+      return;
+    }
   } else if (source === 'key') {
     if (padInUse()) return;
     lastKey = { action, at: now };
@@ -170,7 +174,8 @@ window.addEventListener('contextmenu', (e) => e.preventDefault());
 // The mouse pointer shows while the mouse moves, and hides again after two seconds.
 let pointerTimer = 0;
 window.addEventListener('mousemove', () => {
-  stir();
+  // A window behind another one still gets the pointer passing over it, which mustn't start the drift again.
+  if (document.hasFocus()) stir();
   document.body.classList.add('pointer');
   clearTimeout(pointerTimer);
   pointerTimer = setTimeout(() => document.body.classList.remove('pointer'), 2000);
