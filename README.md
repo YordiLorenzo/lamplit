@@ -63,10 +63,11 @@ while you play. When the game closes, Lamplit is back on screen.
 ### Sound and accessories
 
 - **Sound settings on the TV:** choose the output and the microphone, change the volume, mute either.
-- **Sound that follows you.** Turn the headset on and the sound moves to it. Plug headphones into a controller on a
-  USB cable and the sound moves there. When they go, it moves back. This is on by default.
-- **Logitech G PRO X 2 LIGHTSPEED:** whether it is on, its battery, sidetone (how much of your own voice you hear)
-  and its auto-off timer.
+- **Sound that follows you.** Turn the PRO X 2 headset on and the sound moves to it. Plug headphones into a
+  controller on a USB cable and the sound moves there. When they go, it moves back. This is on by default.
+- **Headset settings, for the Logitech G PRO X 2 LIGHTSPEED only (for now):** whether it is on, its battery,
+  sidetone (how much of your own voice you hear) and its auto-off timer. Other headsets work as normal Windows sound
+  devices.
 - **DualSense:** battery, whether headphones are plugged in, and Turn off for a controller on Bluetooth.
 - **The touchpad as a mouse,** for store apps and Windows dialogs. One finger moves the pointer, pressing the left
   or right half of the pad clicks, two fingers scroll. Off by default, and never active over a full-screen game.
@@ -128,11 +129,14 @@ but hasn't been tested. Xbox, Switch and other controllers aren't read yet (see 
 
 ### Headset
 
-The Logitech G PRO X 2 LIGHTSPEED, through its USB receiver (USB id `046D:0AF7`). Lamplit talks to the receiver
-directly, so G HUB isn't needed; it can run alongside. The headset support follows the protocol notes of
-HeadsetControl and Solaar, and the battery, sidetone and auto-off controls haven't been confirmed on a real headset
-yet. If you own one, an issue with the `headset:` lines from `lamplit.log` helps. The protocol is written up in
-[docs/accessories.md](docs/accessories.md).
+One headset is supported for now: the Logitech G PRO X 2 LIGHTSPEED, through its USB receiver (USB id `046D:0AF7`).
+Lamplit implements the receiver's protocol (Logitech's Centurion protocol) for it: it knows when the headset turns on
+or off, reads the battery and charging state, and changes sidetone and the auto-off timer. It talks to the receiver
+directly, so G HUB isn't needed, and both can run side by side. If something doesn't behave, an issue with the
+`headset:` lines from `lamplit.log` helps.
+
+Any other headset works as an ordinary Windows sound device: pick it in Settings > Sound. Support for more headsets
+is welcome; [docs/accessories.md](docs/accessories.md) shows how the PRO X 2 protocol is handled.
 
 ### PC
 
