@@ -329,6 +329,11 @@ const state = (page) =>
   s = await state(page);
   check('a DualSense brings the symbols back', s.hint === '✕Play○Close', s.hint);
   await close(page);
+  // Rust reads the controllers before the page listens: the page asks which kind was used last.
+  const early = await open({ games: [game(1), game(2)], padKind: known('pad_kind', 'xbox') });
+  s = await state(early);
+  check('the hints start in the letters of a controller used before the page listened', s.hint === 'APlay≡DetailsYSettings', s.hint);
+  await close(early);
 }
 
 // 9. 300 games with long names: layout at 1080p and 4K, no horizontal scroll, and with PERF=1 the speed of moving.

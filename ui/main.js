@@ -27,6 +27,7 @@ async function init() {
   tickClock();
   setInterval(tickClock, 5000);
   let heardGames = false;
+  let heardKind = false;
   await Promise.all([
     api.onGames((games) => {
       heardGames = true;
@@ -34,7 +35,10 @@ async function init() {
     }),
     api.onArt(onArt),
     api.onPad((action) => act(action, 'pad')),
-    api.onPadKind(setPadKind),
+    api.onPadKind((kind) => {
+      heardKind = true;
+      setPadKind(kind);
+    }),
     api.onPlay(onPlay),
     api.onSummoned(onSummoned),
     api.onLaunchStep(onStep),
@@ -43,11 +47,18 @@ async function init() {
     api.onNotice(toast),
     api.onSetup(setSetup),
   ]);
-  const [list, running, stores] = await Promise.all([api.libraryGames(), api.launchRunning(), api.storesStatus()]);
+  const [list, running, stores, kind] = await Promise.all([
+    api.libraryGames(),
+    api.launchRunning(),
+    api.storesStatus(),
+    api.controllerKind(),
+  ]);
   state.running = running;
   setStores(stores);
   // A "games" event that arrived while this answer was on its way is at least as new, with later art applied to it.
   if (list && !heardGames) setGames(list);
+  // The controllers were read before the page listened; a "pad-kind" event since is newer than this answer.
+  if (kind && !heardKind) setPadKind(kind);
   api.log.info(`ready ${Math.round(performance.now())} ms after the page started, ${list?.length ?? 'no'} games yet`);
 }
 

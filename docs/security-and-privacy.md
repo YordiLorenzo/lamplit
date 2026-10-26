@@ -91,8 +91,9 @@ NVIDIA's overlay notifications aren't covered; switch those off in NVIDIA's over
   full-screen game).
 - Lamplit only reads the controllers and the headset receiver. It never changes a controller's mode, lights or
   rumble. A DualSense is read over HID, Xbox-style controllers through XInput and others through
-  Windows.Gaming.Input; none of these takes a controller from a game or from Steam Input, or changes what they see. On the headset it changes only what you change in Settings (sidetone and the auto-off timer), and those
-  settings are stored on the headset.
+  Windows.Gaming.Input; none of these takes a controller from a game or from Steam Input, or changes what they see.
+  On the headset it changes only what you change in Settings (sidetone and the auto-off timer), and those settings
+  are stored on the headset.
 
 ## What Lamplit does to other apps
 

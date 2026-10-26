@@ -147,6 +147,7 @@ message is written for the player, and the page shows it.
 | `accessories_state` | | The headset and the controllers |
 | `headset_set` | `setting` (`sidetone` or `auto-off`), `value` | The headset's state, read back |
 | `controller_turn_off` | `id` | Nothing |
+| `controller_kind` | | The kind of controller used last (`dualsense`, `playstation`, `xbox`, `other`), or `null` before any was |
 | `prefs_state` | | The prefs |
 | `prefs_set_sound_follows`, `prefs_set_touchpad_mouse`, `prefs_set_steam_devtools`, `prefs_set_online_art` | `on` | The prefs after the change |
 | `display_mode` | | The screen's mode, such as `3840 × 2160 at 120 Hz` |

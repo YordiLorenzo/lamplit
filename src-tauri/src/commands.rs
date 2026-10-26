@@ -5,7 +5,7 @@
 // in `blocking`, on Tauri's thread pool for blocking work.
 
 use crate::devices::headset::{self, Headset};
-use crate::devices::pad::Controllers;
+use crate::devices::pad::{self, Controllers};
 use crate::devices::{accessories, audio};
 use crate::error::{Error, Result};
 use crate::launch::{self, Launcher};
@@ -156,6 +156,12 @@ pub async fn controller_turn_off(app: AppHandle, id: String) -> Result<()> {
         Ok(())
     })
     .await?
+}
+
+/// The kind of controller used last, None before any was; `pad-kind` events follow when it changes.
+#[tauri::command]
+pub fn controller_kind() -> Option<pad::Kind> {
+    pad::last_kind()
 }
 
 #[tauri::command]

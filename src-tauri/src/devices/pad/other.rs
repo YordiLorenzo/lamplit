@@ -1,21 +1,25 @@
-// Other controllers (a DualShock 4, a Switch Pro Controller, a plain USB pad) through Windows.Gaming.Input's
-// RawGameController, which reads any controller Windows knows without taking it from anyone. Windows hands its input
-// only to the program in front, so these controllers move around Lamplit but can't bring it over a game.
+// Other controllers (a DualShock 4, a Switch Pro Controller, a plain USB pad) through Windows.Gaming.Input, which
+// reads any controller Windows knows without taking it from anyone. Windows hands its input only to the program in
+// front, so these controllers move around Lamplit but can't bring it over a game.
 //
 // Controllers read another way are left out: the DualSense (over HID), Xbox-style ones (XInput, which reads them
-// behind a game too; Windows.Gaming.Input knows them as gamepads), and Valve's, which are Steam Input's own.
+// behind a game too), and Valve's, which are Steam Input's own. Windows.Gaming.Input knows the Xbox-style ones as
+// gamepads, but a driver can make another controller a gamepad too, so a gamepad is left out only while XInput has
+// it; otherwise it is read as a gamepad, whose buttons have names.
 //
-// RawGameController numbers the buttons without saying which is which. Lamplit takes the order most DirectInput
-// controllers use, the DualShock 4's and Logitech's among them.
+// Any other controller comes as a RawGameController, which numbers the buttons without saying which is which.
+// Lamplit takes the order most DirectInput controllers use, the DualShock 4's and Logitech's among them.
 
 use super::navigation::{Action, Dir, Input, Navigation};
-use super::{Battery, Connection, Controller, Kind, dualsense};
+use super::{Battery, Connection, Controller, Kind, dualsense, xbox};
 use crate::devices::Charge;
 use crate::launch::window;
 use std::collections::HashSet;
 use std::time::Instant;
 use tauri::AppHandle;
-use windows::Gaming::Input::{GameControllerSwitchPosition, Gamepad, RawGameController};
+use windows::Gaming::Input::{
+    GameControllerSwitchPosition, Gamepad, GamepadButtons, GamepadReading, RawGameController,
+};
 use windows::System::Power::BatteryStatus;
 
 const VALVE: u16 = 0x28DE;
@@ -34,6 +38,8 @@ struct Pad {
     id: String,
     kind: Kind,
     raw: RawGameController,
+    /// Some for a gamepad XInput doesn't have, which is read with its buttons by name.
+    gamepad: Option<Gamepad>,
     buttons: Vec<bool>,
     switches: Vec<GameControllerSwitchPosition>,
     axes: Vec<f64>,
@@ -42,8 +48,9 @@ struct Pad {
 }
 
 impl Others {
-    /// Looks for controllers that came or went, and how full the batteries are.
-    pub fn look(&mut self, app: &AppHandle) {
+    /// Looks for controllers that came or went, and how full the batteries are. A gamepad is read here only while
+    /// `xbox` doesn't read it, which can change from one look to the next.
+    pub fn look(&mut self, app: &AppHandle, xbox: &xbox::Slots) {
         let found = match connected() {
             Ok(found) => {
                 self.failed = false;
@@ -65,47 +72,61 @@ impl Others {
         });
         self.left_out.retain(|id| found.iter().any(|(found, _)| found == id));
         for (id, raw) in found {
-            if self.pads.iter().any(|pad| pad.id == id) {
-                super::set_battery(app, &id, battery(&raw));
-                continue;
-            }
-            if self.left_out.contains(&id) {
-                continue;
-            }
             let (vendor, product) = (raw.HardwareVendorId().unwrap_or(0), raw.HardwareProductId().unwrap_or(0));
-            let name = raw.DisplayName().map(|n| n.to_string()).unwrap_or_default();
-            let gamepad = Gamepad::FromGameController(&raw).is_ok();
-            if left_out(vendor, product, gamepad) {
-                log::info!("controller: {name} ({vendor:04X}:{product:04X}) is read another way, or by Steam");
-                self.left_out.insert(id);
-                continue;
+            let gamepad = Gamepad::FromGameController(&raw).ok();
+            let elsewhere = read_elsewhere(vendor, product, gamepad.is_some(), xbox.reads(vendor, product));
+            let listed = self.pads.iter().position(|pad| pad.id == id);
+            match (listed, elsewhere) {
+                (Some(_), false) => super::set_battery(app, &id, battery(&raw)),
+                (Some(at), true) => {
+                    log::info!("controller: {vendor:04X}:{product:04X} is read through XInput now");
+                    super::unlist(app, &self.pads.swap_remove(at).id);
+                    self.left_out.insert(id);
+                }
+                (None, true) => {
+                    if self.left_out.insert(id) {
+                        let name = raw.DisplayName().map(|n| n.to_string()).unwrap_or_default();
+                        log::info!("controller: {name} ({vendor:04X}:{product:04X}) is read another way, or by Steam");
+                    }
+                }
+                (None, false) => {
+                    self.left_out.remove(&id);
+                    self.add(app, id, raw, gamepad, (vendor, product));
+                }
             }
-            let count = |n: windows::core::Result<i32>| n.ok().and_then(|n| usize::try_from(n).ok()).unwrap_or(0);
-            let pad = Pad {
-                id: id.clone(),
-                kind: if vendor == dualsense::SONY { Kind::PlayStation } else { Kind::Other },
-                buttons: vec![false; count(raw.ButtonCount())],
-                switches: vec![GameControllerSwitchPosition::Center; count(raw.SwitchCount())],
-                axes: vec![0.5; count(raw.AxisCount())],
-                navigation: None,
-                raw,
-            };
-            log::info!("controller: {name} ({vendor:04X}:{product:04X}) through Windows.Gaming.Input");
-            let wireless = pad.raw.IsWireless().unwrap_or(false);
-            super::list(
-                app,
-                Controller {
-                    id,
-                    kind: pad.kind,
-                    name: if name.trim().is_empty() { "Controller".into() } else { name },
-                    connection: if wireless { Connection::Wireless } else { Connection::Usb },
-                    battery: battery(&pad.raw),
-                    headphones: None,
-                    address: None,
-                },
-            );
-            self.pads.push(pad);
         }
+    }
+
+    fn add(&mut self, app: &AppHandle, id: String, raw: RawGameController, gamepad: Option<Gamepad>, ids: (u16, u16)) {
+        let name = raw.DisplayName().map(|n| n.to_string()).unwrap_or_default();
+        let (vendor, product) = ids;
+        let way = if gamepad.is_some() { "a gamepad" } else { "a raw controller" };
+        log::info!("controller: {name} ({vendor:04X}:{product:04X}) through Windows.Gaming.Input, as {way}");
+        let count = |n: windows::core::Result<i32>| n.ok().and_then(|n| usize::try_from(n).ok()).unwrap_or(0);
+        let wireless = raw.IsWireless().unwrap_or(false);
+        let kind = if vendor == dualsense::SONY { Kind::PlayStation } else { Kind::Other };
+        super::list(
+            app,
+            Controller {
+                id: id.clone(),
+                kind,
+                name: if name.trim().is_empty() { "Controller".into() } else { name },
+                connection: if wireless { Connection::Wireless } else { Connection::Usb },
+                battery: battery(&raw),
+                headphones: None,
+                address: None,
+            },
+        );
+        self.pads.push(Pad {
+            id,
+            kind,
+            buttons: vec![false; count(raw.ButtonCount())],
+            switches: vec![GameControllerSwitchPosition::Center; count(raw.SwitchCount())],
+            axes: vec![0.5; count(raw.AxisCount())],
+            raw,
+            gamepad,
+            navigation: None,
+        });
     }
 
     /// Reads each controller once while Lamplit is in front: the steps its buttons make by `now`.
@@ -117,10 +138,16 @@ impl Others {
                 pad.navigation = None;
                 continue;
             }
-            if pad.raw.GetCurrentReading(&mut pad.buttons, &mut pad.switches, &mut pad.axes).is_err() {
-                continue;
-            }
-            let input = input(&pad.buttons, pad.switches.first().copied(), &pad.axes);
+            let input = match &pad.gamepad {
+                Some(gamepad) => match gamepad.GetCurrentReading() {
+                    Ok(reading) => gamepad_input(&reading),
+                    Err(_) => continue,
+                },
+                None => match pad.raw.GetCurrentReading(&mut pad.buttons, &mut pad.switches, &mut pad.axes) {
+                    Ok(_) => input(&pad.buttons, pad.switches.first().copied(), &pad.axes),
+                    Err(_) => continue,
+                },
+            };
             let navigation = pad.navigation.get_or_insert_with(|| Navigation::starting_from(input));
             let steps = navigation.update(input, now).into_iter().chain(navigation.tick(now));
             actions.extend(steps.map(|action| (pad.kind, action)));
@@ -145,10 +172,41 @@ fn connected() -> windows::core::Result<Vec<(String, RawGameController)>> {
         .collect()
 }
 
-/// Controllers read another way: a DualSense over HID, an Xbox-style controller (`gamepad`) through XInput, and
-/// Valve's, which are Steam Input's own (its virtual controllers among them).
-fn left_out(vendor: u16, product: u16, gamepad: bool) -> bool {
-    gamepad || vendor == VALVE || dualsense::is(vendor, product)
+/// Controllers read another way: a DualSense over HID, Valve's, which are Steam Input's own (its virtual controllers
+/// among them), and a gamepad XInput reads (`in_xinput`), which Microsoft's always are.
+fn read_elsewhere(vendor: u16, product: u16, gamepad: bool, in_xinput: bool) -> bool {
+    dualsense::is(vendor, product) || vendor == VALVE || (gamepad && (vendor == xbox::MICROSOFT || in_xinput))
+}
+
+/// A gamepad's buttons, by name as on an Xbox controller, and the d-pad or else the left stick (whose y grows away
+/// from the player).
+fn gamepad_input(reading: &GamepadReading) -> Input {
+    let down = |button: GamepadButtons| reading.Buttons.contains(button);
+    // A diagonal is sideways, as on the DualSense.
+    let dpad = if down(GamepadButtons::DPadLeft) {
+        Some(Dir::Left)
+    } else if down(GamepadButtons::DPadRight) {
+        Some(Dir::Right)
+    } else if down(GamepadButtons::DPadUp) {
+        Some(Dir::Up)
+    } else if down(GamepadButtons::DPadDown) {
+        Some(Dir::Down)
+    } else {
+        None
+    };
+    let stick = Dir::of_stick(reading.LeftThumbstickX as f32, -reading.LeftThumbstickY as f32);
+    Input {
+        dir: dpad.or(stick),
+        south: down(GamepadButtons::A),
+        east: down(GamepadButtons::B),
+        west: down(GamepadButtons::X),
+        north: down(GamepadButtons::Y),
+        l1: down(GamepadButtons::LeftShoulder),
+        r1: down(GamepadButtons::RightShoulder),
+        menu: down(GamepadButtons::Menu),
+        view: down(GamepadButtons::View),
+        home: false,
+    }
 }
 
 /// Buttons in the order most DirectInput controllers send them: west (Square, X), south (Cross, A), east (Circle,
@@ -249,12 +307,33 @@ mod tests {
 
     #[test]
     fn controllers_read_another_way_are_left_out() {
-        assert!(left_out(0x045E, 0x0B13, true));
-        assert!(left_out(0x28DE, 0x11FF, false));
-        assert!(left_out(dualsense::SONY, 0x0CE6, false));
+        // Gamepads: Microsoft's always, others while XInput reads them.
+        assert!(read_elsewhere(0x045E, 0x0B13, true, false));
+        assert!(read_elsewhere(0x2DC8, 0x3106, true, true));
+        assert!(!read_elsewhere(0x2DC8, 0x3106, true, false));
+        assert!(read_elsewhere(0x28DE, 0x11FF, false, false));
+        assert!(read_elsewhere(dualsense::SONY, 0x0CE6, false, false));
         // A DualShock 4, a Switch Pro Controller.
-        assert!(!left_out(dualsense::SONY, 0x09CC, false));
-        assert!(!left_out(0x057E, 0x2009, false));
+        assert!(!read_elsewhere(dualsense::SONY, 0x09CC, false, false));
+        assert!(!read_elsewhere(0x057E, 0x2009, false, false));
+    }
+
+    #[test]
+    fn a_gamepad_by_its_button_names() {
+        let reading = |buttons, x, y| GamepadReading {
+            Buttons: buttons,
+            LeftThumbstickX: x,
+            LeftThumbstickY: y,
+            ..GamepadReading::default()
+        };
+        let i =
+            gamepad_input(&reading(GamepadButtons::A | GamepadButtons::View | GamepadButtons::RightShoulder, 0.0, 0.0));
+        assert!(i.south && i.view && i.r1 && !i.east && !i.menu && i.dir.is_none());
+        let i = gamepad_input(&reading(GamepadButtons::X | GamepadButtons::Y | GamepadButtons::Menu, 0.0, 0.0));
+        assert!(i.west && i.north && i.menu && !i.south);
+        assert_eq!(gamepad_input(&reading(GamepadButtons::DPadUp, 1.0, 0.0)).dir, Some(Dir::Up));
+        assert_eq!(gamepad_input(&reading(GamepadButtons::None, 0.0, 1.0)).dir, Some(Dir::Up));
+        assert_eq!(gamepad_input(&reading(GamepadButtons::None, 0.0, -1.0)).dir, Some(Dir::Down));
     }
 
     #[test]

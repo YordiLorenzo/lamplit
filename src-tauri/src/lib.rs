@@ -121,6 +121,7 @@ pub fn run() {
             commands::accessories_state,
             commands::headset_set,
             commands::controller_turn_off,
+            commands::controller_kind,
             commands::prefs_state,
             commands::prefs_set_sound_follows,
             commands::prefs_set_touchpad_mouse,

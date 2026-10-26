@@ -20,7 +20,7 @@ use windows::Win32::UI::Input::XboxController::{
     XINPUT_GAMEPAD_START, XINPUT_GAMEPAD_X, XINPUT_GAMEPAD_Y,
 };
 
-const MICROSOFT: u16 = 0x045E;
+pub const MICROSOFT: u16 = 0x045E;
 /// Steam Input's virtual controller: Valve's vendor id, as SDL tells it apart.
 const STEAM_VIRTUAL: (u16, u16) = (0x28DE, 0x11FF);
 
@@ -84,6 +84,11 @@ impl Slots {
     /// A controller is being read, so it is worth asking often.
     pub fn reading(&self) -> bool {
         self.0.iter().flatten().any(|p| !p.steam)
+    }
+
+    /// A controller with these USB ids is read here. When a slot's ids are unknown, it could be any.
+    pub fn reads(&self, vendor: u16, product: u16) -> bool {
+        self.0.iter().flatten().any(|p| !p.steam && p.ids.is_none_or(|ids| ids == (vendor, product)))
     }
 }
 
@@ -193,6 +198,18 @@ mod tests {
         assert_eq!(dir(none, -20000, 5000), Some(Dir::Left));
         // Resting, or inside the dead zone.
         assert_eq!(dir(none, 12000, -12000), None);
+    }
+
+    #[test]
+    fn which_controllers_xinput_reads() {
+        let pad = |ids, steam| Some(Pad { ids, steam, navigation: Navigation::default() });
+        let slots = Slots([pad(Some((0x2DC8, 0x3106)), false), pad(Some(STEAM_VIRTUAL), true), None, None]);
+        assert!(slots.reads(0x2DC8, 0x3106));
+        assert!(!slots.reads(0x057E, 0x2009));
+        // Steam Input's virtual controller isn't read.
+        assert!(!slots.reads(STEAM_VIRTUAL.0, STEAM_VIRTUAL.1));
+        // A slot whose ids are unknown could hold any controller.
+        assert!(Slots([None, pad(None, false), None, None]).reads(0x057E, 0x2009));
     }
 
     #[test]

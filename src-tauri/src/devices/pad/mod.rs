@@ -311,7 +311,7 @@ fn poll(app: &AppHandle) {
         let now = Instant::now();
         if now >= look_at {
             xbox.look(app);
-            others.look(app);
+            others.look(app, &xbox);
             look_at = now + LOOK_EVERY;
         }
         let xbox_actions = xbox.read(app, now).into_iter().map(|action| (Kind::Xbox, action));
@@ -325,6 +325,12 @@ fn poll(app: &AppHandle) {
 
 /// The kind of controller that did something last. The page shows its button names, so it hears of a change.
 static LAST_KIND: Mutex<Option<Kind>> = Mutex::new(None);
+
+/// The kind of controller used last, None before any was. The controllers are read before the page listens, so it
+/// asks once it does.
+pub fn last_kind() -> Option<Kind> {
+    *LAST_KIND.lock()
+}
 
 fn act(app: &AppHandle, kind: Kind, action: Action) {
     if LAST_KIND.lock().replace(kind) != Some(kind) {

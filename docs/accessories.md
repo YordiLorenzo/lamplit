@@ -119,8 +119,10 @@ empty slots every 2 seconds, since asking an empty slot is slow. It never calls 
 
 Every other controller Windows knows comes through `RawGameController` (Windows.Gaming.Input), with its name
 (`DisplayName`), whether it is wireless, and a battery report when it has one. Lamplit leaves out controllers it reads
-another way: those Windows.Gaming.Input also offers as a `Gamepad` (the Xbox-style ones, read through XInput), the
-DualSense, and Valve's (Steam Input's own).
+another way: the DualSense, Valve's (Steam Input's own), and the Xbox-style ones, which Windows.Gaming.Input also
+offers as a `Gamepad`. A driver can make another controller a `Gamepad` too, without an XInput slot, so a gamepad is
+left out only while it is Microsoft's or XInput has a controller with its USB ids; otherwise Lamplit reads it as a
+`Gamepad`, whose buttons have names.
 
 - Windows hands Windows.Gaming.Input's input only to the program in front, so these controllers are read only while
   Lamplit is, and reading starts over each time it comes back, so a button already held isn't a press.

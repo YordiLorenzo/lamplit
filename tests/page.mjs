@@ -24,7 +24,8 @@ export const commands = Object.fromEntries(rust().defined);
 // event with a pad step, controller kind, step state or account Rust never sends (tests/ipc/values.json) is a mistake
 // in the test.
 // earlyGames: a 'games' event brings this list while the answer to library_games (`games`) is still on its way.
-const fakeTauri = ({ games, running = null, launchError = null, earlyGames = null }) => `
+// padKind: the kind of controller Rust says was used last, before the page listened.
+const fakeTauri = ({ games, running = null, launchError = null, earlyGames = null, padKind = null }) => `
   const commands = ${JSON.stringify(commands)};
   const values = ${JSON.stringify(values)};
   const sent = {
@@ -41,7 +42,12 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
   window.addEventListener('error', (e) => window.__errors.push(String(e.message)));
   document.addEventListener('securitypolicyviolation', (e) =>
     window.__errors.push('CSP blocked ' + e.blockedURI + ' (' + e.violatedDirective + ')'));
-  const replies = { library_games: ${JSON.stringify(games)}, launch_running: ${JSON.stringify(running)}, stores_status: [] };
+  const replies = {
+    library_games: ${JSON.stringify(games)},
+    launch_running: ${JSON.stringify(running)},
+    stores_status: [],
+    controller_kind: ${JSON.stringify(padKind)},
+  };
   const early = ${JSON.stringify(earlyGames)};
   window.__TAURI__ = {
     core: {

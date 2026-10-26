@@ -233,6 +233,8 @@ export const accessoriesState = () => call('accessories_state');
 export const headsetSet = (setting, value) => call('headset_set', { setting, value });
 /** @param {string} id @returns {Promise<void>} */
 export const controllerTurnOff = (id) => call('controller_turn_off', { id });
+/** @returns {Promise<PadKind | null>} the kind of controller used last, null before any was */
+export const controllerKind = () => call('controller_kind');
 /** @returns {Promise<Prefs>} */
 export const prefsState = () => call('prefs_state');
 /** @param {boolean} on @returns {Promise<Prefs>} */
