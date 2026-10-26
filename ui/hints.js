@@ -5,11 +5,20 @@
 import { buttonFace, detailChoices, narrowed } from './logic.js';
 import { actionableStep, els, focused, state, storeName } from './state.js';
 
+/**
+ * The PlayStation symbols as drawn shapes (index.html): as text, each font puts ✕, △, □ and ≡ at its own size and
+ * height, so they sat off-centre in their circles. Letters stay text.
+ * @type {Record<string, string>}
+ */
+const SHAPES = { '✕': 'btn-cross', '○': 'btn-circle', '△': 'btn-triangle', '□': 'btn-square', '≡': 'btn-menu', '↔': 'btn-adjust' };
+
 export function showHints() {
   /** @param {import('./logic.js').HintButton} button @param {string} label */
   const b = (button, label) => {
     const [cls, glyph] = buttonFace(state.padKind, button);
-    return `<span><b class="${cls}">${glyph}</b>${label}</span>`;
+    // The glyph stays in the text, hidden, for screen readers.
+    const face = SHAPES[glyph] ? `<svg aria-hidden="true"><use href="#${SHAPES[glyph]}"/></svg><i>${glyph}</i>` : glyph;
+    return `<span><b class="${cls}">${face}</b>${label}</span>`;
   };
   const g = focused();
   let html = '';

@@ -479,7 +479,11 @@ body.launching .cover.focus { scale: 1.1; }
   background: rgb(255 255 255 / .12);
   font-size: 1.8vh;
   font-weight: 700;
+  line-height: 1;
 }
+#hint b svg { width: 2vh; height: 2vh; }
+/* The symbol as text, for screen readers: the drawn shape shows instead. */
+#hint b i { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 #hint b.cross { color: #8fb0ff; }
 #hint b.circle { color: #ff7a7a; }
 #hint b.options { color: var(--ink); }
