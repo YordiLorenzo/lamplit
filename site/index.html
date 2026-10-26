@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lamplit: a console-style home screen for Windows PCs on the TV</title>
+  <meta name="description" content="Lamplit is a free home screen for the gaming PC under your TV. Every installed game from Steam, Epic, GOG, the EA app, Ubisoft Connect, Rockstar and the Xbox app in one row, played with a DualSense.">
+  <meta name="theme-color" content="#07060B">
+  <meta name="color-scheme" content="dark">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Lamplit">
+  <meta property="og:title" content="Lamplit: your games, from the couch">
+  <meta property="og:description" content="A free, console-style home screen for the Windows PC under your TV. Every installed game in one row, started from the sofa with a controller.">
+  <meta property="og:url" content="https://yordilorenzo.github.io/lamplit/">
+  <meta property="og:image" content="https://yordilorenzo.github.io/lamplit/social-preview.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="The Lamplit logo in a dark living room, with the line: your games, from the couch.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Lamplit: your games, from the couch">
+  <meta name="twitter:description" content="A free, console-style home screen for the Windows PC under your TV. Every installed game in one row, started from the sofa with a controller.">
+  <meta name="twitter:image" content="https://yordilorenzo.github.io/lamplit/social-preview.png">
+  <meta name="twitter:image:alt" content="The Lamplit logo in a dark living room, with the line: your games, from the couch.">
+
+  <link rel="icon" href="favicon.ico" sizes="16x16 24x24 32x32 48x48">
+  <link rel="icon" href="icon-32.png" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="preload" href="fonts/outfit.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top">
+    <div class="wrap top-inner">
+      <a class="brand" href="./" aria-label="Lamplit, home">
+        <img src="images/logo.svg" alt="" width="122" height="35">
+      </a>
+      <nav aria-label="Sections">
+        <ul class="nav">
+          <li class="nav-wide"><a href="#features">Features</a></li>
+          <li><a href="#install">Install</a></li>
+          <li><a href="#faq">FAQ</a></li>
+          <li><a href="https://github.com/YordiLorenzo/lamplit">GitHub</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="wrap">
+        <div class="hero-copy">
+          <img class="hero-icon" src="images/icon-3d-160.webp" srcset="images/icon-3d-160.webp 160w, images/icon-3d-320.webp 320w" sizes="96px" width="96" height="96" alt="">
+          <h1 id="hero-title">Your games, from the couch.</h1>
+          <p class="lead">Lamplit is a free, console-style home screen for the gaming PC under your TV. It puts every installed game in one row, from seven stores, and starts each one from the sofa with a controller.</p>
+          <div class="actions">
+            <a class="btn btn-primary" href="https://github.com/YordiLorenzo/lamplit/releases/latest/download/Lamplit-setup.exe">
+              <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Download for Windows
+            </a>
+            <a class="btn btn-secondary" href="https://github.com/YordiLorenzo/lamplit">
+              <svg aria-hidden="true" viewBox="0 0 16 16" width="18" height="18"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+              View on GitHub
+            </a>
+          </div>
+          <p class="meta">Free <span aria-hidden="true">·</span> Windows 10 and 11 <span aria-hidden="true">·</span> No telemetry</p>
+        </div>
+
+        <figure class="shot shot-hero">
+          <img src="images/home-1280.webp"
+               srcset="images/home-640.webp 640w, images/home-960.webp 960w, images/home-1280.webp 1280w, images/home-1600.webp 1600w, images/home-1920.webp 1920w"
+               sizes="(min-width: 1224px) 1160px, calc(100vw - 32px)"
+               width="1920" height="1080" fetchpriority="high"
+               alt="Lamplit's home screen: a row of game covers along the bottom, the focused game's art and logo filling the screen">
+        </figure>
+      </div>
+    </section>
+
+    <section class="section intro" id="features" aria-labelledby="features-title">
+      <div class="wrap narrow">
+        <h2 id="features-title">Made for the TV and a controller</h2>
+        <p class="lead">A gaming PC under the TV usually comes with a handful of store apps, sign-in windows and Windows pop-ups, most of them made for a mouse. Lamplit keeps them out of your way, so the TV shows your games.</p>
+      </div>
+    </section>
+
+    <section class="section feature" aria-labelledby="library-title">
+      <div class="wrap">
+        <div class="feature-head">
+          <p class="eyebrow">Your library</p>
+          <h3 id="library-title">Every game in one row</h3>
+        </div>
+        <ul class="cards cards-4">
+          <li class="card">
+            <h4>Nothing to set up</h4>
+            <p>Lamplit reads what Steam, the Epic Games Launcher, GOG, the EA app, Ubisoft Connect, the Rockstar Games Launcher and the Xbox app have installed, and finds games outside any store too. There is nothing to import, connect or sign in to.</p>
+          </li>
+          <li class="card">
+            <h4>Last played first</h4>
+            <p>The game you're in the middle of is the first cover. The rest follow by name.</p>
+          </li>
+          <li class="card">
+            <h4>Cover art from Steam</h4>
+            <p>Covers, backgrounds and logos come from Steam's library cache on your PC, or else from Steam's public store, which Lamplit also searches by name for games from other stores. You can switch online art off.</p>
+          </li>
+          <li class="card">
+            <h4>New installs show up</h4>
+            <p>Lamplit looks again every time it comes back to the front, and shows when a Steam game is installing or has an update pending.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section feature" aria-labelledby="launch-title">
+      <div class="wrap split">
+        <div class="split-copy">
+          <p class="eyebrow">Launching</p>
+          <h3 id="launch-title">Press Cross and play</h3>
+          <p>A game can need more than one store app: some Steam games also need the EA app or Ubisoft Connect. Lamplit starts each one, waits for it to sign in and shows Steam's update progress. If a store app needs you to sign in, Lamplit says so and opens it for you.</p>
+          <ul class="ticks">
+            <li>Lamplit steps aside while you play and is back on screen when the game closes.</li>
+            <li>Hold the PS button to bring Lamplit over a running game.</li>
+            <li>The PC and the TV stay awake while a store app starts or Steam downloads an update.</li>
+          </ul>
+        </div>
+        <figure class="shot">
+          <img src="images/launch-960.webp"
+               srcset="images/launch-640.webp 640w, images/launch-960.webp 960w, images/launch-1280.webp 1280w"
+               sizes="(min-width: 960px) 640px, calc(100vw - 32px)"
+               width="1920" height="1080" loading="lazy" decoding="async"
+               alt="The starting screen: Lamplit checks that Steam and the EA app are signed in and up to date, then starts Titanfall 2">
+          <figcaption>Starting a game: each store app it needs, and what it needs from you.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section feature" aria-labelledby="sound-title">
+      <div class="wrap split reverse">
+        <div class="split-copy">
+          <p class="eyebrow">Sound and accessories</p>
+          <h3 id="sound-title">Sound settings from the sofa</h3>
+          <p>Choose the output and the microphone, change the volume and mute either, all with the controller. Sound follows you: turn the PRO&nbsp;X&nbsp;2 headset on and the sound moves to it; plug headphones into the controller on a USB cable and it moves there. When they go, it moves back.</p>
+          <ul class="ticks">
+            <li>Logitech G&nbsp;PRO&nbsp;X&nbsp;2 LIGHTSPEED: whether it is on, its battery, sidetone and auto-off timer. Other headsets work as normal sound devices.</li>
+            <li>NVIDIA's performance stats (frame rate, GPU and CPU load) on and off, when NVIDIA's overlay is installed.</li>
+          </ul>
+        </div>
+        <figure class="shot">
+          <img src="images/sound-960.webp"
+               srcset="images/sound-640.webp 640w, images/sound-960.webp 960w, images/sound-1280.webp 1280w"
+               sizes="(min-width: 960px) 640px, calc(100vw - 32px)"
+               width="1920" height="1080" loading="lazy" decoding="async"
+               alt="The Sound section: output and microphone devices, volume, mute and the sound-follows switch">
+          <figcaption>Sound: output, microphone and volume, from the sofa.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section feature" aria-labelledby="quiet-title">
+      <div class="wrap split">
+        <div class="split-copy">
+          <p class="eyebrow">Quiet mode</p>
+          <h3 id="quiet-title">No pop-ups over your game</h3>
+          <p>Quiet mode stops Windows' notification banners, tips and suggestions, Game Bar's start-up tips, Ubisoft Connect's notifications and overlay, and Steam's notifications. Switch it off and every setting goes back to what it was.</p>
+          <ul class="ticks">
+            <li>Steam's Big Picture mode stays closed, and Steam's window is minimised after a Steam game.</li>
+            <li>Steam's notifications need Steam's DevTools port, a setting that is off until you switch it on.</li>
+          </ul>
+        </div>
+        <figure class="shot">
+          <img src="images/settings-960.webp"
+               srcset="images/settings-640.webp 640w, images/settings-960.webp 960w, images/settings-1280.webp 1280w"
+               sizes="(min-width: 960px) 640px, calc(100vw - 32px)"
+               width="1920" height="1080" loading="lazy" decoding="async"
+               alt="The Settings panel: Sound, Headset, Controllers, Overlay and pop-ups, Stores and System, each with a one-line summary">
+          <figcaption>Settings: each section with a one-line summary.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section feature" aria-labelledby="controller-title">
+      <div class="wrap split reverse">
+        <div class="split-copy">
+          <p class="eyebrow">Controller</p>
+          <h3 id="controller-title">Navigate with a DualSense</h3>
+          <p>DualSense and DualSense Edge, over USB or Bluetooth, several at once. Hold a direction and the row speeds up; L1 and R1 jump five games. Lamplit only reads the controller, so Steam and your games see it as before.</p>
+          <ul class="ticks">
+            <li>Battery, whether headphones are plugged in, and Turn off for a controller on Bluetooth.</li>
+            <li>The touchpad as a mouse, for store apps and Windows dialogs. Off until you switch it on, and never over a full-screen game.</li>
+            <li>A keyboard and mouse work too.</li>
+          </ul>
+        </div>
+        <figure class="shot">
+          <img src="images/controllers-960.webp"
+               srcset="images/controllers-640.webp 640w, images/controllers-960.webp 960w, images/controllers-1280.webp 1280w"
+               sizes="(min-width: 960px) 640px, calc(100vw - 32px)"
+               width="1920" height="1080" loading="lazy" decoding="async"
+               alt="The Controllers section: touchpad as mouse, and a Bluetooth controller's battery, headphones and Turn off">
+          <figcaption>Controllers: battery, headphones, and Turn off.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="section" id="works-with" aria-labelledby="works-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="works-title">What it works with</h2>
+          <p class="lead">Lamplit runs on Windows only, on purpose: the EA app, Ubisoft Connect, the Rockstar Games Launcher and the Xbox app exist only there.</p>
+        </div>
+        <div class="cards cards-4 support">
+          <div class="card">
+            <h3>Stores</h3>
+            <ul class="dots">
+              <li>Steam</li>
+              <li>Epic Games Launcher</li>
+              <li>GOG (GOG Galaxy or offline installers)</li>
+              <li>EA app</li>
+              <li>Ubisoft Connect</li>
+              <li>Rockstar Games Launcher</li>
+              <li>Xbox app, including PC Game Pass</li>
+              <li>Games outside any store</li>
+            </ul>
+            <p class="note"><strong>Not yet:</strong> Battle.net, the Amazon Games app and itch.io. Their games can still show up as games outside any store.</p>
+          </div>
+          <div class="card">
+            <h3>Controllers</h3>
+            <ul class="dots">
+              <li>DualSense, over USB or Bluetooth</li>
+              <li>DualSense Edge (read the same way, not tested yet)</li>
+              <li>Keyboard and mouse</li>
+            </ul>
+            <p class="note"><strong>Not yet:</strong> Xbox, Switch and other controllers.</p>
+          </div>
+          <div class="card">
+            <h3>Headset</h3>
+            <ul class="dots">
+              <li>Logitech G&nbsp;PRO&nbsp;X&nbsp;2 LIGHTSPEED, through its USB receiver, without G&nbsp;HUB</li>
+              <li>Any other headset, as a normal Windows sound device</li>
+            </ul>
+            <p class="note"><strong>New:</strong> built from public protocol notes. Battery, sidetone and auto-off aren't yet confirmed on a real headset.</p>
+          </div>
+          <div class="card">
+            <h3>PC</h3>
+            <ul class="dots">
+              <li>Windows 10 or Windows 11, 64-bit</li>
+              <li>Microsoft Edge WebView2 Runtime: part of Windows 11, and the installer downloads it when it is missing</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="install" aria-labelledby="install-title">
+      <div class="wrap">
+        <div class="section-head">
+          <h2 id="install-title">Install</h2>
+          <p class="lead">One installer, no admin rights, and a one-time setup so Lamplit starts when you sign in.</p>
+        </div>
+        <ol class="steps">
+          <li class="step">
+            <h3>Download and run the installer</h3>
+            <p>Run <code>Lamplit-setup.exe</code>. It installs Lamplit for your Windows account only, adds it to the Start menu and doesn't ask for admin rights.</p>
+            <p><a class="text-link" href="https://github.com/YordiLorenzo/lamplit/releases/latest/download/Lamplit-setup.exe">Download Lamplit-setup.exe</a></p>
+          </li>
+          <li class="step">
+            <h3>Get past the Windows warning</h3>
+            <p>Lamplit isn't code-signed yet, so SmartScreen shows “Windows protected your PC”. Click:</p>
+            <p class="chips"><span class="chip">More info</span> <span class="chip-arrow" aria-hidden="true">→</span> <span class="chip">Run anyway</span></p>
+            <p class="small">Edge may also say the file isn't commonly downloaded: open the download's <strong>...</strong> menu, choose <strong>Keep</strong>, then <strong>Show more</strong> and <strong>Keep anyway</strong>. If Smart App Control is on, Windows blocks the installer and offers no way past.</p>
+          </li>
+          <li class="step">
+            <h3>Run the one-time setup</h3>
+            <p>Open Settings (Triangle), go to <strong>System</strong> and choose <strong>First-time setup</strong>. Answer the Windows prompt with a mouse or keyboard.</p>
+            <p class="small">It adds a task that starts Lamplit when you sign in, and repairs Steam's background service so Steam doesn't stop to ask for admin rights. Without it, Lamplit works the same, but you start it yourself.</p>
+          </li>
+        </ol>
+        <p class="after-steps">To update, run the new installer into the same folder: your settings, art and logon task stay. Everything Lamplit changes on your PC, and how to undo it, is listed in <a class="text-link" href="https://github.com/YordiLorenzo/lamplit/blob/main/docs/security-and-privacy.md">What Lamplit changes on your PC</a>.</p>
+      </div>
+    </section>
+
+    <section class="section" id="faq" aria-labelledby="faq-title">
+      <div class="wrap faq-layout">
+        <div>
+          <h2 id="faq-title">Questions</h2>
+          <p class="lead">Anything else? <a class="text-link" href="https://github.com/YordiLorenzo/lamplit#faq">The README</a> has more answers, and you can always <a class="text-link" href="https://github.com/YordiLorenzo/lamplit/issues">open an issue</a>.</p>
+        </div>
+        <div class="faq">
+          <details>
+            <summary>Does it cost anything?</summary>
+            <p>No. Lamplit is free to download, use, change and share for any noncommercial purpose. Playing games with it at home is exactly what it's for. Selling it, or bundling it into something you sell, isn't allowed.</p>
+          </details>
+          <details>
+            <summary>Does Lamplit replace Steam?</summary>
+            <p>No. Steam games still start through Steam, which has to be installed and signed in. Lamplit only takes over Steam's job as the big-screen interface: it closes Big Picture whenever Steam opens it. You don't need Steam at all for games from other stores; art still comes from Steam's public store website.</p>
+          </details>
+          <details>
+            <summary>How is it different from Steam Big Picture or Playnite?</summary>
+            <p>Choose Big Picture if nearly everything you play is on Steam, or if your controller isn't a DualSense. Choose Playnite if you want themes, emulators, or a library you shape yourself. Lamplit is for a TV PC that already has games in several stores and should show them all without setup.</p>
+          </details>
+          <details>
+            <summary>My controller isn't a DualSense. Can I use it?</summary>
+            <p>Xbox, Switch and other controllers aren't read yet. Anything that turns a controller's buttons into keys (Steam's desktop controller layout can do this) works through the keyboard controls, but holding PS to bring Lamplit forward and the controller rows in Settings need a DualSense.</p>
+          </details>
+          <details>
+            <summary>Is it safe to use with anti-cheat?</summary>
+            <p>Lamplit doesn't inject code into games, hook them or draw over them. To know when a game starts and closes, it reads the list of running processes and the folder each one runs from, as other launchers do. If a game's anti-cheat ever objects, please <a class="text-link" href="https://github.com/YordiLorenzo/lamplit/issues">open an issue</a>.</p>
+          </details>
+          <details>
+            <summary>Does it send anything online?</summary>
+            <p>Only requests for game art to Steam's store, and only while <strong>Find art online</strong> is on: the names of games that aren't from Steam, Steam app ids, and your country. No accounts, no telemetry. The <a class="text-link" href="https://github.com/YordiLorenzo/lamplit/blob/main/docs/security-and-privacy.md">privacy notes</a> have every detail.</p>
+          </details>
+          <details>
+            <summary>How do I remove it?</summary>
+            <p>First switch off <strong>Quiet mode</strong> and <strong>Steam's DevTools port</strong> in Settings: the uninstaller can't undo those. Then uninstall Lamplit from <strong>Settings &gt; Apps &gt; Installed apps</strong> in Windows.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="section closing" aria-labelledby="closing-title">
+      <div class="wrap narrow center">
+        <img class="closing-icon" src="images/icon-3d-160.webp" srcset="images/icon-3d-160.webp 160w, images/icon-3d-320.webp 320w" sizes="120px" width="120" height="120" loading="lazy" decoding="async" alt="">
+        <h2 id="closing-title">Put your games on the TV</h2>
+        <p class="lead">Free for Windows 10 and 11. Install it, run the setup once, and pick up the controller.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="https://github.com/YordiLorenzo/lamplit/releases/latest/download/Lamplit-setup.exe">
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Download for Windows
+          </a>
+          <a class="btn btn-secondary" href="https://github.com/YordiLorenzo/lamplit/releases/latest">Release notes</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section sponsor" aria-labelledby="sponsor-title">
+      <div class="wrap">
+        <div class="sponsor-card">
+          <div>
+            <h2 id="sponsor-title">Keep the lamp on</h2>
+            <p>If Lamplit has earned its place under your TV, you can support its work on GitHub Sponsors. Reporting a game it misses, or asking for a store, controller or headset, helps too.</p>
+          </div>
+          <div class="sponsor-actions">
+            <a class="btn btn-secondary" href="https://github.com/sponsors/YordiLorenzo">
+              <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M8 14.2S1.6 10.3 1.6 5.8C1.6 3.6 3.2 2 5.2 2c1.2 0 2.2.6 2.8 1.6C8.6 2.6 9.6 2 10.8 2c2 0 3.6 1.6 3.6 3.8 0 4.5-6.4 8.4-6.4 8.4Z"/></svg>
+              Sponsor on GitHub
+            </a>
+            <a class="text-link" href="https://github.com/YordiLorenzo/lamplit/issues/new/choose">Suggest a game, store or device</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">
+      <div class="footer-top">
+        <img src="images/logo.svg" alt="Lamplit" width="112" height="32" loading="lazy">
+        <ul class="footer-links">
+          <li><a href="https://github.com/YordiLorenzo/lamplit">Source on GitHub</a></li>
+          <li><a href="https://github.com/YordiLorenzo/lamplit/releases">Releases</a></li>
+          <li><a href="https://github.com/YordiLorenzo/lamplit/blob/main/CHANGELOG.md">Changelog</a></li>
+          <li><a href="https://github.com/YordiLorenzo/lamplit/blob/main/docs/security-and-privacy.md">Privacy</a></li>
+          <li><a href="https://github.com/YordiLorenzo/lamplit/issues">Report a problem</a></li>
+        </ul>
+      </div>
+      <p>Lamplit is free to use, change and share for any noncommercial purpose, under the <a href="https://github.com/YordiLorenzo/lamplit/blob/main/LICENSE">PolyForm Noncommercial License 1.0.0</a>. Selling it, or bundling it into something you sell, isn't allowed. For any commercial use, ask first in an issue.</p>
+      <p>Lamplit is not affiliated with or endorsed by Sony, Valve, Microsoft, Logitech, NVIDIA, Epic Games, Electronic Arts, Ubisoft, Rockstar Games or GOG. Their names and products are trademarks of their owners and appear here only to say what Lamplit works with. Game art in the screenshots belongs to its publishers.</p>
+      <p>Headings are set in Outfit, under the <a href="fonts/OFL.txt">SIL Open Font License</a>.</p>
+    </div>
+  </footer>
+</body>
+</html>
