@@ -86,9 +86,11 @@ impl Slots {
         self.0.iter().flatten().any(|p| !p.steam)
     }
 
-    /// A controller with these USB ids is read here. When a slot's ids are unknown, it could be any.
-    pub fn reads(&self, vendor: u16, product: u16) -> bool {
-        self.0.iter().flatten().any(|p| !p.steam && p.ids.is_none_or(|ids| ids == (vendor, product)))
+    /// A controller with these USB ids is read here. When a slot's ids are unknown, it could be any Xbox-style
+    /// controller (`xbox_style`: one Windows names the buttons of as an Xbox controller's).
+    pub fn reads(&self, vendor: u16, product: u16, xbox_style: bool) -> bool {
+        let read = |p: &Pad| !p.steam && p.ids.map_or(xbox_style, |ids| ids == (vendor, product));
+        self.0.iter().flatten().any(read)
     }
 }
 
@@ -204,12 +206,15 @@ mod tests {
     fn which_controllers_xinput_reads() {
         let pad = |ids, steam| Some(Pad { ids, steam, navigation: Navigation::default() });
         let slots = Slots([pad(Some((0x2DC8, 0x3106)), false), pad(Some(STEAM_VIRTUAL), true), None, None]);
-        assert!(slots.reads(0x2DC8, 0x3106));
-        assert!(!slots.reads(0x057E, 0x2009));
+        assert!(slots.reads(0x2DC8, 0x3106, true));
+        assert!(slots.reads(0x2DC8, 0x3106, false));
+        assert!(!slots.reads(0x057E, 0x2009, false));
         // Steam Input's virtual controller isn't read.
-        assert!(!slots.reads(STEAM_VIRTUAL.0, STEAM_VIRTUAL.1));
-        // A slot whose ids are unknown could hold any controller.
-        assert!(Slots([None, pad(None, false), None, None]).reads(0x057E, 0x2009));
+        assert!(!slots.reads(STEAM_VIRTUAL.0, STEAM_VIRTUAL.1, true));
+        // A slot whose ids are unknown could hold any Xbox-style controller, but not, say, a Switch Pro Controller.
+        let unknown = Slots([None, pad(None, false), None, None]);
+        assert!(unknown.reads(0x2DC8, 0x3106, true));
+        assert!(!unknown.reads(0x057E, 0x2009, false));
     }
 
     #[test]

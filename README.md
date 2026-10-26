@@ -138,9 +138,9 @@ medium or full.
 
 **Other controllers** Windows knows, such as a DualShock 4, a Switch Pro Controller or a plain USB pad, are read
 through Windows.Gaming.Input. Windows hands their input only to the window in front, so they move around Lamplit but
-can't bring it over a game: use Alt+Tab or another controller. Windows doesn't say which of their buttons is which,
-so Lamplit takes the order most of them use, the DualShock 4's. If yours confirms with the wrong button, please open
-an issue with its name from Settings > Controllers.
+can't bring it over a game: use Alt+Tab or another controller. Windows names the buttons of only some of them; for
+the rest Lamplit takes the order most of them use, the DualShock 4's. If yours confirms with the wrong button, please
+open an issue with its name from Settings > Controllers.
 
 While a Steam game runs, Steam Input adds a virtual Xbox controller for each controller it handles. Lamplit leaves
 those out, since it reads the real one. Tools such as DS4Windows that add virtual controllers of their own can make
