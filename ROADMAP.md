@@ -2,16 +2,12 @@
 
 What comes next for Lamplit, and what stays out. Plans can change; to suggest something, open an issue.
 
-## 0.2.0
+## Done
 
-1. **Other controllers.** Xbox and other pads, as well as the DualSense. The button hints follow the controller you
-   use, and a controller button brings Lamplit forward during a game, as holding PS does now.
-2. **A power menu.** Sleep, restart and shut down from the sofa, with a warning when a game is still running.
-3. **Find a game.** Search with an on-screen keyboard, filter by store, and sort by name or by when you last played.
-4. **Favourites and hidden games.** Pin games to the front of the row, and hide what Lamplit found that isn't a game.
-5. **Play time** for each game, on the home screen and in the game's details.
+0.2.0 (2026-10-26) brought other controllers, a power menu, Find a game, favourites and hidden games, and play time.
+[CHANGELOG.md](CHANGELOG.md) has every change.
 
-## After 0.2.0
+## Next
 
 - Close a game that hangs, from the screen that holding PS brings up.
 - Change a game's art when Steam's match is wrong.

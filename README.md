@@ -187,7 +187,7 @@ is welcome; [docs/accessories.md](docs/accessories.md) shows how the PRO X 2 pro
 
 ## Install
 
-1. Download `Lamplit_0.1.0_x64-setup.exe` from the
+1. Download `Lamplit-setup.exe` from the
    [latest release](https://github.com/YordiLorenzo/lamplit/releases/latest).
 2. Run it. The installer installs Lamplit for your Windows account only, by default into `%LOCALAPPDATA%\Lamplit`
    (the folder that also holds its settings, logs and art), and adds it to the Start menu. It doesn't ask for admin
