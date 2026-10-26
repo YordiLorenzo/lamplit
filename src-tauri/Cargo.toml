@@ -21,7 +21,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 # A mutex that never poisons: one panicking thread must not take every later command down with it.
-parking_lot = "0.12"
+parking_lot = "0.13"
 log = "0.4"
 # The app's log. Its fern re-export also logs the supervisor and --setup, which run without Tauri.
 tauri-plugin-log = "2"
