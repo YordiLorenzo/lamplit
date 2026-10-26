@@ -29,6 +29,10 @@ while you play. When the game closes, Lamplit is back on screen.
     <td width="50%"><img src="docs/images/sound.jpg" alt="The Sound section: output and microphone devices, volume, mute and the sound-follows switch"><br><sub>Sound: output, microphone and volume, from the sofa.</sub></td>
     <td width="50%"><img src="docs/images/controllers.jpg" alt="The Controllers section: touchpad as mouse, and a Bluetooth controller's battery, headphones and Turn off"><br><sub>Controllers: battery, headphones, and Turn off.</sub></td>
   </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/find.jpg" alt="Find a game: an on-screen keyboard with rdr typed, store and sort choices, and the row narrowed to Red Dead Redemption 2"><br><sub>Find a game: "rdr" finds Red Dead Redemption 2.</sub></td>
+    <td width="50%"></td>
+  </tr>
 </table>
 
 ## What it does
@@ -39,6 +43,10 @@ while you play. When the game closes, Lamplit is back on screen.
   Connect, the Rockstar Games Launcher and the Xbox app have installed, and finds games outside any store too. There
   is nothing to import, connect or sign in to.
 - **Last played first,** then by name, so the game you're in the middle of is the first cover.
+- **Find a game.** Square opens a search with an on-screen keyboard, and the row keeps only the games that match as
+  you type. A search matches the start of any word in a game's name, or its first letters: "red dead" and "rdr" both
+  find Red Dead Redemption 2. You can also show one store's games, or sort the row A to Z. Above the row, Lamplit
+  shows what it is narrowed by, and Circle brings every game back.
 - **Cover, background and logo art.** Lamplit takes it from Steam's own library cache when it can, and otherwise
   from Steam's public store, which it also searches by name for games from other stores. A game with no match shows
   its name instead. You can switch online art off.
@@ -207,14 +215,18 @@ logon task.
 | Play the game, or return to it while it runs | Cross | Enter |
 | Game details | Options | I |
 | Settings | Triangle | C |
+| Find a game | Square | F |
 | Back, close, or cancel a launch | Circle | Esc or Backspace |
+| Every game again, after a search | Circle | Esc |
 | Return to the running game from the row | Circle | Esc |
 | Bring Lamplit over a running game | Hold PS for 0.6 seconds | Alt+Tab |
 | Close Lamplit | | Alt+F4 |
 
 While a game starts, Cross opens the store app that needs you, Triangle goes ahead without a confirmed sign-in, and
 Circle cancels. In Settings, Up and Down move, Cross or Right opens a section, Left and Right change the volume,
-sidetone and auto-off timer, Circle goes back, and Triangle closes Settings.
+sidetone and auto-off timer, Circle goes back, and Triangle closes Settings. In Find, Cross types the key or picks
+the choice you're on, Square deletes, Triangle adds a space, and Circle closes Find on the games it found. On a
+keyboard, type the name and press Enter.
 
 With a mouse, click a cover to select it and click it again to play. Settings rows take a click too.
 
@@ -251,7 +263,7 @@ Choose Big Picture if nearly everything you play is on Steam, or if your control
 Playnite if you want themes, emulators, or a library you shape yourself. Lamplit is for a TV PC that already has
 games in several stores and should show them all without setup.
 
-What comes next, including other controllers, a power menu and search: [ROADMAP.md](ROADMAP.md).
+What comes next, including other controllers and a power menu: [ROADMAP.md](ROADMAP.md).
 
 ## FAQ
 

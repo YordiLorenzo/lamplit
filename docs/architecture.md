@@ -35,9 +35,10 @@ ui/
   state.js         the page's state and its elements
   input.js         controller, keyboard and mouse as one set of actions
   library.js       the cover row and the focused game
+  find.js          the Find panel: the on-screen keyboard, the store filter and the sort
   launch.js        the starting screen
   settings.js      the Settings panel
-  logic.js         pure functions (sorting, the Settings rows), tested in Node
+  logic.js         pure functions (the cover row's search and order, the Settings rows), tested in Node
   hints.js         the button hints and short messages
   sounds.js        interface sounds made with Web Audio
 tests/
@@ -157,7 +158,7 @@ Rust sends these without being asked (`events.rs`):
 | --- | --- | --- |
 | `games` | Every game | The game list changed |
 | `art` | `{ id, art }` | Art for one game came in |
-| `pad` | `up`, `down`, `left`, `right`, `ok`, `back`, `menu`, `triangle`, `l1` or `r1` | A controller press, while Lamplit is in front |
+| `pad` | `up`, `down`, `left`, `right`, `ok`, `back`, `menu`, `triangle`, `l1`, `r1` or `square` | A controller press, while Lamplit is in front |
 | `play` | `{ state, id }`, plus `message` when `state` is `failed` | A launched game is `running`, `starting` again, `ended` or `failed` |
 | `summoned` | The running game's id, or `null` | Holding PS brought Lamplit forward |
 | `launch-step` | `{ id, key, state, label, store }` | A line of the starting screen; a step with the same `key` replaces the line |

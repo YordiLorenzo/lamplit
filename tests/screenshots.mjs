@@ -3,7 +3,7 @@
 // %LOCALAPPDATA%\lamplit\art (<Steam app id>\portrait.jpg, hero.jpg and logo.png), copied from a Windows PC where
 // Lamplit has found art for these games.
 // Run: `node tests/screenshots.mjs [art folder]` (tests/art by default). It writes docs/images/{home,launch,settings,
-// sound,controllers}.jpg.
+// sound,controllers,find}.jpg.
 import { chromium } from 'playwright-core';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -164,6 +164,21 @@ const browser = await chromium.launch(process.env.CHROME ? { executablePath: pro
   await emit(page, 'pad', 'down');
   await emit(page, 'pad', 'ok');
   await shoot(page, 'controllers');
+  await page.close();
+}
+
+// Find, typed with the d-pad: "rdr" leaves Red Dead Redemption 2, found by its first letters.
+{
+  const page = await open(browser, uiDir, { games, now });
+  await emit(page, 'stores', stores);
+  await artLoaded(page);
+  await emit(page, 'pad', 'square');
+  // From a: down to the k row, along to r; up to the a row, back to d; down again, along to r.
+  for (const step of ['down', ...Array(7).fill('right'), 'ok', 'up', ...Array(4).fill('left'), 'ok', 'down', ...Array(4).fill('right'), 'ok']) {
+    await emit(page, 'pad', step);
+  }
+  await artLoaded(page);
+  await shoot(page, 'find');
   await page.close();
 }
 

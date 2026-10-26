@@ -35,6 +35,7 @@ pub struct Input {
     pub cross: bool,
     pub circle: bool,
     pub triangle: bool,
+    pub square: bool,
     pub options: bool,
     pub l1: bool,
     pub r1: bool,
@@ -102,6 +103,7 @@ fn input(lx: u8, ly: u8, [b0, b1, b2]: [u8; 3]) -> Input {
         cross: b0 & 0x20 != 0,
         circle: b0 & 0x40 != 0,
         triangle: b0 & 0x80 != 0,
+        square: b0 & 0x10 != 0,
         options: b1 & 0x20 != 0,
         l1: b1 & 0x01 != 0,
         r1: b1 & 0x02 != 0,
@@ -162,7 +164,11 @@ mod tests {
         assert!(i.cross && i.ps && !i.circle);
         let i = input_of(&usb(255, 128, 0x08, 0x20, 0), false);
         assert_eq!(i.dir, Some(Dir::Right));
-        assert!(i.options);
+        assert!(i.options && !i.square);
+        // Square sits below cross in the first button byte, next to the d-pad's nibble.
+        let i = input_of(&usb(128, 128, 0x08 | 0x10, 0, 0), false);
+        assert!(i.square && !i.cross && !i.triangle);
+        assert_eq!(i.dir, None);
         assert_eq!(parse(&usb(128, 128, 0x08, 0, 0)[..10], false), None);
     }
 
@@ -174,10 +180,10 @@ mod tests {
         let i = input_of(&full, true);
         assert_eq!(i.dir, Some(Dir::Left));
         assert!(i.circle);
-        let simple = [0x01, 128, 0, 128, 128, 0x08, 0, 0x01, 0, 0];
+        let simple = [0x01, 128, 0, 128, 128, 0x08 | 0x10, 0, 0x01, 0, 0];
         let reduced = parse(&simple, true).unwrap();
         assert_eq!(reduced.input.dir, Some(Dir::Up));
-        assert!(reduced.input.ps);
+        assert!(reduced.input.ps && reduced.input.square);
         assert_eq!((reduced.touch, reduced.status), (None, None));
     }
 

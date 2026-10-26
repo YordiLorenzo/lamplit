@@ -10,6 +10,10 @@ Every release of Lamplit, newest first. The format follows
 
 - Store logos: in the store badge on the home screen, in a game's details, on the starting screen and in
   Settings > Stores.
+- Find a game: Square (F on a keyboard) opens a search with an on-screen keyboard, which narrows the row as you type.
+  It matches the start of any word in a game's name, or its first letters, such as "rdr" for Red Dead Redemption 2.
+  It also shows one store's games, and sorts the row A to Z. The home screen shows what narrows the row, and Circle
+  brings every game back.
 
 ## 0.1.0 - 2026-10-26
 

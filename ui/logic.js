@@ -68,6 +68,140 @@ export function storeWarning(g, stores) {
   return null;
 }
 
+// ---------- finding a game ----------
+
+/**
+ * What narrows and orders the cover row, chosen in the Find panel.
+ * @typedef {object} Find
+ * @property {string} query  as typed
+ * @property {StoreKey | 'pc' | null} store  'pc' for games outside any store, null for every game
+ * @property {'played' | 'name'} sort  last played first (the order Rust sends), or A to Z
+ */
+
+/** The store filter's order, the one Rust lists its stores in (stores/mod.rs ALL), then games outside any store. */
+export const STORE_ORDER = /** @type {const} */ (['steam', 'epic', 'ea', 'ubisoft', 'rockstar', 'gog', 'xbox', 'pc']);
+
+/** The longest search the field shows. */
+const MAX_QUERY = 30;
+
+/**
+ * A name or a search as words to match: lower case, accents dropped, apostrophes left out ("Assassin's" is
+ * "assassins"), and any other punctuation a break between words ("Half-Life" is "half life", "Cities:" is "cities").
+ * @param {string} text
+ */
+export function words(text) {
+  return text
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/['’ʼ]/g, '')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+/**
+ * Whether `q` is spelt by the starts of `names[i]`, `names[i + 1]` and so on, at least one letter from each: "rdr"
+ * and "reddead" in Red Dead Redemption.
+ * @param {string} q @param {string[]} names @param {number} i
+ * @returns {boolean}
+ */
+function spelt(q, names, i) {
+  if (!q) return true;
+  const word = names[i] ?? '';
+  let n = 0;
+  while (n < q.length && q[n] === word[n]) n++;
+  for (; n > 0; n--) if (spelt(q.slice(n), names, i + 1)) return true;
+  return false;
+}
+
+/**
+ * A test for game names: each word of the search has to start one of the name's words, or spell the starts of
+ * several in a row, in any order. "red dead", "dead", "rdr" and "rdr2" all find Red Dead Redemption 2; "edemption"
+ * doesn't.
+ * @param {string} query
+ * @returns {(name: string) => boolean}
+ */
+export function matcher(query) {
+  const wanted = words(query);
+  return (name) => {
+    const names = words(name);
+    return wanted.every((q) => names.some((_, i) => spelt(q, names, i)));
+  };
+}
+
+const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+
+/** A to Z in the player's language, with numbers in number order: "Game 2" before "Game 10". @param {Game} a @param {Game} b */
+export const byName = (a, b) => collator.compare(a.name, b.name) || byPlayed(a, b);
+
+/**
+ * The cover row: the games the search and the store filter let through, in the chosen order. Everything that decides
+ * which games the row shows, and in what order, belongs here.
+ * @template {Game} G
+ * @param {G[]} games
+ * @param {Find} find
+ * @returns {G[]}
+ */
+export function rowOf(games, { query, store, sort }) {
+  const named = matcher(query);
+  return games
+    .filter((g) => (!store || (g.store ?? 'pc') === store) && named(g.name))
+    .sort(sort === 'name' ? byName : byPlayed);
+}
+
+/** Whether the row leaves games out, so the home screen says so and ○ brings every game back. @param {Find} find */
+export const narrowed = (find) => words(find.query).length > 0 || find.store !== null;
+
+/**
+ * The store filter's choices: every store with a game in the library, and the one chosen even when its games have
+ * gone since. null is every store.
+ * @param {Game[]} games
+ * @param {Find['store']} chosen
+ */
+export function storeChoices(games, chosen) {
+  const have = new Set([...games.map((g) => g.store ?? 'pc'), chosen]);
+  return [null, ...STORE_ORDER.filter((s) => have.has(s))];
+}
+
+/**
+ * The search after a key: a letter or digit, 'space' or 'delete'. A space only goes between words, and the search
+ * stops growing at the field's length.
+ * @param {string} query
+ * @param {string} key
+ */
+export function typed(query, key) {
+  if (key === 'delete') return [...query].slice(0, -1).join('');
+  if (key === 'space') return !query || query.endsWith(' ') || query.length >= MAX_QUERY ? query : `${query} `;
+  return query.length < MAX_QUERY ? query + key : query;
+}
+
+/** @typedef {{ x: number, y: number, width: number, height: number }} Box */
+
+/**
+ * The box a direction moves to on a screen laid out in rows (the Find panel's keys and choices), or -1 when nothing
+ * lies that way. ← and → go to the next box in the row. ↑ and ↓ go to the next row, onto its box nearest to the side,
+ * so a row of choices that wraps onto a second line isn't skipped.
+ * @param {Box} from
+ * @param {Box[]} boxes
+ * @param {'up' | 'down' | 'left' | 'right'} dir
+ */
+export function nearest(from, boxes, dir) {
+  /** @param {Box} b */
+  const centre = (b) => [b.x + b.width / 2, b.y + b.height / 2];
+  const [fx, fy] = centre(from);
+  const sideways = dir === 'left' || dir === 'right';
+  const ahead = boxes
+    .map((b, i) => {
+      const [x, y] = centre(b);
+      const along = { left: fx - x, right: x - fx, up: fy - y, down: y - fy }[dir];
+      return { i, along, across: sideways ? Math.abs(y - fy) : Math.abs(x - fx) };
+    })
+    .filter((b) => b.along > 1 && (!sideways || b.across < from.height / 2));
+  if (!ahead.length) return -1;
+  const next = Math.min(...ahead.map((b) => b.along));
+  return ahead.filter((b) => b.along < next + from.height / 2).reduce((a, b) => (b.across < a.across ? b : a)).i;
+}
+
 // ---------- the Settings screen ----------
 
 export const SECTIONS = [
