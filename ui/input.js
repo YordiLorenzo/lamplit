@@ -23,10 +23,33 @@ const MIRROR_MS = 300;
 let lastKey = { action: '', at: 0 };
 
 /**
+ * The hero art drifts only while someone uses Lamplit. An endless drift changes every pixel of the screen on every
+ * frame, so a VNC viewer had TightVNC resend the whole 4K screen non-stop: 80 Mbit/s and most of a CPU core
+ * (2026-10-26), and the viewer unusable.
+ */
+const STILL_AFTER_MS = 60_000;
+let stillTimer = 0;
+
+function stir() {
+  document.body.classList.remove('still');
+  clearTimeout(stillTimer);
+  stillTimer = setTimeout(() => document.body.classList.add('still'), STILL_AFTER_MS);
+}
+
+stir();
+// Another window in front (someone working on the desktop over VNC, say): the art holds still behind it.
+window.addEventListener('blur', () => {
+  clearTimeout(stillTimer);
+  document.body.classList.add('still');
+});
+window.addEventListener('focus', stir);
+
+/**
  * @param {Action} action
  * @param {'pad' | 'key' | 'mouse'} source
  */
 export function act(action, source) {
+  stir();
   const now = performance.now();
   if (source === 'pad') {
     state.lastPad = now;
@@ -147,6 +170,7 @@ window.addEventListener('contextmenu', (e) => e.preventDefault());
 // The mouse pointer shows while the mouse moves, and hides again after two seconds.
 let pointerTimer = 0;
 window.addEventListener('mousemove', () => {
+  stir();
   document.body.classList.add('pointer');
   clearTimeout(pointerTimer);
   pointerTimer = setTimeout(() => document.body.classList.remove('pointer'), 2000);

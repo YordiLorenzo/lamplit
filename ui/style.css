@@ -53,6 +53,8 @@ body.pointer { cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .hero { animation: none; }
 }
+/* Nobody is using Lamplit (input.js): the drift holds where it is. */
+body.still .hero { animation-play-state: paused; }
 
 .shade {
   position: absolute;

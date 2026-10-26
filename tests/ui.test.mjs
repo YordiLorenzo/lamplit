@@ -1359,6 +1359,26 @@ const findView = (page) =>
   await close(page);
 }
 
+// 26. The hero art drifts only while Lamplit is used: with another window in front it holds still (a drift that never
+// stops makes a VNC viewer resend the whole screen), and the next press moves it again.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  const drift = () =>
+    page.evaluate(() => ({
+      still: document.body.classList.contains('still'),
+      play: getComputedStyle(document.querySelector('.hero')).animationPlayState,
+    }));
+  let d = await drift();
+  check('the art drifts while Lamplit is in use', !d.still && d.play === 'running', JSON.stringify(d));
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  d = await drift();
+  check('another window in front holds the art still', d.still && d.play === 'paused', JSON.stringify(d));
+  await page.keyboard.press('ArrowRight');
+  d = await drift();
+  check('a press moves the art again', !d.still && d.play === 'running', JSON.stringify(d));
+  await close(page);
+}
+
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));
 check('every command Rust registers is called by a test', untested.length === 0, untested.join(', '));
