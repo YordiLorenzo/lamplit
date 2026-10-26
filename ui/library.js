@@ -194,7 +194,6 @@ export async function markGame() {
       // The row moves around the game, and focus stays on it.
       setGames(await librarySetFavourite(g.id, !g.favourite));
       renderChoices();
-      showHints();
     } else {
       const at = state.idx;
       closeDetails();
@@ -273,9 +272,6 @@ export function setGames(list) {
   const keep = focused()?.id;
   state.all = list.map((g) => ({ ...g, el: newCover(g.name) }));
   state.all.forEach(paintCover);
-  // Details still names the game that is gone, and ✕ there would start whatever is focused now. They close before the
-  // row is drawn, which would show their hints for a game that isn't there.
-  if (state.mode === 'details' && !rowOf(state.all, state.find).some((g) => g.id === keep)) closeDetails();
   showRow(keep);
 }
 
@@ -289,7 +285,11 @@ const shownCount = () => state.all.filter((g) => !g.hidden).length;
  */
 export function showRow(keep = null) {
   state.games = rowOf(state.all, state.find);
-  state.idx = Math.max(0, state.games.findIndex((g) => g.id === keep));
+  const k = state.games.findIndex((g) => g.id === keep);
+  state.idx = Math.max(0, k);
+  // Details still names the game that is gone, and ✕ there would start whatever is focused now. They close before the
+  // row is drawn, which would show their hints for a game that isn't there.
+  if (k < 0 && state.mode === 'details') closeDetails();
   const shown = shownCount();
   els.empty.hidden = shown > 0;
   els.empty.textContent = state.all.length ? 'Every game is hidden. Settings > Hidden games shows them again.' : 'No games found';

@@ -114,7 +114,7 @@ export function closeFind() {
 /** @param {'up' | 'down' | 'left' | 'right'} dir */
 export function moveFind(dir) {
   const all = targets();
-  const from = all.find((t) => t.dataset.id === state.findFocus) ?? all[0];
+  const from = all.find((t) => t.dataset.id === state.findFocus);
   const to = all[nearest(from.getBoundingClientRect(), all.map((t) => t.getBoundingClientRect()), dir)];
   if (!to) return sfx.edge();
   state.findFocus = /** @type {string} */ (to.dataset.id);
