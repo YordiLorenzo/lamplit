@@ -57,7 +57,7 @@ jobs:
 
           ## Install
 
-          Download \`Lamplit_${version}_x64-setup.exe\` below and run it. It installs Lamplit for your Windows account
+          Download \`Lamplit-setup.exe\` below and run it. It installs Lamplit for your Windows account
           only and doesn't ask for admin rights.
 
           This build isn't code-signed yet, so Windows shows "Windows protected your PC". Click **More info**, then
@@ -88,3 +88,14 @@ jobs:
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           uploadUpdaterJson: false
+
+      # A copy under a fixed name, so links to releases/latest/download/Lamplit-setup.exe (the website's download
+      # button) keep working for every version.
+      - name: Upload the installer under a fixed name
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          setup=$(ls src-tauri/target/release/bundle/nsis/*-setup.exe)
+          cp "$setup" "$RUNNER_TEMP/Lamplit-setup.exe"
+          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/Lamplit-setup.exe" --clobber
