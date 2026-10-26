@@ -126,7 +126,7 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {StoreKey | null} store  the store app the line is about
  */
 
-/** @typedef {'left' | 'right' | 'up' | 'down' | 'l1' | 'r1' | 'ok' | 'back' | 'menu' | 'triangle'} Action */
+/** @typedef {'left' | 'right' | 'up' | 'down' | 'l1' | 'r1' | 'ok' | 'back' | 'menu' | 'triangle' | 'square'} Action */
 
 /**
  * How a failed command reaches the page.

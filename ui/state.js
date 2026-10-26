@@ -29,6 +29,7 @@ const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 
 export const els = {
   heroes: [$('heroA'), $('heroB')],
+  info: $('info'),
   logo: /** @type {HTMLImageElement} */ ($('logo')),
   title: $('title'),
   store: $('store'),
@@ -37,6 +38,8 @@ export const els = {
   playtime: $('playtime'),
   clock: $('clock'),
   empty: $('empty'),
+  noMatch: $('noMatch'),
+  filters: $('filters'),
   track: $('track'),
   overlay: $('overlay'),
   overlayTitle: $('overlayTitle'),
@@ -51,18 +54,27 @@ export const els = {
   settings: $('settings'),
   settingsTitle: $('settingsTitle'),
   settingsList: $('settingsList'),
+  find: $('find'),
+  findQuery: $('findQuery'),
+  findKeys: $('findKeys'),
+  findStores: $('findStores'),
+  findSort: $('findSort'),
   steps: $('steps'),
   toast: $('toast'),
   hint: $('hint'),
 };
 
 export const state = {
-  /** @type {Game[]} every game Rust sent, hidden ones too */
-  library: [],
-  /** @type {Shown[]} the cover row (logic.js rowGames) */
+  /** @type {Shown[]} every game, hidden ones too, in the order Rust sends */
+  all: [],
+  /** @type {Shown[]} the cover row: favourites first, hidden games left out, and what `find` lets through (logic.js rowOf) */
   games: [],
   idx: 0,
-  /** @type {'browse' | 'starting' | 'details' | 'settings'} */
+  /** @type {import('./logic.js').Find} */
+  find: { query: '', store: null, sort: 'played' },
+  /** @type {string} the focused key or choice in the Find panel (its data-id) */
+  findFocus: 'a',
+  /** @type {'browse' | 'starting' | 'details' | 'settings' | 'find'} */
   mode: 'browse',
   /** the focused choice under the details (logic.js detailChoices) */
   detailsIdx: 0,
@@ -109,8 +121,8 @@ export const state = {
 
 export const focused = () => state.games[state.idx];
 
-/** @param {string} id */
-export const byId = (id) => state.games.find((g) => g.id === id);
+/** A game in the library, also when the search or the store filter keeps it out of the row. @param {string} id */
+export const byId = (id) => state.all.find((g) => g.id === id);
 
 /** A store app's name, from the list Rust sends. @param {StoreKey | null} key */
 export const storeName = (key) => state.stores.get(key)?.name;
@@ -121,14 +133,18 @@ export const storeName = (key) => state.stores.get(key)?.name;
  * @param {StoreKey | null | undefined} key @param {string | Node} text @returns {(string | Node)[]}
  */
 export function withStoreLogo(key, text) {
-  if (!key) return [text];
+  return key ? [icon(`store-${key}`), text] : [text];
+}
+
+/** A symbol from index.html, sized and coloured like the text beside it. @param {string} id */
+export function icon(id) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.classList.add('store-logo');
   svg.setAttribute('aria-hidden', 'true');
   const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-  use.setAttribute('href', `#store-${key}`);
+  use.setAttribute('href', `#${id}`);
   svg.append(use);
-  return [svg, text];
+  return svg;
 }
 
 /** The step the player can act on: a sign-in to do, or a store app that may be waiting for them. */

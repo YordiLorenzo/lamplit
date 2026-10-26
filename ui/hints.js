@@ -1,7 +1,7 @@
 // @ts-check
 // The bottom of the screen: which buttons do what right now, and short messages for the player.
 
-import { detailChoices } from './logic.js';
+import { detailChoices, narrowed } from './logic.js';
 import { actionableStep, els, focused, state, storeName } from './state.js';
 
 export function showHints() {
@@ -22,15 +22,17 @@ export function showHints() {
     if (row?.adjust) html += b('options', '↔', 'Adjust');
     else if (row?.kind) html += b('cross', '✕', row.kind === 'section' ? 'Open' : 'Select');
     html += b('circle', '○', state.settings.section ? 'Back' : 'Close');
-  }
-  else if (g && state.running === g.id) html = b('cross', '✕', 'Back to game') + b('options', '≡', 'Details');
-  else if (g) {
-    html = b('cross', '✕', 'Play') + b('options', '≡', 'Details') + b('options', '△', 'Settings');
-    if (state.running) html += b('circle', '○', 'Back to game');
+  } else if (state.mode === 'find') {
+    html = b('cross', '✕', 'Select') + b('options', '□', 'Delete') + b('options', '△', 'Space') + b('circle', '○', 'Done');
   } else {
-    // An empty row: no game found yet, or every game hidden (the running one too, maybe).
-    html = b('options', '△', 'Settings');
-    if (state.running) html += b('circle', '○', 'Back to game');
+    // The row can be empty: no game found yet, every game hidden (the running one too, maybe), or a search that
+    // matches nothing.
+    if (g && state.running === g.id) html = b('cross', '✕', 'Back to game') + b('options', '≡', 'Details');
+    else if (g) html = b('cross', '✕', 'Play') + b('options', '≡', 'Details') + b('options', '△', 'Settings');
+    else html = b('options', '△', 'Settings');
+    if (state.all.length) html += b('options', '□', 'Find');
+    if (narrowed(state.find)) html += b('circle', '○', 'All games');
+    else if (state.running && state.running !== g?.id) html += b('circle', '○', 'Back to game');
   }
   els.hint.innerHTML = html;
 }

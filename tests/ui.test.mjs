@@ -847,10 +847,11 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
       focus: [...document.querySelectorAll('#track .cover')].findIndex((c) => c.classList.contains('focus')),
       details: document.getElementById('details').classList.contains('on'),
       settings: document.getElementById('settings').classList.contains('on'),
+      find: document.getElementById('find').classList.contains('on'),
       overlay: document.getElementById('overlay').classList.contains('on'),
       calls: window.__calls.map((c) => c[0]),
     }));
-  const browsing = (v, focus) => v.focus === focus && !v.details && !v.settings && !v.overlay;
+  const browsing = (v, focus) => v.focus === focus && !v.details && !v.settings && !v.find && !v.overlay;
   /** [step, what it does, whether that held, given the number of calls before the step] */
   const steps = [
     ['right', 'moves to the next game', (v) => browsing(v, 1)],
@@ -864,6 +865,8 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
     ['back', 'closes Details', (v) => browsing(v, 0)],
     ['triangle', 'opens Settings', (v) => v.settings],
     ['triangle', 'closes Settings', (v) => browsing(v, 0)],
+    ['square', 'opens Find', (v) => v.find],
+    ['back', 'closes Find', (v, calls) => browsing(v, 0) && v.calls.length === calls],
     ['ok', 'starts the focused game', (v) => v.overlay && v.calls.at(-1) === 'launch_start'],
     ['back', 'cancels the start', (v) => browsing(v, 0) && v.calls.at(-1) === 'launch_cancel'],
   ];
@@ -1083,6 +1086,202 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   const order = await page.evaluate(() => [...document.querySelectorAll('#track .cover')].map((c) => c.textContent));
   const s = await state(page);
   check('the favourite stays first when another game ends', JSON.stringify(order) === '["Game 001Playing","Game 003Playing","Game 002Playing"]' && s.focusName === 'Game 003', `${JSON.stringify(order)} ${s.focusName}`);
+  await close(page);
+}
+
+// 24. Find a game: the on-screen keyboard narrows the row as it types, the store and sort choices order it, and ○
+// brings every game back. With a controller, the mouse and the keyboard.
+const findView = (page) =>
+  page.evaluate(() => ({
+    open: document.getElementById('find').classList.contains('on'),
+    query: document.getElementById('findQuery').textContent,
+    focus: /** @type {HTMLElement} */ (document.querySelector('#find .focus'))?.dataset.id ?? null,
+    row: [...document.querySelectorAll('#track .cover .name')].map((n) => n.textContent),
+    focused: document.querySelector('#track .cover.focus .name')?.textContent ?? null,
+    filters: document.getElementById('filters').textContent,
+    stores: [...document.querySelectorAll('#findStores .choice')].map((c) => c.textContent),
+    chosen: [...document.querySelectorAll('#find .choice.on')].map((c) => /** @type {HTMLElement} */ (c).dataset.id),
+    noMatch: !document.getElementById('noMatch').hidden,
+    info: !document.getElementById('info').classList.contains('off'),
+    hint: document.getElementById('hint').textContent,
+    settings: document.getElementById('settings').classList.contains('on'),
+    details: document.getElementById('details').classList.contains('on'),
+    calls: window.__calls.length,
+    lastCall: window.__calls.at(-1),
+  }));
+{
+  /** [name, store, days since last played] */
+  const named = [
+    ['Red Dead Redemption 2', 'rockstar', 2],
+    ['Cyberpunk 2077', 'epic', 1],
+    ['Titanfall 2', 'steam', 3],
+    ['Portal 2', 'steam', null],
+    ["Tom Clancy's Ghost Recon Wildlands", 'ubisoft', null],
+    ['Loose Game', null, null],
+  ];
+  const now = Math.floor(Date.now() / 1000);
+  const games = named.map(([name, store, days], i) =>
+    game(i + 1, { name, store, requires: store ? [store] : [], last_played: days == null ? 0 : now - days * 86400 })
+  );
+  const page = await open({ games });
+  const seen = () => findView(page);
+  const pad = async (...steps) => {
+    for (const s of steps) await emit(page, 'pad', s);
+  };
+  /** Moves focus with the d-pad to the key or choice `id`, a row at a time, then presses ✕ on it. */
+  const pick = async (id) => {
+    for (let i = 0; i < 30; i++) {
+      const way = await page.evaluate((id) => {
+        const from = document.querySelector('#find .focus').getBoundingClientRect();
+        const to = document.querySelector(`#find [data-id="${id}"]`).getBoundingClientRect();
+        if (Math.abs(to.y - from.y) > 2) return to.y > from.y ? 'down' : 'up';
+        return Math.abs(to.x - from.x) > 2 ? (to.x > from.x ? 'right' : 'left') : null;
+      }, id);
+      if (!way) break;
+      await pad(way);
+    }
+    await pad('ok');
+  };
+  const all = named.map(([name]) => name);
+
+  await pad('square');
+  let v = await seen();
+  check('□ opens Find on the keyboard', v.open && v.focus === 'a' && ['✕Select', '□Delete', '△Space', '○Done'].every((h) => v.hint.includes(h)), `${v.focus} ${v.hint}`);
+  for (const key of 'rdr') await pick(key);
+  v = await seen();
+  check('the d-pad types, and the row keeps only what matches', v.query === 'rdr' && JSON.stringify(v.row) === '["Red Dead Redemption 2"]' && v.focused === 'Red Dead Redemption 2', `${v.query} ${JSON.stringify(v.row)}`);
+  check('the home screen says what narrows the row', v.filters.includes('rdr') && v.filters.includes('1 of 6 games'), v.filters);
+  await page.screenshot({ path: path.join(shots, 'find.png') });
+  await pad('square');
+  v = await seen();
+  check('□ deletes a letter', v.query === 'rd' && v.row.length === 1, `${v.query} ${JSON.stringify(v.row)}`);
+  await pad('square', 'square');
+  v = await seen();
+  check('an empty search shows every game again, in the usual order', v.query === '' && JSON.stringify(v.row) === JSON.stringify(['Cyberpunk 2077', 'Red Dead Redemption 2', 'Titanfall 2', 'Loose Game', 'Portal 2', "Tom Clancy's Ghost Recon Wildlands"]) && v.filters === '', `${JSON.stringify(v.row)} ${v.filters}`);
+  const before = v.calls;
+  await pad('triangle', 'square');
+  v = await seen();
+  check('△ adds no space to an empty search, and □ has nothing to delete', v.query === '' && v.calls === before, v.query);
+  // The mouse: a click types the key it lands on.
+  for (const key of ['r', 'e', 'd', 'space', 'd', 'e', 'a']) await page.click(`#find [data-id="${key}"]`);
+  v = await seen();
+  check('a click types a key, and Space goes between words', v.query === 'red dea' && JSON.stringify(v.row) === '["Red Dead Redemption 2"]', `${v.query} ${JSON.stringify(v.row)}`);
+  await pick('clear');
+  v = await seen();
+  check('Clear empties the search', v.query === '' && v.row.length === 6, `${v.query} ${v.row.length}`);
+  await pick('store:steam');
+  v = await seen();
+  check('the store choices: All, then the stores with games, games outside any store last', JSON.stringify(v.stores) === '["All","steam","epic","ubisoft","rockstar","pc"]', JSON.stringify(v.stores));
+  check('a store keeps its own games', JSON.stringify(v.row) === '["Titanfall 2","Portal 2"]' && v.chosen.includes('store:steam') && v.focus === 'store:steam', `${JSON.stringify(v.row)} ${v.chosen}`);
+  await pick('sort:name');
+  v = await seen();
+  check('A to Z sorts the row by name', JSON.stringify(v.row) === '["Portal 2","Titanfall 2"]' && v.chosen.includes('sort:name'), JSON.stringify(v.row));
+  await page.screenshot({ path: path.join(shots, 'find-choices.png') });
+  await pad('back');
+  v = await seen();
+  check('○ closes Find and the row stays narrowed, with ○ All games', !v.open && v.row.length === 2 && v.hint.includes('○All games') && v.hint.includes('□Find') && /steam.*A to Z.*2 of 6 games/.test(v.filters), `${v.hint} | ${v.filters}`);
+  await page.screenshot({ path: path.join(shots, 'find-narrowed.png') });
+  await pad('ok');
+  v = await seen();
+  check('✕ starts the game focused in the narrowed row', v.lastCall?.[0] === 'launch_start' && v.lastCall[1].id === 'pc:4', JSON.stringify(v.lastCall));
+  await pad('back', 'right');
+  v = await seen();
+  check('the narrowed row moves as the full one does', v.focused === 'Titanfall 2', v.focused);
+  await pad('back');
+  v = await seen();
+  check('○ brings every game back, on the same game and in the same sort', v.row.length === 6 && v.focused === 'Titanfall 2' && JSON.stringify(v.row) === JSON.stringify([...all].sort()) && v.filters === 'A to Z' && !v.hint.includes('All games'), `${v.focused} ${JSON.stringify(v.row)} ${v.filters} ${v.hint}`);
+
+  // A search that matches nothing leaves an empty row that still answers □ and ○.
+  await pad('square');
+  for (const key of 'zq') await pick(key);
+  await pad('back');
+  v = await seen();
+  check('no match says so, with nothing focused', v.noMatch && v.row.length === 0 && !v.info && v.filters.includes('0 of 6 games'), `${v.noMatch} ${v.info} ${v.filters}`);
+  check('an empty row offers △ Settings, □ Find and ○ All games', v.hint === '△Settings□Find○All games', v.hint);
+  const calls = v.calls;
+  await pad('ok', 'menu', 'right');
+  v = await seen();
+  check('an empty row ignores ✕, Options and moves', v.calls === calls && v.row.length === 0, JSON.stringify(v.lastCall));
+  await page.screenshot({ path: path.join(shots, 'find-no-match.png') });
+  await pad('back');
+  v = await seen();
+  check('○ on an empty row brings every game back', v.row.length === 6 && !v.noMatch && v.info, `${v.row.length} ${v.noMatch}`);
+
+  // A game the filter hides comes into view when Lamplit points at it: when it ends, and when PS is held.
+  await pad('square');
+  await pick('sort:played');
+  await pick('store:steam');
+  await pad('back');
+  await emit(page, 'play', play('running', 'pc:2'));
+  await emit(page, 'play', play('ended', 'pc:2'));
+  v = await seen();
+  check('a game the store filter hides gets focus when it ends, with every game back', v.focused === 'Cyberpunk 2077' && v.row.length === 6 && v.filters === '', `${v.focused} ${v.filters}`);
+  await emit(page, 'play', play('running', 'pc:1'));
+  await pad('square');
+  for (const key of 'portal') await pick(key);
+  await emit(page, 'summoned', 'pc:1');
+  v = await seen();
+  check('holding PS closes Find and brings the running game into view', !v.open && v.focused === 'Red Dead Redemption 2' && v.row.length === 6 && v.hint.includes('Back to game'), `${v.open} ${v.focused} ${v.hint}`);
+  await close(page);
+}
+{
+  // The keyboard: F opens Find, and there every character types, also I, C and Backspace, which act elsewhere.
+  const page = await open({ games: [game(1, { name: 'Portal 2' }), game(2, { name: 'Red Dead Redemption 2' }), game(3, { name: 'Celeste' })] });
+  await page.keyboard.press('f');
+  let v = await findView(page);
+  check('F opens Find', v.open && v.focus === 'a', `${v.open} ${v.focus}`);
+  await page.keyboard.type('Red ic');
+  v = await findView(page);
+  check('I and C type in Find', v.open && v.query === 'Red ic' && !v.details && !v.settings, v.query);
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type('d');
+  v = await findView(page);
+  check('Backspace deletes in Find, and typing moves focus to Done', v.open && v.query === 'Red d' && v.focus === 'done' && JSON.stringify(v.row) === '["Red Dead Redemption 2"]', `${v.query} ${v.focus}`);
+  await page.keyboard.press('Enter');
+  v = await findView(page);
+  check('Enter after typing closes Find on its results', !v.open && v.focused === 'Red Dead Redemption 2' && v.row.length === 1, `${v.open} ${v.focused}`);
+  await page.keyboard.press('Escape');
+  v = await findView(page);
+  check('Esc on the narrowed row brings every game back', v.row.length === 3 && v.focused === 'Red Dead Redemption 2', `${v.row.length} ${v.focused}`);
+  await page.keyboard.press('f');
+  await page.keyboard.type('cel');
+  const cover = await page.evaluate(() => {
+    const r = document.querySelector('#track .cover.focus').getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await page.mouse.click(cover.x, cover.y);
+  v = await findView(page);
+  check('a click on the focused result closes Find and plays it', !v.open && v.lastCall?.[0] === 'launch_start' && v.lastCall[1].id === 'pc:3', JSON.stringify(v.lastCall));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('f');
+  await page.click('#find [data-id="store:all"]');
+  v = await findView(page);
+  check('a click on the choice already made still moves focus there', v.focus === 'store:all' && v.chosen.includes('store:all'), v.focus);
+  await page.keyboard.press('Backspace');
+  v = await findView(page);
+  check('Backspace on an empty search moves focus to Done too', v.open && v.focus === 'done' && v.query === '', `${v.focus} ${v.query}`);
+  await close(page);
+}
+{
+  // A 4:3 screen and a game from every store: the store choices take three lines and the panel scrolls, and the
+  // focused choice stays in view.
+  const stores = ['steam', 'epic', 'ea', 'ubisoft', 'rockstar', 'gog', 'xbox', null];
+  const page = await open({ games: stores.map((store, i) => game(i + 1, { store, requires: store ? [store] : [] })) }, { width: 1440, height: 1080 });
+  await emit(page, 'pad', 'square');
+  for (let i = 0; i < 12; i++) await emit(page, 'pad', 'down');
+  await settled(page);
+  const seen = await page.evaluate(() => {
+    const panel = document.getElementById('find');
+    const focus = document.querySelector('#find .focus');
+    const [p, f] = [panel.getBoundingClientRect(), focus.getBoundingClientRect()];
+    // Inside the panel's padding, not pressed against its rounded edge.
+    const pad = parseFloat(getComputedStyle(panel).paddingBottom);
+    return { id: /** @type {HTMLElement} */ (focus).dataset.id, scrolls: panel.scrollHeight > panel.clientHeight, inside: f.top >= p.top + pad && f.bottom <= p.bottom - pad + 1, pageX: scrollX };
+  });
+  check('4:3: the panel scrolls to keep the focused choice in view, clear of its edge', seen.id.startsWith('sort:') && seen.scrolls && seen.inside && seen.pageX === 0, JSON.stringify(seen));
+  await page.screenshot({ path: path.join(shots, 'find-4x3.png') });
   await close(page);
 }
 

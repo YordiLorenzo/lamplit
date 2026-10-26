@@ -2,21 +2,31 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  STORE_ORDER,
   batteryText,
+  byName,
   byPlayed,
   detailChoices,
   focusIndex,
+  matcher,
+  narrowed,
+  nearest,
   playTimeText,
   playedText,
   readable,
   rowGames,
   rowKey,
+  rowOf,
   sectionRows,
   sectionSummary,
   stepAutoOff,
+  storeChoices,
   storeWarning,
+  typed,
   visibleSections,
+  words,
 } from '../ui/logic.js';
+import { pageValues } from './contract.mjs';
 import { ipc, known, like, values } from './fixtures.mjs';
 
 const DAY = 86400;
@@ -37,7 +47,7 @@ const settingsState = (extra = {}) => ({
   display: null,
   overlays: overlays(false, null),
   stores: new Map(),
-  library: [],
+  all: [],
   running: null,
   settings: { section: null, focus: null, idx: 0, rows: [], confirm: null },
   ...extra,
@@ -129,6 +139,143 @@ describe('detailChoices', () => {
     assert.deepEqual(labels(game('a', 'A', { favourite: true })), ['Play', 'Remove from favourites', 'Hide this game']);
   });
   test('the running game goes back to the game', () => assert.equal(labels(game('a', 'A'), 'a')[0], 'Back to game'));
+});
+
+describe('finding a game', () => {
+  const finds = (query, name) => matcher(query)(name);
+  /** A game as Rust sends it. */
+  const game = (name, store, last_played = 0) => like(ipc('games')[0], { id: name, name, store, last_played });
+  const all = { query: '', store: null, sort: 'played' };
+
+  test('words: lower case, no accents, apostrophes dropped, other punctuation splits', () => {
+    assert.deepEqual(words("Tom Clancy's Ghost Recon®: Wildlands"), ['tom', 'clancys', 'ghost', 'recon', 'wildlands']);
+    assert.deepEqual(words('Half-Life 2'), ['half', 'life', '2']);
+    assert.deepEqual(words('Ōkami HD'), ['okami', 'hd']);
+    assert.deepEqual(words('  ...  '), []);
+  });
+  test('the start of any word, in any case', () => {
+    for (const q of ['red', 'Dead', 'REDEMPTION', '2', 'red dead', 'dead red']) assert.ok(finds(q, 'Red Dead Redemption 2'), q);
+  });
+  test('initials and runs of word starts', () => {
+    for (const q of ['rdr', 'rdr2', 'reddead', 'rdredemption']) assert.ok(finds(q, 'Red Dead Redemption 2'), q);
+    assert.ok(finds('tlou', 'The Last of Us Part I'));
+    assert.ok(finds('fc26', 'EA SPORTS FC 26'));
+    assert.ok(finds('ac', "Assassin's Creed Mirage"), 'the apostrophe leaves the s on its word');
+  });
+  test('punctuation and accents in the name or the search are ignored', () => {
+    assert.ok(finds('cities skylines', 'Cities: Skylines II'));
+    assert.ok(finds('halflife', 'Half-Life 2'));
+    assert.ok(finds('life', 'Half-Life 2'));
+    assert.ok(finds('clancys', "Tom Clancy's Ghost Recon Wildlands"));
+    assert.ok(finds("clancy's", "Tom Clancy's Ghost Recon Wildlands"));
+    assert.ok(finds('okami', 'Ōkami HD'));
+    assert.ok(finds('skate', 'skate.'));
+  });
+  test('not the middle of a word, and every word of the search counts', () => {
+    assert.ok(!finds('edemption', 'Red Dead Redemption 2'));
+    assert.ok(!finds('tf2', 'Titanfall 2'), 'f is inside titanfall');
+    assert.ok(!finds('red zebra', 'Red Dead Redemption 2'));
+    assert.ok(!finds('rdx', 'Red Dead Redemption 2'));
+  });
+  test('an empty search, or one of spaces, finds everything', () => {
+    assert.ok(finds('', 'Anything'));
+    assert.ok(finds('   ', 'Anything'));
+  });
+
+  const library = [
+    game('Zuma', 'steam', 0),
+    game('Red Dead Redemption 2', 'rockstar', 50),
+    game('Game 10', null, 0),
+    game('Édith Finch', 'epic', 0),
+    game('Game 2', null, 0),
+    game('Portal 2', 'steam', 90),
+  ];
+  const names = (find) => rowOf(library, { ...all, ...find }).map((g) => g.name);
+  test('the row by default is the order Rust sends', () => {
+    assert.deepEqual(names({}), [...library].sort(byPlayed).map((g) => g.name));
+    assert.deepEqual(names({}).slice(0, 2), ['Portal 2', 'Red Dead Redemption 2']);
+  });
+  test('A to Z ignores accents and puts numbers in number order', () => {
+    assert.deepEqual(names({ sort: 'name' }), ['Édith Finch', 'Game 2', 'Game 10', 'Portal 2', 'Red Dead Redemption 2', 'Zuma']);
+    assert.equal(byName(game('portal', null), game('Portal', null)), 0);
+  });
+  test('the store filter, with pc for games outside any store', () => {
+    assert.deepEqual(names({ store: 'steam' }), ['Portal 2', 'Zuma']);
+    assert.deepEqual(names({ store: 'pc', sort: 'name' }), ['Game 2', 'Game 10']);
+    assert.deepEqual(names({ store: 'xbox' }), []);
+  });
+  test('search, store and sort together', () => {
+    assert.deepEqual(names({ query: 'g', store: 'pc', sort: 'name' }), ['Game 2', 'Game 10']);
+    assert.deepEqual(names({ query: '2' }), ['Portal 2', 'Red Dead Redemption 2', 'Game 2']);
+  });
+  test('the row is narrowed by a search or a store, not by the sort', () => {
+    assert.ok(!narrowed(all));
+    assert.ok(!narrowed({ ...all, sort: 'name' }));
+    assert.ok(!narrowed({ ...all, query: '  ' }));
+    assert.ok(narrowed({ ...all, query: 'r' }));
+    assert.ok(narrowed({ ...all, store: 'pc' }));
+  });
+
+  test('the store choices: All, then the stores with games, in Rust order, PC last', () => {
+    assert.deepEqual(storeChoices(library, null), [null, 'steam', 'epic', 'rockstar', 'pc']);
+    assert.deepEqual(storeChoices([], null), [null]);
+  });
+  test('the chosen store stays a choice after its games have gone', () => {
+    assert.deepEqual(storeChoices(library, 'xbox'), [null, 'steam', 'epic', 'rockstar', 'xbox', 'pc']);
+  });
+  test('every store the page knows has its place in the choices', () => {
+    assert.deepEqual([...STORE_ORDER].sort(), [...pageValues('StoreKey'), 'pc'].sort());
+  });
+
+  test('typing: letters add on, delete takes the last one off', () => {
+    assert.equal(typed('rd', 'r'), 'rdr');
+    assert.equal(typed('rdr', 'delete'), 'rd');
+    assert.equal(typed('', 'delete'), '');
+  });
+  test('a space only goes between words', () => {
+    assert.equal(typed('red', 'space'), 'red ');
+    assert.equal(typed('red ', 'space'), 'red ');
+    assert.equal(typed('', 'space'), '');
+  });
+  test('the search stops growing at 30 characters', () => {
+    const long = 'a'.repeat(30);
+    assert.equal(typed(long, 'b'), long);
+    assert.equal(typed(long, 'space'), long);
+    assert.equal(typed(long, 'delete').length, 29);
+  });
+
+  describe('moving in rows', () => {
+    // Three keys in a row, a wide key under the first two, and choices of different widths that wrap onto a second
+    // line below that.
+    const box = (x, y, width = 60, height = 60) => ({ x, y, width, height });
+    const boxes = [
+      box(0, 0), box(70, 0), box(140, 0), // 0 1 2
+      box(0, 70, 120), // 3: wide
+      box(0, 160, 40, 40), box(110, 160, 100, 40), // 4 5: choices, first line
+      box(40, 210, 60, 40), // 6: second line
+    ];
+    const go = (from, dir) => nearest(boxes[from], boxes, dir);
+    test('left and right stay in the row, and stop at its ends', () => {
+      assert.equal(go(0, 'right'), 1);
+      assert.equal(go(2, 'left'), 1);
+      assert.equal(go(2, 'right'), -1);
+      assert.equal(go(3, 'right'), -1);
+      assert.equal(go(5, 'right'), -1, 'not on to the second line');
+    });
+    test('up and down go to the next row, onto the box nearest to the side', () => {
+      assert.equal(go(2, 'down'), 3);
+      assert.equal(go(1, 'down'), 3);
+      assert.equal(go(3, 'up'), 0);
+      assert.equal(go(5, 'down'), 6);
+      assert.equal(go(0, 'up'), -1);
+      assert.equal(go(6, 'down'), -1);
+    });
+    test('a line of choices is not skipped for a box further on that sits more in line', () => {
+      // Box 6 is almost straight below box 3 and box 4 a little to the side, but box 4's line comes first.
+      assert.equal(go(3, 'down'), 4);
+      assert.equal(go(6, 'up'), 4);
+    });
+  });
 });
 
 describe('storeWarning', () => {
@@ -323,15 +470,15 @@ describe('Hidden games', () => {
   const library = [game('z', 'Zuma', { hidden: true }), game('t', 'Tool, not a game', { hidden: true }), game('p', 'Portal 2')];
   test('the section shows only while a game is hidden', () => {
     const keys = (state) => visibleSections(state).map((s) => s.key);
-    assert.ok(!keys(settingsState({ library: [game('p', 'Portal 2')] })).includes('hidden'));
-    assert.ok(keys(settingsState({ library })).includes('hidden'));
+    assert.ok(!keys(settingsState({ all: [game('p', 'Portal 2')] })).includes('hidden'));
+    assert.ok(keys(settingsState({ all: library })).includes('hidden'));
   });
   test('the summary counts them', () => {
-    assert.deepEqual(sectionSummary('hidden', settingsState({ library })), ['2 games']);
-    assert.deepEqual(sectionSummary('hidden', settingsState({ library: library.slice(1) })), ['1 game']);
+    assert.deepEqual(sectionSummary('hidden', settingsState({ all: library })), ['2 games']);
+    assert.deepEqual(sectionSummary('hidden', settingsState({ all: library.slice(1) })), ['1 game']);
   });
   test('each one can be shown again, by name', () => {
-    const rows = sectionRows('hidden', settingsState({ library }));
+    const rows = sectionRows('hidden', settingsState({ all: library }));
     assert.deepEqual(rows.map((r) => [r.kind, r.id, r.label, r.value]), [['unhide', 't', 'Tool, not a game', 'Show'], ['unhide', 'z', 'Zuma', 'Show']]);
   });
   test('after the last one is shown again, the open section says so', () =>
@@ -342,7 +489,7 @@ describe('Power', () => {
   const library = [game('cp', 'Cyberpunk 2077')];
   /** The rows with ✕ pressed once on `confirm`, while `running` runs. */
   const rows = (confirm, running = null) =>
-    sectionRows('power', settingsState({ library, running, settings: { section: 'power', focus: null, idx: 0, rows: [], confirm } }));
+    sectionRows('power', settingsState({ all: library, running, settings: { section: 'power', focus: null, idx: 0, rows: [], confirm } }));
   test('Power is the last section, always there', () => {
     assert.equal(visibleSections(settingsState()).at(-1).key, 'power');
     assert.deepEqual(rows(null).map((r) => [r.kind, r.id, r.label, r.value]), [

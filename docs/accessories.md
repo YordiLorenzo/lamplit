@@ -73,8 +73,8 @@ DualSense and 0DF2 DualSense Edge) every 2 seconds.
 | Battery + charging | 53 | 54 | none |
 | Plugged flags | 54 | 55 | none |
 
-- Buttons: first byte d-pad in the low nibble (0 up, 1 to 3 right, 4 down, 5 to 7 left, 8 none), 0x20 cross, 0x40
-  circle, 0x80 triangle; second byte 0x01 L1, 0x02 R1, 0x20 options; third byte 0x01 PS, 0x02 touchpad pressed.
+- Buttons: first byte d-pad in the low nibble (0 up, 1 to 3 right, 4 down, 5 to 7 left, 8 none), 0x10 square, 0x20
+  cross, 0x40 circle, 0x80 triangle; second byte 0x01 L1, 0x02 R1, 0x20 options; third byte 0x01 PS, 0x02 touchpad pressed.
 - Touch points: two of 4 bytes each: a contact byte (bit 7 set when the finger is up), then 12-bit x (0 to 1919)
   and 12-bit y (0 to 1079): `x = b1 | (b2 & 0x0F) << 8`, `y = b2 >> 4 | b3 << 4`.
 - Battery byte: low nibble 0 to 10 (Lamplit shows `n × 10 + 5`, at most 100 %); high nibble 0 battery, 1 charging,

@@ -3,8 +3,9 @@
 // fails to start.
 
 import * as api from './api.js';
+import { closeFind } from './find.js';
 import { showHints, toast } from './hints.js';
-import { closeDetails, paintCover, render, sortByPlayed } from './library.js';
+import { closeDetails, focusGame, paintCover, render, showRow } from './library.js';
 import { sfx } from './sounds.js';
 import { byId, els, focused, state, storeName, withStoreLogo } from './state.js';
 
@@ -102,7 +103,8 @@ export function onPlay(play) {
     if (g && mine) {
       // It closed right after starting: a launcher handing over, or a crash. Wait for it in view.
       if (state.mode === 'details') closeDetails();
-      state.idx = state.games.indexOf(g);
+      if (state.mode === 'find') closeFind();
+      focusGame(id);
       showStarting(g, 'Waiting for the game to come back. ○ stops waiting.');
     }
   } else if (play.state === 'ended') {
@@ -111,14 +113,16 @@ export function onPlay(play) {
       endLaunch();
       // Focus moves to the game that ended; open details would still name the game focused before.
       if (state.mode === 'details') closeDetails();
-      sortByPlayed();
-      state.idx = Math.max(0, state.games.findIndex((x) => x.id === id));
+      if (state.mode === 'find') closeFind();
+      // Its last-played time changed, so the row is ordered again.
+      showRow(id);
+      focusGame(id);
     }
   } else if (play.state === 'failed' && mine) {
     endLaunch();
     toast(play.message);
   }
-  state.games.forEach(paintCover);
+  state.all.forEach(paintCover);
   render();
 }
 
@@ -126,8 +130,8 @@ export function onPlay(play) {
 export function onSummoned(runningId) {
   state.running = runningId;
   if (state.mode === 'details') closeDetails();
-  const k = state.games.findIndex((g) => g.id === runningId);
-  if (k >= 0) state.idx = k;
-  state.games.forEach(paintCover);
+  if (state.mode === 'find') closeFind();
+  if (runningId) focusGame(runningId);
+  state.all.forEach(paintCover);
   render();
 }

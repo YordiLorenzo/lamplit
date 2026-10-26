@@ -23,13 +23,14 @@ pub enum Action {
 type Button = fn(&Input) -> bool;
 
 /// The buttons that are a step for the page when pressed, with that step. PS isn't one: holding it summons Lamplit.
-const BUTTON_STEPS: [(Button, &str); 6] = [
+const BUTTON_STEPS: [(Button, &str); 7] = [
     (|i| i.cross, "ok"),
     (|i| i.circle, "back"),
     (|i| i.options, "menu"),
     (|i| i.triangle, "triangle"),
     (|i| i.l1, "l1"),
     (|i| i.r1, "r1"),
+    (|i| i.square, "square"),
 ];
 
 /// One controller's buttons, fed every input report.

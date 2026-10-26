@@ -166,6 +166,24 @@ body.pointer { cursor: default; }
 }
 #empty[hidden] { display: none; }
 
+/* What narrows the row, just above it: the search, the store, the sort. */
+#filters {
+  position: fixed;
+  left: var(--safe-x);
+  bottom: calc(12vh + var(--cover-h) * 1.2 + 1.6vh);
+  z-index: 2;
+  display: flex;
+  gap: 1.4vh;
+  align-items: center;
+  font-size: 2.2vh;
+  color: var(--ink-dim);
+  text-shadow: 0 .2vh 1vh rgb(0 0 0 / .5);
+  transition: opacity 300ms ease;
+}
+#filters .pill { text-shadow: none; }
+#filters .pill.query { font-size: 2.1vh; letter-spacing: 0; text-transform: none; }
+#info.off, body.launching #filters { opacity: 0; }
+
 /* ---------- cover row ---------- */
 
 #row {
@@ -236,6 +254,14 @@ body.pointer { cursor: default; }
   text-transform: uppercase;
 }
 .cover.playing .badge { display: block; }
+
+#noMatch {
+  position: absolute;
+  left: var(--safe-x);
+  bottom: calc(var(--cover-h) * .45);
+  font-size: 3.2vh;
+  color: var(--ink-dim);
+}
 
 /* ---------- launching ---------- */
 
@@ -329,7 +355,7 @@ body.launching .cover.focus { scale: 1.1; }
   padding: .4vh;
   scrollbar-width: none;
 }
-#settingsList h3 {
+#settingsList h3, #find h3 {
   margin-top: 2vh;
   font-size: 1.8vh;
   font-weight: 650;
@@ -361,6 +387,75 @@ body.launching .cover.focus { scale: 1.1; }
 /* Play, favourite and hide; these take clicks, the rest of Details doesn't. */
 #dChoices { display: grid; gap: .8vh; margin-top: 4vh; padding: .4vh; }
 #details.on #dChoices { pointer-events: auto; }
+
+/* ---------- find ---------- */
+
+/* Wider than Settings for a keyboard ten keys across; the row's first covers stay in view beside it. */
+#find { width: 46vw; padding: 4.4vh 4vh; overflow-y: auto; scroll-padding: 4.4vh 0; scrollbar-width: none; }
+#find.on { pointer-events: auto; }
+#find h2 { margin-bottom: 2.4vh; }
+#find h3 { margin: 2.4vh 0 1.2vh; }
+
+#findField {
+  display: flex;
+  align-items: center;
+  gap: 1.4vh;
+  margin-bottom: 2.4vh;
+  padding: 1.4vh 2vh;
+  border-radius: 1.2vh;
+  background: rgb(255 255 255 / .08);
+  border: .12vh solid rgb(255 255 255 / .2);
+  font-size: 3.4vh;
+}
+#findField .glass { flex: none; width: 3vh; height: 3vh; fill: var(--ink-dim); }
+/* The caret follows the search; with nothing typed, it stands before the dimmed placeholder. */
+#findQuery { display: flex; align-items: center; min-height: 1.3em; white-space: pre; overflow: hidden; }
+#findQuery::after {
+  content: '';
+  order: 1;
+  width: .3vh;
+  height: 1.1em;
+  margin-left: .2vh;
+  background: rgb(var(--accent));
+  animation: blink 1s step-end infinite;
+}
+#findQuery:empty::before { content: attr(data-placeholder); order: 2; margin-left: 1vh; color: var(--ink-dim); }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  #findQuery::after { animation: none; }
+}
+
+#findKeys { display: grid; grid-template-columns: repeat(10, 1fr); gap: .8vh; }
+.key {
+  display: grid;
+  place-items: center;
+  height: 5.6vh;
+  border-radius: 1vh;
+  background: rgb(255 255 255 / .07);
+  font-size: 2.6vh;
+  font-weight: 600;
+  transition: background 120ms ease;
+}
+.key.wide { font-size: 2.2vh; }
+.key.focus { background: rgb(255 255 255 / .22); box-shadow: inset 0 0 0 .25vh #fff; }
+
+/* Store and sort choices, drawn like the store pill on the home screen. */
+.choices { display: flex; flex-wrap: wrap; gap: 1vh; }
+.choice {
+  display: inline-flex;
+  align-items: center;
+  padding: 1vh 1.8vh;
+  border-radius: 99px;
+  background: rgb(255 255 255 / .08);
+  border: .12vh solid rgb(255 255 255 / .22);
+  font-size: 2vh;
+  font-weight: 650;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.choice.on { background: rgb(var(--accent) / .3); border-color: rgb(var(--accent) / .75); }
+.choice.focus { box-shadow: 0 0 0 .3vh #fff; }
 
 /* ---------- hints and messages ---------- */
 

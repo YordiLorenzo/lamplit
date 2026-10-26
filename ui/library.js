@@ -3,9 +3,9 @@
 
 import { assetUrl, librarySetFavourite, librarySetHidden } from './api.js';
 import { showHints, toast } from './hints.js';
-import { byPlayed, detailChoices, playTimeText, playedText, readable, rowGames, storeWarning } from './logic.js';
+import { detailChoices, narrowed, playTimeText, playedText, readable, rowOf, storeWarning, words } from './logic.js';
 import { sfx } from './sounds.js';
-import { byId, els, focused, state, storeName, withStoreLogo } from './state.js';
+import { byId, els, focused, icon, state, storeName, withStoreLogo } from './state.js';
 
 /**
  * @typedef {import('./api.js').Game} Game
@@ -119,6 +119,8 @@ function setLogo(g) {
 
 export function showInfo() {
   const g = focused();
+  // A search that matches nothing, or a library of hidden games, leaves no game to show.
+  els.info.classList.toggle('off', !g);
   if (!g) return showHints();
   setLogo(g);
   // The pill shows the store's logo and key, which the stylesheet upper-cases: STEAM, EPIC, and PC outside any store.
@@ -264,22 +266,76 @@ export function render() {
 /** @param {Game[]} list */
 export function setGames(list) {
   const keep = focused()?.id;
-  state.library = list;
-  state.games = rowGames(list).map((g) => ({ ...g, el: newCover(g.name) }));
-  const k = state.games.findIndex((g) => g.id === keep);
-  state.idx = Math.max(0, k);
-  // Details still names the game that is gone, and ✕ there would start whatever is focused now.
-  if (k < 0 && state.mode === 'details') closeDetails();
-  els.empty.hidden = state.games.length > 0;
-  els.empty.textContent = list.length ? 'Every game is hidden. Settings > Hidden games shows them again.' : 'No games found';
-  state.games.forEach(paintCover);
+  state.all = list.map((g) => ({ ...g, el: newCover(g.name) }));
+  state.all.forEach(paintCover);
+  // Details still names the game that is gone, and ✕ there would start whatever is focused now. They close before the
+  // row is drawn, which would show their hints for a game that isn't there.
+  if (state.mode === 'details' && !rowOf(state.all, state.find).some((g) => g.id === keep)) closeDetails();
+  showRow(keep);
+}
+
+/** The games the row can show at all: every game that isn't hidden. */
+const shownCount = () => state.all.filter((g) => !g.hidden).length;
+
+/**
+ * Fills the cover row (logic.js rowOf: favourites first, hidden games left out, and what the search, the store filter
+ * and the sort let through), with focus on game `keep` when it is among them, else on the first.
+ * @param {string | null} [keep]
+ */
+export function showRow(keep = null) {
+  state.games = rowOf(state.all, state.find);
+  state.idx = Math.max(0, state.games.findIndex((g) => g.id === keep));
+  const shown = shownCount();
+  els.empty.hidden = shown > 0;
+  els.empty.textContent = state.all.length ? 'Every game is hidden. Settings > Hidden games shows them again.' : 'No games found';
   els.track.replaceChildren(...state.games.map((g) => g.el));
+  els.noMatch.hidden = state.games.length > 0 || !shown;
+  showFilters();
   render();
 }
 
-export function sortByPlayed() {
-  state.games = rowGames(state.games.sort(byPlayed));
-  els.track.append(...state.games.map((g) => g.el));
+/**
+ * Focuses game `id`. When the search or the store filter keeps it out of the row, every game comes back first, so
+ * the game Lamplit points the player to is in sight. A hidden game stays out of the row even then.
+ * @param {string} id
+ */
+export function focusGame(id) {
+  if (!byId(id)) return;
+  if (!state.games.some((g) => g.id === id)) {
+    state.find = { ...state.find, query: '', store: null };
+    showRow(id);
+  }
+  const k = state.games.findIndex((g) => g.id === id);
+  if (k >= 0) state.idx = k;
+}
+
+/** ○ on a narrowed row: every game again, still on the focused one. */
+export function showAllGames() {
+  state.find = { ...state.find, query: '', store: null };
+  sfx.back();
+  showRow(focused()?.id);
+}
+
+/**
+ * Above the row, while it isn't every game by last played: the search, the store and the sort that shape it, and how
+ * many games it holds.
+ */
+function showFilters() {
+  const { query, store, sort } = state.find;
+  /** @param {string} cls @param {(string | Node)[]} content */
+  const pill = (cls, ...content) => {
+    const el = document.createElement('span');
+    el.className = `pill ${cls}`;
+    el.append(...content);
+    return el;
+  };
+  /** @type {Node[]} */
+  const parts = [];
+  if (words(query).length) parts.push(pill('query', icon('icon-search'), query.trim()));
+  if (store) parts.push(pill('', ...withStoreLogo(store === 'pc' ? null : store, store)));
+  if (sort === 'name') parts.push(pill('quiet', 'A to Z'));
+  if (narrowed(state.find)) parts.push(document.createTextNode(`${state.games.length} of ${shownCount()} games`));
+  els.filters.replaceChildren(...parts);
 }
 
 /** @param {number} delta */

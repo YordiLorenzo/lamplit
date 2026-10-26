@@ -16,6 +16,10 @@ Every release of Lamplit, newest first. The format follows
   Lamplit sees the game running.
 - Favourites, which come first in the row, and hidden games, which leave it, both set from a game's details.
   Settings > Hidden games shows a hidden game again.
+- Find a game: Square (F on a keyboard) opens a search with an on-screen keyboard, which narrows the row as you type.
+  It matches the start of any word in a game's name, or its first letters, such as "rdr" for Red Dead Redemption 2.
+  It also shows one store's games, and sorts the row A to Z. The home screen shows what narrows the row, and Circle
+  brings every game back.
 
 ### Changed
 
