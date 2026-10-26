@@ -3,7 +3,7 @@
 // %LOCALAPPDATA%\lamplit\art (<Steam app id>\portrait.jpg, hero.jpg and logo.png), copied from a Windows PC where
 // Lamplit has found art for these games.
 // Run: `node tests/screenshots.mjs [art folder]` (tests/art by default). It writes docs/images/{home,launch,settings,
-// sound,controllers,find}.jpg.
+// sound,controllers,find,details}.jpg.
 import { chromium } from 'playwright-core';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -98,6 +98,8 @@ const settings = {
         battery: like(accessories.controllers[0].battery, { percent: 70, charge: known('charge', 'battery') }),
         headphones: false,
       }),
+      // An Xbox controller next to it: no percent, a level.
+      accessories.controllers[1],
     ],
   }),
   prefs_state: like(ipc('prefs'), { sound_follows: true, touchpad_mouse: true, steam_devtools: false, online_art: true }),
@@ -188,6 +190,17 @@ const browser = await chromium.launch(process.env.CHROME ? { executablePath: pro
   }
   await artLoaded(page);
   await shoot(page, 'find');
+  await page.close();
+}
+
+// Details over Titanfall 2: its play time, and the choices under the details.
+{
+  const page = await open(browser, uiDir, { games, now });
+  await emit(page, 'stores', stores);
+  await emit(page, 'pad', 'right');
+  await artLoaded(page);
+  await emit(page, 'pad', 'menu');
+  await shoot(page, 'details');
   await page.close();
 }
 

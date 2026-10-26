@@ -23,15 +23,15 @@ while you play. When the game closes, Lamplit is back on screen.
 <table>
   <tr>
     <td width="50%"><img src="docs/images/launch.jpg" alt="The starting screen: Lamplit asks to sign in to the store app a game needs, with buttons to open it, try anyway or cancel"><br><sub>Starting a game: each store app it needs, and what it needs from you.</sub></td>
-    <td width="50%"><img src="docs/images/settings.jpg" alt="The Settings panel: Sound, Headset, Controllers, Overlay and pop-ups, Stores and System, each with a one-line summary"><br><sub>Settings: each section with a one-line summary.</sub></td>
+    <td width="50%"><img src="docs/images/settings.jpg" alt="The Settings panel: Sound, Headset, Controllers, Overlay and pop-ups, Stores, System and Power, each with a one-line summary"><br><sub>Settings: each section with a one-line summary.</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/images/sound.jpg" alt="The Sound section: output and microphone devices, volume, mute and the sound-follows switch"><br><sub>Sound: output, microphone and volume, from the sofa.</sub></td>
-    <td width="50%"><img src="docs/images/controllers.jpg" alt="The Controllers section: touchpad as mouse, and a Bluetooth controller's battery, headphones and Turn off"><br><sub>Controllers: battery, headphones, and Turn off.</sub></td>
+    <td width="50%"><img src="docs/images/controllers.jpg" alt="The Controllers section: a Bluetooth DualSense with its battery, headphones and Turn off, and a wireless Xbox controller with its battery level"><br><sub>Controllers: every controller, with its battery.</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/images/find.jpg" alt="Find a game: an on-screen keyboard with rdr typed, store and sort choices, and the row narrowed to Red Dead Redemption 2"><br><sub>Find a game: "rdr" finds Red Dead Redemption 2.</sub></td>
-    <td width="50%"></td>
+    <td width="50%"><img src="docs/images/details.jpg" alt="A game's details: store, last played, play time and folder, with Play, Add to favourites and Hide this game below"><br><sub>Details: play time, favourites, and hiding what isn't a game.</sub></td>
   </tr>
 </table>
 
