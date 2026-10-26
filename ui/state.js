@@ -102,6 +102,22 @@ export const byId = (id) => state.games.find((g) => g.id === id);
 /** A store app's name, from the list Rust sends. @param {StoreKey | null} key */
 export const storeName = (key) => state.stores.get(key)?.name;
 
+/**
+ * The store's logo (a symbol in index.html) and then `text`, for replaceChildren or append; only the text when there
+ * is no store.
+ * @param {StoreKey | null | undefined} key @param {string | Node} text @returns {(string | Node)[]}
+ */
+export function withStoreLogo(key, text) {
+  if (!key) return [text];
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.classList.add('store-logo');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', `#store-${key}`);
+  svg.append(use);
+  return [svg, text];
+}
+
 /** The step the player can act on: a sign-in to do, or a store app that may be waiting for them. */
 export const actionableStep = () =>
   [...state.steps].reverse().find((s) => s.store && (s.state === 'block' || s.state === 'warn'));

@@ -5,7 +5,7 @@ import { assetUrl } from './api.js';
 import { showHints } from './hints.js';
 import { byPlayed, playedText, readable, storeWarning } from './logic.js';
 import { sfx } from './sounds.js';
-import { byId, els, focused, state, storeName } from './state.js';
+import { byId, els, focused, state, storeName, withStoreLogo } from './state.js';
 
 /**
  * @typedef {import('./api.js').Game} Game
@@ -121,8 +121,8 @@ export function showInfo() {
   const g = focused();
   if (!g) return;
   setLogo(g);
-  // The pill shows the store's key, which the stylesheet upper-cases: STEAM, EPIC, and PC outside any store.
-  els.store.textContent = g.store ?? 'pc';
+  // The pill shows the store's logo and key, which the stylesheet upper-cases: STEAM, EPIC, and PC outside any store.
+  els.store.replaceChildren(...withStoreLogo(g.store, g.store ?? 'pc'));
   const warning = storeWarning(g, state.stores);
   els.note.textContent = state.running === g.id ? 'Playing' : warning ?? g.note ?? '';
   els.note.classList.toggle('warn', state.running !== g.id && !!warning);
@@ -136,7 +136,7 @@ export function showInfo() {
 export function openDetails() {
   const g = focused();
   els.dName.textContent = g.name;
-  els.dStore.textContent = storeName(g.store) ?? 'Not from a store';
+  els.dStore.replaceChildren(...withStoreLogo(g.store, storeName(g.store) ?? 'Not from a store'));
   els.dPlayed.textContent = playedText(g.last_played).replace(/^Played /, '') || 'Not yet';
   els.dDir.textContent = g.dir;
   state.mode = 'details';

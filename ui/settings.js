@@ -7,7 +7,7 @@ import { showHints, toast } from './hints.js';
 import { showInfo } from './library.js';
 import { SECTIONS, focusIndex, rowKey, sectionRows, sectionSummary, stepAutoOff, visibleSections } from './logic.js';
 import { sfx } from './sounds.js';
-import { els, state } from './state.js';
+import { els, state, withStoreLogo } from './state.js';
 
 function renderSettings() {
   const s = state.settings;
@@ -33,7 +33,7 @@ function renderSettings() {
     const row = document.createElement('div');
     row.className = 'row' + (r.kind ? '' : ' info') + (i === s.idx ? ' focus' : '') + (r.adjust ? ' adjust' : '');
     const label = document.createElement('span');
-    label.textContent = r.label;
+    label.append(...withStoreLogo(r.store, r.label));
     const value = document.createElement('span');
     value.className = 'value ' + (r.tone ?? '');
     value.textContent = r.value;

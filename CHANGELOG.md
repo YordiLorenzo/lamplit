@@ -4,6 +4,13 @@ Every release of Lamplit, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- Store logos: in the store badge on the home screen, in a game's details, on the starting screen and in
+  Settings > Stores.
+
 ## 0.1.0 - 2026-10-26
 
 The first public release, free for noncommercial use under the PolyForm Noncommercial License 1.0.0.

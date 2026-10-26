@@ -130,6 +130,18 @@ body.pointer { cursor: default; }
 .pill.warn { background: rgb(255 190 80 / .2); border-color: rgb(255 190 80 / .6); color: #ffd58a; }
 .pill:empty { display: none; }
 
+/* Store logos (withStoreLogo in state.js): sized by the text beside them, in its colour. */
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.store-logo {
+  flex: none;
+  width: 1.3em;
+  height: 1.3em;
+  margin-right: .5em;
+  vertical-align: -.27em;
+  fill: currentColor;
+}
+#steps .store-logo { margin-right: 0; }
+
 #clock {
   position: fixed;
   right: var(--safe-x);

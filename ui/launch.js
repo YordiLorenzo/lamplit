@@ -6,17 +6,20 @@ import * as api from './api.js';
 import { showHints, toast } from './hints.js';
 import { closeDetails, paintCover, render, sortByPlayed } from './library.js';
 import { sfx } from './sounds.js';
-import { byId, els, focused, state, storeName } from './state.js';
+import { byId, els, focused, state, storeName, withStoreLogo } from './state.js';
 
-/** @param {import('./state.js').Shown} g @param {string} sub */
-function showStarting(g, sub) {
+/**
+ * @param {import('./state.js').Shown} g @param {string} sub
+ * @param {import('./state.js').StoreKey | null} [store]  the store app `sub` names, whose logo goes in front of it
+ */
+function showStarting(g, sub, store = null) {
   if (state.launching !== g.id) state.steps = [];
   state.mode = 'starting';
   state.launching = g.id;
   renderSteps();
   document.body.classList.add('launching');
   els.overlayTitle.textContent = `Starting ${g.name}…`;
-  els.overlaySub.textContent = sub;
+  els.overlaySub.replaceChildren(...withStoreLogo(store, sub));
   els.overlay.classList.add('on');
   showHints();
 }
@@ -27,7 +30,7 @@ export async function play() {
   sfx.launch();
   // A game starts through the first store app it needs, if any.
   const via = storeName(g.requires[0]);
-  showStarting(g, via ? `Through ${via}` : '');
+  showStarting(g, via ? `Through ${via}` : '', via ? g.requires[0] : null);
   try {
     await api.launchStart(g.id);
   } catch (e) {
@@ -47,7 +50,7 @@ function renderSteps() {
     i.textContent = icon[s.state] ?? '';
     const t = document.createElement('span');
     t.textContent = s.label;
-    li.append(i, t);
+    li.append(i, ...withStoreLogo(s.store, t));
     els.steps.append(li);
   }
 }
