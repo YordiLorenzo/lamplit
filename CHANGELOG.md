@@ -20,6 +20,7 @@ Every release of Lamplit, newest first. The format follows
 ### Changed
 
 - Triangle opens Settings also when the row is empty, so Power and Hidden games are always in reach.
+- A held key repeats only the arrows, as a held button on the controller does.
 - Lamplit keeps what it knows per game in `games.json`; the `played.json` of 0.1.0 is still read.
 
 ## 0.1.0 - 2026-10-26

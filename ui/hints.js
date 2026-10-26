@@ -27,7 +27,11 @@ export function showHints() {
   else if (g) {
     html = b('cross', '✕', 'Play') + b('options', '≡', 'Details') + b('options', '△', 'Settings');
     if (state.running) html += b('circle', '○', 'Back to game');
-  } else html = b('options', '△', 'Settings');
+  } else {
+    // An empty row: no game found yet, or every game hidden (the running one too, maybe).
+    html = b('options', '△', 'Settings');
+    if (state.running) html += b('circle', '○', 'Back to game');
+  }
   els.hint.innerHTML = html;
 }
 

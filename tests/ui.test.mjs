@@ -1037,6 +1037,38 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await idle(page);
   v = await view();
   check('✕ twice on Sleep puts the PC to sleep', v.calls.at(-1) === 'power_sleep' && !v.open, `${v.calls.at(-1)} ${v.open}`);
+  // A held Enter repeats; the repeat mustn't answer the question its first press asked.
+  await powerSection();
+  await page.keyboard.press('ArrowDown');
+  const before = (await view()).calls.length;
+  await page.keyboard.down('Enter');
+  await page.keyboard.down('Enter');
+  await page.keyboard.up('Enter');
+  await idle(page);
+  v = await view();
+  check('a held Enter asks, and its repeat doesn\'t confirm', v.focus === 'RestartPress again to confirm' && !v.calls.slice(before).includes('power_restart'), `${v.focus} ${JSON.stringify(v.calls.slice(before))}`);
+  await close(page);
+}
+
+// 23. The running game hidden as the last game in the row: Circle still goes back to it.
+{
+  const page = await open({ games: [game(1)], running: 'pc:1' });
+  await page.evaluate((g) => {
+    window.__settings = { library_set_hidden: ({ on }) => [{ ...g, hidden: on }] };
+  }, game(1));
+  await page.keyboard.press('i');
+  let s = await state(page);
+  check('Details of the running game offer Back to game', s.hint.includes('✕Back to game'), s.hint);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  s = await state(page);
+  check('with every game hidden, the hints still offer the running game', s.covers === 0 && s.hint.includes('○Back to game'), `${s.covers} ${s.hint}`);
+  await page.keyboard.press('Escape');
+  await idle(page);
+  s = await state(page);
+  check('○ goes back to a running game that is hidden', s.lastCall?.[0] === 'launch_resume', JSON.stringify(s.lastCall));
   await close(page);
 }
 

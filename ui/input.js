@@ -47,8 +47,12 @@ export function act(action, source) {
     } else if (action === 'ok') markGame();
     return;
   }
-  // Also with an empty row: Settings has Power, and Hidden games when every game is hidden.
+  // Also with an empty row: Settings has Power and Hidden games, and the running game may be one that is hidden.
   if (action === 'triangle') return openSettings();
+  if (action === 'back') {
+    if (state.running) backToGame();
+    return;
+  }
   if (!state.games.length) return;
   switch (action) {
     case 'left': return move(-1);
@@ -57,9 +61,14 @@ export function act(action, source) {
     case 'r1': return move(5);
     case 'ok': return play();
     case 'menu': return openDetails();
-    case 'back': if (state.running) backToGame(); return;
   }
 }
+
+/**
+ * The actions a held key repeats: only directions, as on the controller, so holding ✕ can't also answer the question
+ * it asked (Settings > Power).
+ */
+const REPEATS = ['left', 'right', 'up', 'down'];
 
 /** @type {Record<string, Action>} */
 const KEYS = {
@@ -71,6 +80,7 @@ window.addEventListener('keydown', (e) => {
   const action = KEYS[e.key];
   if (!action) return;
   e.preventDefault();
+  if (e.repeat && !REPEATS.includes(action)) return;
   act(action, 'key');
 });
 
