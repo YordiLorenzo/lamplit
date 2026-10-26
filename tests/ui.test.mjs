@@ -1079,6 +1079,11 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await idle(page);
   v = await view();
   check('a held Enter asks, and its repeat doesn\'t confirm', v.focus === 'RestartPress again to confirm' && !v.calls.slice(before).includes('power_restart'), `${v.focus} ${JSON.stringify(v.calls.slice(before))}`);
+  // The focused cover still shows beside Settings: a click on it mustn't answer the question either.
+  await page.click('#track .cover.focus');
+  await idle(page);
+  v = await view();
+  check('a click on the focused cover doesn\'t confirm a power action', v.open && !v.calls.slice(before).includes('power_restart'), `${v.open} ${JSON.stringify(v.calls.slice(before))}`);
   await close(page);
 }
 
@@ -1311,6 +1316,35 @@ const findView = (page) =>
   });
   check('4:3: the panel scrolls to keep the focused choice in view, clear of its edge', seen.id.startsWith('sort:') && seen.scrolls && seen.inside && seen.pageX === 0, JSON.stringify(seen));
   await page.screenshot({ path: path.join(shots, 'find-4x3.png') });
+  await close(page);
+}
+
+// 25. A game hidden while the player moves on: Rust's late answer leaves focus on the game they moved to, whose
+// Details are open, so ✕ there plays the game they name.
+{
+  const games = [game(1), game(2), game(3)];
+  const page = await open({ games });
+  await page.evaluate((list) => {
+    window.__settings = {
+      // Rust answers when the test says so.
+      library_set_hidden: ({ id, on }) =>
+        new Promise((resolve) => {
+          window.__answer = () => resolve(list.map((g) => (g.id === id ? { ...g, hidden: on } : g)));
+        }),
+    };
+  }, games);
+  await page.keyboard.press('i');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('i');
+  await page.evaluate(() => window.__answer());
+  await idle(page);
+  const s = await state(page);
+  const named = await page.evaluate(() => document.getElementById('dName').textContent);
+  check('a hide that answers late keeps focus on the game the player moved to', s.details && s.focusName === 'Game 003' && named === 'Game 003', `${s.details} ${s.focusName} ${named}`);
   await close(page);
 }
 

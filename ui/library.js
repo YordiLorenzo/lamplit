@@ -198,10 +198,15 @@ export async function markGame() {
     } else {
       const at = state.idx;
       closeDetails();
-      setGames(await librarySetHidden(g.id, true));
-      // Focus goes to the game that took its place.
-      state.idx = Math.max(0, Math.min(at, state.games.length - 1));
-      render();
+      const list = await librarySetHidden(g.id, true);
+      // The row stays live while Rust saves: a player who moved on keeps the game they moved to (setGames).
+      const stayed = focused()?.id === g.id;
+      setGames(list);
+      if (stayed) {
+        // Focus goes to the game that took its place.
+        state.idx = Math.max(0, Math.min(at, state.games.length - 1));
+        render();
+      }
       toast(`${g.name} is hidden. Settings > Hidden games shows it again.`);
     }
   } catch (e) {

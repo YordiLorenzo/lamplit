@@ -112,10 +112,13 @@ window.addEventListener('keydown', (e) => {
 els.track.addEventListener('click', (e) => {
   const cover = /** @type {Element} */ (e.target).closest('.cover');
   const k = state.games.findIndex((g) => g.el === cover);
+  if (k < 0) return;
   // A click on a result leaves Find for the row.
-  if (k >= 0 && state.mode === 'find') closeFind();
+  if (state.mode === 'find') closeFind();
+  // Under Settings or Details, ✕ means their focused row: a cover click there could confirm a power action.
+  if (state.mode !== 'browse') return;
   if (k === state.idx) act('ok', 'mouse');
-  else if (k >= 0 && state.mode === 'browse') move(k - state.idx);
+  else move(k - state.idx);
 });
 
 // A click on a choice in Details picks it.
