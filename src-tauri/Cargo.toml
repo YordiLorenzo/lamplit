@@ -2,7 +2,7 @@
 name = "lamplit"
 version = "0.1.0"
 description = "A console-style full-screen game home screen for Windows PCs on a TV"
-license = "MIT"
+license = "PolyForm-Noncommercial-1.0.0"
 repository = "https://github.com/YordiLorenzo/lamplit"
 edition = "2024"
 rust-version = "1.95"

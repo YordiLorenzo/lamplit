@@ -181,4 +181,14 @@ protocols, and [docs/architecture.md](docs/architecture.md) the rest of the code
 - Update the docs in the same pull request: `README.md` for what players see, `docs/security-and-privacy.md` for
   anything Lamplit changes on the PC or sends online, and `CHANGELOG.md` under the next version.
 
-By contributing, you agree that your contribution is released under the [MIT licence](LICENSE).
+### Licence of contributions
+
+Lamplit is published under the [PolyForm Noncommercial License 1.0.0](LICENSE). By sending a pull request, you
+agree that:
+
+- your contribution is your own work (or you have the right to submit it), and it is shared under the same licence;
+- you also grant YordiLorenzo a perpetual, worldwide, non-exclusive, royalty-free licence to use, change, sublicense
+  and relicense your contribution, including under commercial terms. This keeps it possible to offer Lamplit under
+  other terms later (for example a paid build) without tracking down every past contributor.
+
+The pull request template asks you to confirm this.

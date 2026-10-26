@@ -15,3 +15,4 @@ For a change to the page, add a screenshot.
 - [ ] For a change in `ui/`: `npm --prefix tests test` and `npm --prefix tests run typecheck` pass.
 - [ ] A new or changed command, event or payload has its fixture in `tests/ipc/` and a page test that uses it.
 - [ ] The docs say what changed, if it changes what Lamplit does on the PC or sends over the network (`docs/security-and-privacy.md`).
+- [ ] I agree to the [licence terms for contributions](../CONTRIBUTING.md#licence-of-contributions).

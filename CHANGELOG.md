@@ -6,7 +6,7 @@ Every release of Lamplit, newest first. The format follows
 
 ## 0.1.0 - 2026-10-26
 
-The first public release.
+The first public release, free for noncommercial use under the PolyForm Noncommercial License 1.0.0.
 
 ### Added
 

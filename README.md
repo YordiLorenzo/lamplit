@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/YordiLorenzo/lamplit/actions/workflows/ci.yml"><img src="https://github.com/YordiLorenzo/lamplit/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/YordiLorenzo/lamplit/releases/latest"><img src="https://img.shields.io/github/v/release/YordiLorenzo/lamplit?label=release&color=FCA545" alt="Latest release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-AB84DE" alt="Licence: MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-PolyForm%20Noncommercial-AB84DE" alt="Licence: PolyForm Noncommercial 1.0.0"></a>
 </p>
 
 **Lamplit is a console-style home screen for the games on a Windows PC, made for the TV and a controller.**
@@ -235,7 +235,7 @@ including the risk of Steam's DevTools port.
 
 |  | Lamplit | Steam Big Picture | Playnite (fullscreen mode) |
 | --- | --- | --- | --- |
-| Price and source | Free, MIT licence | Free, closed source | Free, MIT licence |
+| Price and source | Free, source on GitHub (noncommercial licence) | Free, closed source | Free, MIT licence |
 | Runs on | Windows | Windows, macOS, Linux, SteamOS | Windows |
 | Games it lists | Installed games from seven stores and outside any store, found by itself | Steam games; others as shortcuts you add by hand | Games from the libraries you connect through its add-ons, and emulated games |
 | Before a game starts | Starts the store apps it needs, waits for sign-in, shows Steam's update progress | Steam updates its own games first | Starts the game through its store or its exe |
@@ -329,7 +329,9 @@ privately, as [SECURITY.md](SECURITY.md) describes, not in a public issue.
 
 ## Licence
 
-Lamplit is released under the [MIT licence](LICENSE).
+Lamplit is free to use, change and share for any noncommercial purpose, under the
+[PolyForm Noncommercial License 1.0.0](LICENSE). Playing games with it at home is exactly what it's for. Selling
+it, or bundling it into something you sell, isn't allowed; for any commercial use, open an issue to ask.
 
 It is built with [Tauri](https://tauri.app). The DualSense and headset code follows protocol notes published by
 [HeadsetControl](https://github.com/Sapd/HeadsetControl), [Solaar](https://github.com/pwr-Solaar/Solaar),

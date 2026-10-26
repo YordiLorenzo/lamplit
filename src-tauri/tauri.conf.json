@@ -34,7 +34,7 @@
     "targets": ["nsis"],
     "publisher": "YordiLorenzo",
     "copyright": "Copyright (c) 2026 YordiLorenzo",
-    "license": "MIT",
+    "license": "PolyForm-Noncommercial-1.0.0",
     "homepage": "https://github.com/YordiLorenzo/lamplit",
     "shortDescription": "A console-style game home screen for Windows PCs on a TV",
     "longDescription": "Lamplit is a full-screen home screen for the games on a Windows PC, made for a TV and a controller. It finds the games from Steam, Epic, GOG, EA, Ubisoft, Rockstar and Xbox, and games outside any store, shows their art and starts them.",
