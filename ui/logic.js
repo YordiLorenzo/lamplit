@@ -104,18 +104,6 @@ export function byPlayed(a, b) {
 }
 
 /**
- * The games in the cover row: the favourites first, then the rest, each in the order given. Hidden games are left
- * out.
- * @template {Game} T
- * @param {T[]} games
- * @returns {T[]}
- */
-export function rowGames(games) {
-  const shown = games.filter((g) => !g.hidden);
-  return [...shown.filter((g) => g.favourite), ...shown.filter((g) => !g.favourite)];
-}
-
-/**
  * The choices under a game's details, in order.
  * @param {Game} g
  * @param {string | null} running  the id of the game that runs
@@ -211,9 +199,8 @@ const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: tr
 export const byName = (a, b) => collator.compare(a.name, b.name) || byPlayed(a, b);
 
 /**
- * The cover row: the games the search and the store filter let through, in the chosen order, with the favourites
- * first and hidden games left out (rowGames). Everything that decides which games the row shows, and in what order,
- * belongs here.
+ * The cover row: the games the search and the store filter let through, hidden games left out, favourites first and
+ * then the chosen order. Everything that decides which games the row shows, and in what order, belongs here.
  * @template {Game} G
  * @param {G[]} games
  * @param {Find} find
@@ -221,11 +208,10 @@ export const byName = (a, b) => collator.compare(a.name, b.name) || byPlayed(a, 
  */
 export function rowOf(games, { query, store, sort }) {
   const named = matcher(query);
-  return rowGames(
-    games
-      .filter((g) => (!store || (g.store ?? 'pc') === store) && named(g.name))
-      .sort(sort === 'name' ? byName : byPlayed),
-  );
+  const order = sort === 'name' ? byName : byPlayed;
+  return games
+    .filter((g) => !g.hidden && (!store || (g.store ?? 'pc') === store) && named(g.name))
+    .sort((a, b) => Number(b.favourite) - Number(a.favourite) || order(a, b));
 }
 
 /** Whether the row leaves games out, so the home screen says so and ○ brings every game back. @param {Find} find */

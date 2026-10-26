@@ -16,7 +16,6 @@ import {
   playTimeText,
   playedText,
   readable,
-  rowGames,
   rowKey,
   rowOf,
   sectionRows,
@@ -122,8 +121,8 @@ describe('byPlayed', () => {
   });
 });
 
-describe('rowGames', () => {
-  const names = (list) => rowGames(list).map((g) => g.name);
+describe('favourites and hidden games in the row', () => {
+  const names = (list) => rowOf(list, { query: '', store: null, sort: 'played' }).map((g) => g.name);
   test('favourites come first, each group in the order given', () => {
     const list = [game('a', 'A'), game('b', 'B', { favourite: true }), game('c', 'C'), game('d', 'D', { favourite: true })];
     assert.deepEqual(names(list), ['B', 'D', 'A', 'C']);

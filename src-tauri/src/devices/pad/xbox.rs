@@ -21,6 +21,9 @@ use windows::Win32::UI::Input::XboxController::{
 };
 
 pub const MICROSOFT: u16 = 0x045E;
+/// Microsoft's controllers from this product id on are Xbox ones (the first Xbox controller is 0x0202). The SideWinder
+/// controllers below it are DirectInput controllers, which XInput can't read.
+const FIRST_XBOX: u16 = 0x0200;
 /// Steam Input's virtual controller: Valve's vendor id, as SDL tells it apart.
 const STEAM_VIRTUAL: (u16, u16) = (0x28DE, 0x11FF);
 
@@ -86,11 +89,14 @@ impl Slots {
         self.0.iter().flatten().any(|p| !p.steam)
     }
 
-    /// A controller with these USB ids is read here. When a slot's ids are unknown, it could be any Xbox-style
-    /// controller (`xbox_style`: one Windows names the buttons of as an Xbox controller's).
+    /// A controller with these USB ids is read here: a slot holds them, or a slot whose ids are unknown could hold any
+    /// Xbox-style controller (`xbox_style`: one Windows names the buttons of as an Xbox controller's). One of
+    /// Microsoft's Xbox controllers counts as read while any slot is, since the ids XInput and Windows.Gaming.Input
+    /// give one controller can differ. With no slot in use it is read elsewhere: an original Xbox controller on a
+    /// DirectInput driver (XBCD) has no XInput slot.
     pub fn reads(&self, vendor: u16, product: u16, xbox_style: bool) -> bool {
         let read = |p: &Pad| !p.steam && p.ids.map_or(xbox_style, |ids| ids == (vendor, product));
-        self.0.iter().flatten().any(read)
+        self.0.iter().flatten().any(read) || (vendor == MICROSOFT && product >= FIRST_XBOX && self.reading())
     }
 }
 
@@ -207,6 +213,16 @@ mod tests {
         let unknown = Slots([None, pad(None, false), None, None]);
         assert!(unknown.reads(0x2DC8, 0x3106, true));
         assert!(!unknown.reads(0x057E, 0x2009, false));
+        // Microsoft's Xbox controllers while XInput reads any controller, whatever ids it gives.
+        assert!(slots.reads(MICROSOFT, 0x0B13, false));
+        assert!(slots.reads(MICROSOFT, 0x028E, false));
+        // A SideWinder Force Feedback 2 is a DirectInput controller, read elsewhere even then.
+        assert!(!slots.reads(MICROSOFT, 0x001B, false));
+        // No slot in use: an original Xbox controller on XBCD (0x0202) is read through Windows.Gaming.Input. Steam
+        // Input's virtual controller doesn't count as one.
+        let steam_only = Slots([None, pad(Some(STEAM_VIRTUAL), true), None, None]);
+        assert!(!steam_only.reads(MICROSOFT, 0x0202, false));
+        assert!(!Slots([None, None, None, None]).reads(MICROSOFT, 0x0202, false));
     }
 
     #[test]

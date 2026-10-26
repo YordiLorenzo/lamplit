@@ -22,9 +22,6 @@ use windows::Gaming::Input::{GameControllerButtonLabel, GameControllerSwitchPosi
 use windows::System::Power::BatteryStatus;
 
 const VALVE: u16 = 0x28DE;
-/// Microsoft's controllers from this product id on are Xbox ones (the first Xbox controller is 0x0202). The SideWinder
-/// controllers below it are DirectInput controllers, which XInput can't read.
-const FIRST_XBOX: u16 = 0x0200;
 
 /// The controllers being read.
 #[derive(Default)]
@@ -77,7 +74,7 @@ impl Others {
             // The layout of a controller read here; None for one read another way.
             let here = (!read_elsewhere(vendor, product))
                 .then(|| Layout::of(&raw, vendor))
-                .filter(|layout| !in_xinput(vendor, product, xbox.reads(vendor, product, layout.xbox), xbox.reading()));
+                .filter(|layout| !xbox.reads(vendor, product, layout.xbox));
             let listed = self.pads.iter().position(|pad| pad.id == id);
             match (listed, here) {
                 (Some(_), Some(_)) => super::set_battery(app, &id, battery(&raw)),
@@ -173,14 +170,6 @@ fn connected() -> windows::core::Result<Vec<(String, RawGameController)>> {
 /// Input's own (its virtual controllers among them).
 fn read_elsewhere(vendor: u16, product: u16) -> bool {
     dualsense::is(vendor, product) || vendor == VALVE
-}
-
-/// XInput reads this controller: a slot holds its ids (`held`), or it is one of Microsoft's Xbox controllers while
-/// XInput reads any controller (`xinput_reading`), since the ids XInput and Windows.Gaming.Input give one controller
-/// can differ. With no XInput controller, a Microsoft one is read here: an original Xbox controller on a DirectInput
-/// driver (XBCD) has no XInput slot.
-fn in_xinput(vendor: u16, product: u16, held: bool, xinput_reading: bool) -> bool {
-    held || (vendor == xbox::MICROSOFT && product >= FIRST_XBOX && xinput_reading)
 }
 
 /// Which button index is which. None for a button the controller doesn't have, or Windows doesn't name.
@@ -367,21 +356,6 @@ mod tests {
         assert!(!read_elsewhere(dualsense::SONY, 0x09CC));
         assert!(!read_elsewhere(0x057E, 0x2009));
         assert!(!read_elsewhere(0x2DC8, 0x3106));
-    }
-
-    #[test]
-    fn controllers_xinput_reads_are_left_out() {
-        // A slot holds its ids: an 8BitDo pad.
-        assert!(in_xinput(0x2DC8, 0x3106, true, true));
-        assert!(!in_xinput(0x2DC8, 0x3106, false, true));
-        // Microsoft's Xbox controllers while XInput reads any controller, whatever ids it gives.
-        assert!(in_xinput(0x045E, 0x0B13, false, true));
-        assert!(in_xinput(0x045E, 0x028E, false, true));
-        // Microsoft id, no XInput slot connected: read through Windows.Gaming.Input (an original Xbox controller on
-        // XBCD, 0x0202).
-        assert!(!in_xinput(0x045E, 0x0202, false, false));
-        // A SideWinder Force Feedback 2 is a DirectInput controller, read here even while XInput reads another.
-        assert!(!in_xinput(0x045E, 0x001B, false, true));
     }
 
     /// The buttons Windows names for an Xbox-style controller, in an order unlike DirectInput's.
