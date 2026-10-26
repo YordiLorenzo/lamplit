@@ -1,12 +1,13 @@
-// Watching a launched game: Lamplit steps aside once the game runs and comes back when it closes (session.rs says
-// what the game's processes coming and going mean), and `resume` brings a running game back to the front.
+// Watching a launched game: Lamplit steps aside once the game runs, counts how long it runs, and comes back when it
+// closes (session.rs says what the game's processes coming and going mean). `resume` brings a running game back to
+// the front.
 
-use super::session::{STUB_RUN, Step, Tracker};
+use super::session::{PlayClock, STUB_RUN, Step, Tracker};
 use super::window::{bring_lamplit_forward, minimize_lamplit};
-use super::{Launcher, record_played, step, update_text};
+use super::{Launcher, step, update_text};
 use crate::events::{self, Event, Play, StepState};
 use crate::files::folder_key;
-use crate::library::Game;
+use crate::library::{self, Game};
 use crate::stores::{Processes, Store, steam};
 use crate::win::process::keep_awake;
 use crate::win::window;
@@ -69,6 +70,12 @@ pub fn watch_game(app: &AppHandle, generation: u64, game: &Game) {
     };
     let mut procs = Processes::now();
     let mut tracker = Tracker::new(Instant::now());
+    let mut clock = PlayClock::default();
+    let mut save_play = |running: bool| {
+        if let Some(seconds) = clock.poll(running, Instant::now()) {
+            library::add_play_time(app, id, seconds);
+        }
+    };
     let mut last_progress = None;
     // The store app most likely to be holding things up: the publisher's launcher if there is one, else the store.
     let blocker = game.requires.last().copied();
@@ -103,16 +110,18 @@ pub fn watch_game(app: &AppHandle, generation: u64, game: &Game) {
             }
         } else if launcher.running_id().as_deref() != Some(id) {
             log::info!("{name}: another game took over, no longer watching it");
+            save_play(false);
             return;
         }
         procs.refresh();
         let pids = watch.pids(procs.iter());
+        save_play(!pids.is_empty());
         let Some(next) = tracker.poll(!pids.is_empty(), Instant::now()) else { continue };
         match next {
             Step::Started => {
                 log::info!("{name} is running (pids {pids:?})");
                 stay_awake(false);
-                record_played(id);
+                library::record_start(app, id);
                 launcher.set_running(id, watch.clone());
                 events::emit(app, Event::Play(Play::Running { id }));
                 minimize_lamplit(app);
@@ -134,6 +143,8 @@ pub fn watch_game(app: &AppHandle, generation: u64, game: &Game) {
             Step::Ended => {
                 log::info!("{name} closed; Lamplit is back");
                 launcher.clear_running(id);
+                // With its play time, saved when its processes went.
+                library::send(app);
                 events::emit(app, Event::Play(Play::Ended { id }));
                 // Right after a game's window closes Windows may not hand the foreground over yet. Steam's window,
                 // if a Steam launch opened it, shouldn't end up over Lamplit either.

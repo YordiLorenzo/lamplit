@@ -10,6 +10,17 @@ Every release of Lamplit, newest first. The format follows
 
 - Store logos: in the store badge on the home screen, in a game's details, on the starting screen and in
   Settings > Stores.
+- Settings > Power: sleep, restart and shut down. Cross asks once to confirm, and names a running game that
+  restarting or shutting down would close.
+- Play time for each game, on the home screen and in its details: Steam's own count for a Steam game, else the time
+  Lamplit sees the game running.
+- Favourites, which come first in the row, and hidden games, which leave it, both set from a game's details.
+  Settings > Hidden games shows a hidden game again.
+
+### Changed
+
+- Triangle opens Settings also when the row is empty, so Power and Hidden games are always in reach.
+- Lamplit keeps what it knows per game in `games.json`; the `played.json` of 0.1.0 is still read.
 
 ## 0.1.0 - 2026-10-26
 

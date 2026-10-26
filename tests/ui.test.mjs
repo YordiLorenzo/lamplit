@@ -36,6 +36,9 @@ function game(i, { noArt: none, ...extra } = {}) {
     dir: `D:\\Games\\Game ${i}`,
     note: null,
     last_played: 0,
+    play_minutes: 0,
+    favourite: false,
+    hidden: false,
     art: none || !art.length ? noArt : art[i % art.length],
     requires: store ? [store] : [],
     ...extra,
@@ -459,7 +462,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('c');
   await idle(page);
   let v = await view();
-  check('settings open on the list of sections', v.open && v.title === 'Settings' && v.rows.length === 6, JSON.stringify(v.rows));
+  check('settings open on the list of sections, Power last', v.open && v.title === 'Settings' && v.rows.length === 7 && v.rows[6].startsWith('Power'), JSON.stringify(v.rows));
   check('section summaries say what is going on', v.rows[0].includes('PRO X 2 headset · 45%') && v.rows[1].includes('On · 80% · charging') && v.rows[2].includes('1 connected · 65%') && v.rows[4].includes('EA app: sign in'), JSON.stringify(v.rows));
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
@@ -886,6 +889,168 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('Escape');
   s = await state(page);
   check('○ in the row goes back to the running game', s.lastCall?.[0] === 'launch_resume', JSON.stringify(s.lastCall));
+  await close(page);
+}
+
+// 20. Play time on the home screen and in Details; favourites and hidden games from Details, shown again from
+// Settings.
+{
+  const games = [game(1), game(2), game(3, { play_minutes: 754 }), game(4)];
+  const page = await open({ games });
+  await page.evaluate((list) => {
+    const s = (window.__settings = { list });
+    /** Rust's answer: every game, with the change. */
+    const set = (flag) => ({ id, on }) => {
+      s.list.find((g) => g.id === id)[flag] = on;
+      return s.list;
+    };
+    s.library_set_favourite = set('favourite');
+    s.library_set_hidden = set('hidden');
+  }, games);
+  const details = () =>
+    page.evaluate(() => ({
+      choices: [...document.querySelectorAll('#dChoices .row')].map((r) => r.textContent),
+      focus: document.querySelector('#dChoices .row.focus')?.textContent ?? null,
+      time: document.getElementById('dTime').textContent,
+      meta: document.getElementById('meta').innerText.replace(/\s+/g, ' '),
+    }));
+  await page.keyboard.press('i');
+  let d = await details();
+  check('a game Lamplit never saw run has no play time', d.time === 'Not counted yet' && !d.meta.includes('played'), JSON.stringify(d));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  d = await details();
+  check('the home screen shows whole hours played', d.meta.endsWith('12 h played'), d.meta);
+  await page.keyboard.press('i');
+  d = await details();
+  let s = await state(page);
+  check('Details show hours and minutes played', d.time === '12 h 34 min', d.time);
+  check('Details open on Play, with the other choices below', d.focus === 'Play' && JSON.stringify(d.choices) === '["Play","Add to favourites","Hide this game"]' && s.hint.includes('✕Play'), `${JSON.stringify(d)} ${s.hint}`);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  d = await details();
+  s = await state(page);
+  check('✕ on Add to favourites asks Rust', JSON.stringify(s.lastCall) === '["library_set_favourite",{"id":"pc:3","on":true}]', JSON.stringify(s.lastCall));
+  check('a favourite moves to the front and keeps focus, Details open', s.details && s.focusIndex === 0 && s.focusName === 'Game 003' && d.focus === 'Remove from favourites', `${s.focusIndex} ${s.focusName} ${d.focus}`);
+  check('Details hint Select on a choice other than Play', s.hint.includes('✕Select'), s.hint);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('i');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  d = await details();
+  check('Details stop at the last choice', d.focus === 'Hide this game', d.focus);
+  await page.keyboard.press('Enter');
+  await idle(page);
+  s = await state(page);
+  check('✕ on Hide this game asks Rust', JSON.stringify(s.lastCall) === '["library_set_hidden",{"id":"pc:1","on":true}]', JSON.stringify(s.lastCall));
+  check('a hidden game leaves the row, and focus stays in its place', !s.details && s.covers === 3 && s.focusIndex === 1 && s.focusName === 'Game 002', `${s.covers} ${s.focusIndex} ${s.focusName}`);
+  check('hiding says where to find the game again', s.toast.includes('Settings > Hidden games'), s.toast);
+  // A click on a choice picks it, as ✕ would.
+  await page.keyboard.press('i');
+  await settled(page);
+  const second = await page.evaluate(() => {
+    const r = document.querySelectorAll('#dChoices .row')[1].getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await page.mouse.click(second.x, second.y);
+  await idle(page);
+  s = await state(page);
+  check('a click on a choice in Details picks it', JSON.stringify(s.lastCall) === '["library_set_favourite",{"id":"pc:2","on":true}]', JSON.stringify(s.lastCall));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('c');
+  await idle(page);
+  const rows = () => page.evaluate(() => [...document.querySelectorAll('#settingsList .row')].map((r) => r.textContent));
+  let list = await rows();
+  check('Settings list the hidden games', list.includes('Hidden games1 game'), JSON.stringify(list));
+  for (let i = 0; i < list.indexOf('Hidden games1 game'); i++) await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  list = await rows();
+  check('Hidden games names each one', JSON.stringify(list) === '["Game 001Show"]', JSON.stringify(list));
+  await page.keyboard.press('Enter');
+  await idle(page);
+  s = await state(page);
+  list = await rows();
+  check('✕ shows a hidden game again', JSON.stringify(s.lastCall) === '["library_set_hidden",{"id":"pc:1","on":false}]' && s.covers === 4 && s.toast === 'Game 001 is back in the row.', `${JSON.stringify(s.lastCall)} ${s.covers} ${s.toast}`);
+  check('the section says when none is left', JSON.stringify(list) === '["No hidden games"]', JSON.stringify(list));
+  await page.keyboard.press('c');
+  await emit(page, 'games', games.map((g) => ({ ...g, hidden: true })));
+  s = await state(page);
+  check('every game hidden says how to show them again', s.empty.startsWith('Every game is hidden') && s.hint.includes('Settings'), `${s.empty} | ${s.hint}`);
+  await page.keyboard.press('c');
+  list = await rows();
+  check('Settings open with no game in the row', list.some((r) => r.startsWith('Hidden games4 games')), JSON.stringify(list));
+  await close(page);
+}
+
+// 21. Settings > Power: ✕ asks once, ✕ again sleeps, restarts or shuts down; a running game that will close is named.
+{
+  const page = await open({ games: [game(1), game(2, { name: 'Racer' })], running: 'pc:2' });
+  await page.evaluate(() => (window.__settings = {}));
+  const view = () =>
+    page.evaluate(() => ({
+      open: document.getElementById('settings').classList.contains('on'),
+      rows: [...document.querySelectorAll('#settingsList .row')].map((r) => r.textContent),
+      focus: document.querySelector('#settingsList .row.focus')?.textContent ?? null,
+      toast: document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '',
+      calls: window.__calls.map((c) => c[0]),
+    }));
+  const powerSection = async () => {
+    await page.keyboard.press('c');
+    await idle(page);
+    for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+  };
+  await powerSection();
+  let v = await view();
+  check('Power offers sleep, restart and shut down', JSON.stringify(v.rows) === '["Sleep","Restart","Shut down"]' && v.focus === 'Sleep', JSON.stringify(v.rows));
+  await page.keyboard.press('Enter');
+  v = await view();
+  check('✕ once asks to confirm, and sends nothing', v.focus === 'SleepPress again to confirm' && !v.calls.some((c) => c.startsWith('power_')), `${v.focus} ${JSON.stringify(v.calls)}`);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  v = await view();
+  check('moving on cancels the question, and restart names the game that will close', v.rows[0] === 'Sleep' && v.focus === 'RestartPress again to confirm' && v.rows.includes('Racer is running and will close'), JSON.stringify(v.rows));
+  await page.keyboard.press('Enter');
+  await idle(page);
+  v = await view();
+  check('✕ again restarts, from the home screen', v.calls.at(-1) === 'power_restart' && !v.open, `${v.calls.at(-1)} ${v.open}`);
+  await page.evaluate((error) => {
+    window.__settings.power_shut_down = () => {
+      throw error;
+    };
+  }, like(ipc('error'), { message: "Windows didn't shut down. Another Windows account is signed in on this PC: sign it out first." }));
+  await powerSection();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  v = await view();
+  check('a shutdown Windows refuses says why', v.calls.at(-1) === 'power_shut_down' && v.toast.startsWith("Windows didn't shut down."), `${v.calls.at(-1)} ${v.toast}`);
+  await powerSection();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  v = await view();
+  check('✕ twice on Sleep puts the PC to sleep', v.calls.at(-1) === 'power_sleep' && !v.open, `${v.calls.at(-1)} ${v.open}`);
+  await close(page);
+}
+
+// 22. A game that ends moves to the front of the games that aren't favourites; the favourites stay in front of it.
+{
+  const page = await open({ games: [game(1, { favourite: true }), game(2), game(3)] });
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  await emit(page, 'play', play('running', 'pc:3'));
+  await emit(page, 'play', play('ended', 'pc:3'));
+  const order = await page.evaluate(() => [...document.querySelectorAll('#track .cover')].map((c) => c.textContent));
+  const s = await state(page);
+  check('the favourite stays first when another game ends', JSON.stringify(order) === '["Game 001Playing","Game 003Playing","Game 002Playing"]' && s.focusName === 'Game 003', `${JSON.stringify(order)} ${s.focusName}`);
   await close(page);
 }
 

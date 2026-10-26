@@ -23,6 +23,9 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {string} dir  the install folder
  * @property {string | null} note  "Installing" or "Update pending", from the store
  * @property {number} last_played  Unix seconds, 0 for never
+ * @property {number} play_minutes  Steam's count for a Steam game when it is more, else Lamplit's
+ * @property {boolean} favourite  comes first in the row
+ * @property {boolean} hidden  left out of the row; Settings lists it
  * @property {Art} art
  * @property {StoreKey[]} requires  store apps that must run and be signed in for the game
  */
@@ -165,6 +168,10 @@ export const assetUrl = (path) => /** @type {string} */ (tauri.core.convertFileS
 export const libraryGames = () => call('library_games');
 /** @returns {Promise<void>} */
 export const libraryRescan = () => call('library_rescan');
+/** @param {string} id @param {boolean} on @returns {Promise<Game[]>} every game, with the change */
+export const librarySetFavourite = (id, on) => call('library_set_favourite', { id, on });
+/** @param {string} id @param {boolean} on @returns {Promise<Game[]>} every game, with the change */
+export const librarySetHidden = (id, on) => call('library_set_hidden', { id, on });
 /** Starts the launch checks, which report through onLaunchStep and onPlay. @param {string} id @returns {Promise<void>} */
 export const launchStart = (id) => call('launch_start', { id });
 /** @returns {Promise<void>} */
@@ -224,6 +231,12 @@ export const prefsSetTouchpadMouse = (on) => call('prefs_set_touchpad_mouse', { 
 export const prefsSetSteamDevtools = (on) => call('prefs_set_steam_devtools', { on });
 /** @param {boolean} on @returns {Promise<Prefs>} */
 export const prefsSetOnlineArt = (on) => call('prefs_set_online_art', { on });
+/** @returns {Promise<void>} once the PC has woken up again */
+export const powerSleep = () => call('power_sleep');
+/** @returns {Promise<void>} once Windows has started to restart */
+export const powerRestart = () => call('power_restart');
+/** @returns {Promise<void>} once Windows has started to shut down */
+export const powerShutDown = () => call('power_shut_down');
 /** @returns {Promise<string | null>} e.g. "3840 × 2160 at 120 Hz" */
 export const displayMode = () => call('display_mode');
 

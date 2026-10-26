@@ -19,11 +19,11 @@ src-tauri/
     data.rs          the data folder and the JSON files in it
     files.rs         path helpers: drive-letter checks, safe joins, atomic writes
     logging.rs       lamplit.log, supervisor.log and setup.log
-    library/         the game list: discovery, sorting, art
+    library/         the game list: discovery, sorting, art, favourites, hidden games and play time
     stores/          one file per store app; loose.rs finds games outside any store
     launch/          starting a game, watching it, and Lamplit's own window
     devices/         controllers (pad/), the headset, sound devices, where the sound goes
-    system/          quiet mode, NVIDIA's overlay, first-time setup
+    system/          quiet mode, NVIDIA's overlay, first-time setup, sleep, restart and shut down
     win/             the calls into Windows, and the only place unsafe code is allowed
   capabilities/default.json   what the page may call
   windows/installer-hooks.nsh the uninstaller's extra steps
@@ -63,10 +63,11 @@ The supervisor and the app each hold a named mutex (`Local\lamplit-supervisor`, 
 Lamplit brings the first one's window forward and exits. Task Scheduler only restarts a task that fails to start, not
 one that crashes later, which is why the supervisor exists.
 
-Lamplit keeps its files in the data folder, `%LOCALAPPDATA%\lamplit`: `prefs.json`, `played.json` (when each game
-was last played), `art.json` and `art\<steam appid>\` (art lookups and downloads), `setup.json` (setup is done, for
-which exe) and `quiet-saved.json` (the settings quiet mode replaced), plus the logs. WebView2 keeps its profile in
-`%LOCALAPPDATA%\io.github.yordilorenzo.lamplit`.
+Lamplit keeps its files in the data folder, `%LOCALAPPDATA%\lamplit`: `prefs.json`, `games.json` (per game id:
+favourite, hidden, when it was last played and how long Lamplit saw it run; 0.1.0's `played.json` is still read for
+the last-played times), `art.json` and `art\<steam appid>\` (art lookups and downloads), `setup.json` (setup is
+done, for which exe) and `quiet-saved.json` (the settings quiet mode replaced), plus the logs. WebView2 keeps its
+profile in `%LOCALAPPDATA%\io.github.yordilorenzo.lamplit`.
 
 ## Inside the app
 
@@ -105,11 +106,13 @@ menu behind it. Holding PS is the exception: it brings Lamplit forward from anyw
 6. `launch/watch.rs` reads the process list once a second. A process counts as the game when its exe is inside the
    game's folder, or has one of the game's exe names:
    - Seen for 1.5 seconds: the game runs. A `play` event says `running`, Lamplit minimises itself and records the
-     time in `played.json`.
+     time in `games.json`.
+   - While it runs: the time between two polls that both see it counts as play time, at most 5 seconds per poll (a
+     longer gap is the PC asleep). It is saved to `games.json` every minute and when the game's processes go.
    - Gone again within 20 seconds of starting: a launcher handing over to the game, or a crash at start. A `play`
      event says `starting`, Lamplit comes forward and keeps waiting.
-   - Gone for 5 seconds after a longer run: the game has ended. A `play` event says `ended`, Lamplit comes forward,
-     and after a Steam game it minimises Steam's window.
+   - Gone for 5 seconds after a longer run: the game has ended. A `games` event brings the new play time, a `play`
+     event says `ended`, Lamplit comes forward, and after a Steam game it minimises Steam's window.
    - Nothing after 45 seconds and no download running: a hint that the store app may need the player. Nothing after
      3 minutes: a warning, and Lamplit keeps waiting until the player cancels. A Steam download holds this timeout
      off.
@@ -125,6 +128,7 @@ message is written for the player, and the page shows it.
 | --- | --- | --- |
 | `library_games` | | Every game, or `null` until the first scan has finished |
 | `library_rescan` | | Nothing; scans unless the last scan was under 30 seconds ago |
+| `library_set_favourite`, `library_set_hidden` | `id`, `on` | Every game, after the change |
 | `launch_start` | `id` | Nothing; `launch-step` and `play` events follow |
 | `launch_anyway` | | Nothing; the launch goes ahead without a confirmed sign-in |
 | `launch_cancel` | | Nothing |
@@ -147,6 +151,8 @@ message is written for the player, and the page shows it.
 | `controller_turn_off` | `id` | Nothing |
 | `prefs_state` | | The prefs |
 | `prefs_set_sound_follows`, `prefs_set_touchpad_mouse`, `prefs_set_steam_devtools`, `prefs_set_online_art` | `on` | The prefs after the change |
+| `power_sleep` | | Nothing, once the PC has woken up again |
+| `power_restart`, `power_shut_down` | | Nothing, once Windows has started to restart or shut down |
 | `display_mode` | | The screen's mode, such as `3840 × 2160 at 120 Hz` |
 
 ## Events
@@ -155,7 +161,7 @@ Rust sends these without being asked (`events.rs`):
 
 | Event | Payload | When |
 | --- | --- | --- |
-| `games` | Every game | The game list changed |
+| `games` | Every game | The game list changed, or a game that ran has ended with more play time |
 | `art` | `{ id, art }` | Art for one game came in |
 | `pad` | `up`, `down`, `left`, `right`, `ok`, `back`, `menu`, `triangle`, `l1` or `r1` | A controller press, while Lamplit is in front |
 | `play` | `{ state, id }`, plus `message` when `state` is `failed` | A launched game is `running`, `starting` again, `ended` or `failed` |

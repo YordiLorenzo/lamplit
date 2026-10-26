@@ -14,11 +14,20 @@ pub struct Game {
     /// "Installing" or "Update pending", from the store's own state.
     pub note: Option<&'static str>,
     pub last_played: u64,
+    /// The store's count (`store_minutes`) or Lamplit's, whichever is more (user_data.rs).
+    pub play_minutes: u64,
+    /// Comes first in the row.
+    pub favourite: bool,
+    /// Left out of the row; Settings lists it.
+    pub hidden: bool,
     pub art: Art,
     /// Store apps that must run and be signed in: the game's own, plus any its publisher adds.
     pub requires: Vec<Store>,
     #[serde(skip)]
     pub steam_appid: Option<u32>,
+    /// Minutes played as the store counts them, play outside Lamplit included; 0 for a store that keeps no count.
+    #[serde(skip)]
+    pub store_minutes: u64,
     #[serde(skip)]
     pub launch: Launch,
     /// More folders and exe names that count as "the game is running" (Xbox games run from a mirror folder).
@@ -51,9 +60,13 @@ impl Game {
             dir,
             note: None,
             last_played: 0,
+            play_minutes: 0,
+            favourite: false,
+            hidden: false,
             art: Art::default(),
             requires: Vec::new(),
             steam_appid: None,
+            store_minutes: 0,
             launch,
             extra_dirs: Vec::new(),
             exe_names: Vec::new(),
@@ -76,10 +89,13 @@ mod tests {
         );
         game.note = Some("Update pending");
         game.last_played = 1_760_000_000;
+        game.play_minutes = 754;
+        game.favourite = true;
         game.art.portrait = Some(r"C:\Users\player\AppData\Local\lamplit\art\70\portrait.jpg".into());
         game.requires = vec![Store::Steam, Store::Ea];
-        // Lamplit's own: the page doesn't get it.
+        // Lamplit's own: the page doesn't get them.
         game.steam_appid = Some(70);
+        game.store_minutes = 754;
         assert_eq!(serde_json::to_value([game]).unwrap(), ipc_fixture!("games"));
     }
 }

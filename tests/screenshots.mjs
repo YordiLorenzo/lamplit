@@ -20,21 +20,21 @@ const artDir = path.resolve(process.argv[2] ?? path.join(here, 'art'));
 const now = new Date(2026, 9, 24, 20, 40);
 const daysAgo = (days) => (days == null ? 0 : Math.floor(now.getTime() / 1000) - days * 86400);
 
-/** [Steam app id of the art, game id, name, store, store apps it needs, days since last played] */
+/** [Steam app id of the art, game id, name, store, store apps it needs, days since last played, hours played] */
 const library = [
-  [1091500, 'epic:Ginger', 'Cyberpunk 2077', 'epic', ['epic'], 1],
-  [1237970, 'steam:1237970', 'Titanfall 2', 'steam', ['steam', 'ea'], 2],
-  [1174180, 'rockstar:Red Dead Redemption 2', 'Red Dead Redemption 2', 'rockstar', ['rockstar'], 4],
-  [3405690, 'ea:16425677', 'EA SPORTS FC 26', 'ea', ['ea'], 6],
-  [2369390, 'ubisoft:5266', 'Far Cry 6', 'ubisoft', ['ubisoft'], 12],
-  [949230, 'xbox:ParadoxInteractive.CitiesSkylinesII-PCEdition_zfnrdv2de78ny', 'Cities: Skylines II', 'xbox', ['xbox'], 20],
-  [3354750, 'ea:1184493', 'skate.', 'ea', ['ea'], null],
-  [460930, 'ubisoft:1771', "Tom Clancy's Ghost Recon Wildlands", 'ubisoft', ['ubisoft'], null],
-  [203160, 'xbox:39C668CD.TombRaiderDefinitiveEdition_r7bfsmp40f67j', 'Tomb Raider: Definitive Edition', 'xbox', ['xbox'], null],
+  [1091500, 'epic:Ginger', 'Cyberpunk 2077', 'epic', ['epic'], 1, 86],
+  [1237970, 'steam:1237970', 'Titanfall 2', 'steam', ['steam', 'ea'], 2, 31],
+  [1174180, 'rockstar:Red Dead Redemption 2', 'Red Dead Redemption 2', 'rockstar', ['rockstar'], 4, 112],
+  [3405690, 'ea:16425677', 'EA SPORTS FC 26', 'ea', ['ea'], 6, 54],
+  [2369390, 'ubisoft:5266', 'Far Cry 6', 'ubisoft', ['ubisoft'], 12, 23],
+  [949230, 'xbox:ParadoxInteractive.CitiesSkylinesII-PCEdition_zfnrdv2de78ny', 'Cities: Skylines II', 'xbox', ['xbox'], 20, 140],
+  [3354750, 'ea:1184493', 'skate.', 'ea', ['ea'], null, 0],
+  [460930, 'ubisoft:1771', "Tom Clancy's Ghost Recon Wildlands", 'ubisoft', ['ubisoft'], null, 0],
+  [203160, 'xbox:39C668CD.TombRaiderDefinitiveEdition_r7bfsmp40f67j', 'Tomb Raider: Definitive Edition', 'xbox', ['xbox'], null, 0],
 ];
 
 const missing = [];
-const games = library.map(([app, id, name, store, requires, played]) => {
+const games = library.map(([app, id, name, store, requires, played, hours]) => {
   const file = (f) => path.join(artDir, String(app), f);
   for (const need of ['portrait.jpg', 'hero.jpg']) if (!existsSync(file(need))) missing.push(file(need));
   return like(ipc('games')[0], {
@@ -44,6 +44,9 @@ const games = library.map(([app, id, name, store, requires, played]) => {
     dir: `D:\\Games\\${name.replace(/[:.]/g, '')}`,
     note: null,
     last_played: daysAgo(played),
+    play_minutes: hours * 60,
+    favourite: false,
+    hidden: false,
     art: { portrait: file('portrait.jpg'), hero: file('hero.jpg'), logo: existsSync(file('logo.png')) ? file('logo.png') : null },
     requires,
   });

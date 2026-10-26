@@ -42,6 +42,18 @@ export function playedText(ts, now = Date.now() / 1000) {
 }
 
 /**
+ * Time played: minutes up to an hour, then whole hours ("12 h") for the home screen, or hours and minutes
+ * ("12 h 5 min") when `exact`. Nothing under a minute.
+ * @param {number} minutes @param {boolean} [exact]
+ */
+export function playTimeText(minutes, exact = false) {
+  if (minutes < 1) return '';
+  if (minutes < 60) return `${minutes} min`;
+  const [h, m] = [Math.floor(minutes / 60), minutes % 60];
+  return exact && m ? `${h} h ${m} min` : `${h} h`;
+}
+
+/**
  * The cover row's order, the one Rust sends (library/mod.rs): last played first, then by name in lower case, compared
  * character by character rather than by the language's rules, which Rust doesn't know.
  * @param {Game} a
@@ -51,6 +63,32 @@ export function byPlayed(a, b) {
   if (a.last_played !== b.last_played) return b.last_played - a.last_played;
   const [x, y] = [a.name.toLowerCase(), b.name.toLowerCase()];
   return x < y ? -1 : x > y ? 1 : 0;
+}
+
+/**
+ * The games in the cover row: the favourites first, then the rest, each in the order given. Hidden games are left
+ * out.
+ * @template {Game} T
+ * @param {T[]} games
+ * @returns {T[]}
+ */
+export function rowGames(games) {
+  const shown = games.filter((g) => !g.hidden);
+  return [...shown.filter((g) => g.favourite), ...shown.filter((g) => !g.favourite)];
+}
+
+/**
+ * The choices under a game's details, in order.
+ * @param {Game} g
+ * @param {string | null} running  the id of the game that runs
+ * @returns {{ kind: 'play' | 'favourite' | 'hide', label: string }[]}
+ */
+export function detailChoices(g, running) {
+  return [
+    { kind: 'play', label: running === g.id ? 'Back to game' : 'Play' },
+    { kind: 'favourite', label: g.favourite ? 'Remove from favourites' : 'Add to favourites' },
+    { kind: 'hide', label: 'Hide this game' },
+  ];
 }
 
 /**
@@ -77,6 +115,14 @@ export const SECTIONS = [
   { key: 'popups', title: 'Overlay and pop-ups' },
   { key: 'stores', title: 'Stores' },
   { key: 'system', title: 'System' },
+  { key: 'hidden', title: 'Hidden games' },
+  { key: 'power', title: 'Power' },
+];
+/** The rows of Settings > Power. Restart and Shut down close a game that runs; it stays open while the PC sleeps. */
+const POWER = [
+  { id: 'sleep', label: 'Sleep', closesGame: false },
+  { id: 'restart', label: 'Restart', closesGame: true },
+  { id: 'shutdown', label: 'Shut down', closesGame: true },
 ];
 /** The auto-off times the headset offers, in minutes; 0 is never. */
 const AUTO_OFF = [0, 5, 10, 15, 20, 30, 60];
@@ -113,9 +159,17 @@ export function stepAutoOff(minutes, dir) {
   return next ?? minutes;
 }
 
-/** The sections the first level lists: the Headset one only once its receiver is plugged in. @param {State} state */
+/** The hidden games, by name. @param {State} state */
+const hiddenGames = (state) => state.library.filter((g) => g.hidden).sort((a, b) => a.name.localeCompare(b.name));
+
+/**
+ * The sections the first level lists: the Headset one only once its receiver is plugged in, Hidden games only while
+ * a game is hidden.
+ * @param {State} state
+ */
 export const visibleSections = (state) =>
-  SECTIONS.filter((x) => x.key !== 'headset' || state.accessories?.headset.receiver);
+  SECTIONS.filter((x) => x.key !== 'headset' || state.accessories?.headset.receiver)
+    .filter((x) => x.key !== 'hidden' || state.library.some((g) => g.hidden));
 
 /**
  * One line per section on the first level: what is going on there, and a tone.
@@ -159,6 +213,11 @@ export function sectionSummary(key, state) {
     if (known.length && known.every((s) => s.account === 'signed-in')) return ['All signed in', 'good'];
     return [`${installed.length} installed`];
   }
+  if (key === 'hidden') {
+    const n = hiddenGames(state).length;
+    return [n === 1 ? '1 game' : `${n} games`];
+  }
+  if (key === 'power') return ['Sleep, restart, shut down'];
   return state.setup?.needed ? ['Setup needed', 'warn'] : [state.display ?? ''];
 }
 
@@ -234,6 +293,18 @@ export function sectionRows(key, state) {
     if (state.setup?.needed) rows.push({ kind: 'setup', label: 'First-time setup (asks Windows once)', value: 'Needed', tone: 'warn' });
     rows.push({ kind: 'onlineart', label: "Find art online (sends game names to Steam's store)", value: onOff(prefs?.online_art) });
     rows.push({ label: 'Display', value: state.display ?? 'Unknown' });
+  } else if (key === 'hidden') {
+    for (const g of hiddenGames(state)) rows.push({ kind: 'unhide', id: g.id, store: g.store, label: g.name, value: 'Show' });
+    // The section stays open when its last game is shown again.
+    if (!rows.length) rows.push({ label: 'No hidden games', value: '' });
+  } else if (key === 'power') {
+    const running = state.library.find((g) => g.id === state.running);
+    for (const p of POWER) {
+      // ✕ once asks, ✕ again does it.
+      const asked = state.settings.confirm === p.id;
+      rows.push({ kind: 'power', id: p.id, label: p.label, value: asked ? 'Press again to confirm' : '', tone: asked ? 'warn' : '' });
+      if (asked && p.closesGame && running) rows.push({ label: `${running.name} is running and will close`, value: '' });
+    }
   }
   return rows;
 }

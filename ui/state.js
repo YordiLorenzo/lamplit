@@ -34,6 +34,7 @@ export const els = {
   store: $('store'),
   note: $('note'),
   played: $('played'),
+  playtime: $('playtime'),
   clock: $('clock'),
   empty: $('empty'),
   track: $('track'),
@@ -44,7 +45,9 @@ export const els = {
   dName: $('dName'),
   dStore: $('dStore'),
   dPlayed: $('dPlayed'),
+  dTime: $('dTime'),
   dDir: $('dDir'),
+  dChoices: $('dChoices'),
   settings: $('settings'),
   settingsTitle: $('settingsTitle'),
   settingsList: $('settingsList'),
@@ -54,11 +57,15 @@ export const els = {
 };
 
 export const state = {
-  /** @type {Shown[]} */
+  /** @type {Game[]} every game Rust sent, hidden ones too */
+  library: [],
+  /** @type {Shown[]} the cover row (logic.js rowGames) */
   games: [],
   idx: 0,
   /** @type {'browse' | 'starting' | 'details' | 'settings'} */
   mode: 'browse',
+  /** the focused choice under the details (logic.js detailChoices) */
+  detailsIdx: 0,
   /** @type {string | null} the game being started */
   launching: null,
   /** @type {string | null} the game Lamplit is waiting on to close */
@@ -89,9 +96,15 @@ export const state = {
   display: null,
   /**
    * Section null is the list of sections. `focus` names the focused row (logic.js rowKey); `idx` is where that row is
-   * in `rows`, worked out again on every render.
+   * in `rows`, worked out again on every render. `confirm` is the Power row that ✕ was pressed on once.
    */
-  settings: { section: /** @type {string | null} */ (null), focus: /** @type {string | null} */ (null), idx: 0, rows: /** @type {Row[]} */ ([]) },
+  settings: {
+    section: /** @type {string | null} */ (null),
+    focus: /** @type {string | null} */ (null),
+    idx: 0,
+    rows: /** @type {Row[]} */ ([]),
+    confirm: /** @type {string | null} */ (null),
+  },
 };
 
 export const focused = () => state.games[state.idx];

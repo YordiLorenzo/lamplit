@@ -101,6 +101,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::library_games,
             commands::library_rescan,
+            commands::library_set_favourite,
+            commands::library_set_hidden,
             commands::launch_start,
             commands::launch_anyway,
             commands::launch_cancel,
@@ -126,12 +128,16 @@ pub fn run() {
             commands::prefs_set_touchpad_mouse,
             commands::prefs_set_steam_devtools,
             commands::prefs_set_online_art,
+            commands::power_sleep,
+            commands::power_restart,
+            commands::power_shut_down,
             commands::display_mode,
         ])
         .setup(|app| {
             log::info!("Lamplit {} starting", env!("CARGO_PKG_VERSION"));
             launch::window::remember_lamplit(app.handle())?;
             app.manage(prefs::load());
+            app.manage(library::UserData::load());
             library::scan(app.handle());
             // The headset before the controllers: a controller's thread reads the headset's state.
             devices::headset::start(app.handle().clone());

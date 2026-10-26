@@ -7,6 +7,7 @@ mod com;
 pub mod display;
 pub mod drives;
 pub mod input;
+pub mod power;
 pub mod process;
 pub mod region;
 pub mod shell;

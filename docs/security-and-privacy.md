@@ -107,6 +107,9 @@ These don't change any setting, but you may notice them:
   you set in NVIDIA's overlay).
 - To know when a game runs, it reads the list of running processes and the folder each runs from. It doesn't inject
   code into games or read their memory.
+- **Settings > Power** asks Windows to sleep, restart or shut down (`SetSuspendState`, `InitiateShutdownW`). For
+  that, Lamplit enables the shutdown privilege, which a standard account holds but has switched off, in its own
+  process only. It doesn't force apps to close, and it doesn't sign out another account that is signed in.
 
 ## Removing Lamplit
 

@@ -4,7 +4,7 @@
 import * as api from './api.js';
 import { toast } from './hints.js';
 import { backToGame, cancelLaunch, play } from './launch.js';
-import { closeDetails, move, openDetails } from './library.js';
+import { closeDetails, detailChoice, markGame, move, moveDetails, openDetails } from './library.js';
 import { adjustSetting, backSettings, closeSettings, moveSettings, openSettings, selectSetting } from './settings.js';
 import { actionableStep, els, state } from './state.js';
 
@@ -40,12 +40,15 @@ export function act(action, source) {
   }
   if (state.mode === 'details') {
     if (action === 'back' || action === 'menu') closeDetails();
-    else if (action === 'ok') {
+    else if (action === 'up' || action === 'down') moveDetails(action === 'up' ? -1 : 1);
+    else if (action === 'ok' && detailChoice().kind === 'play') {
       closeDetails();
       play();
-    }
+    } else if (action === 'ok') markGame();
     return;
   }
+  // Also with an empty row: Settings has Power, and Hidden games when every game is hidden.
+  if (action === 'triangle') return openSettings();
   if (!state.games.length) return;
   switch (action) {
     case 'left': return move(-1);
@@ -54,7 +57,6 @@ export function act(action, source) {
     case 'r1': return move(5);
     case 'ok': return play();
     case 'menu': return openDetails();
-    case 'triangle': return openSettings();
     case 'back': if (state.running) backToGame(); return;
   }
 }
@@ -79,6 +81,14 @@ els.track.addEventListener('click', (e) => {
   const k = state.games.findIndex((g) => g.el === cover);
   if (k === state.idx) act('ok', 'mouse');
   else if (k >= 0 && state.mode === 'browse') move(k - state.idx);
+});
+
+// A click on a choice in Details picks it.
+els.dChoices.addEventListener('click', (e) => {
+  const k = [...els.dChoices.children].indexOf(/** @type {Element} */ (e.target).closest('.row'));
+  if (k < 0 || state.mode !== 'details') return;
+  state.detailsIdx = k;
+  act('ok', 'mouse');
 });
 
 window.addEventListener('contextmenu', (e) => e.preventDefault());

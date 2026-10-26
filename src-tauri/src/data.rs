@@ -1,5 +1,6 @@
-// Lamplit's data folder, %LOCALAPPDATA%\lamplit, and the JSON files it keeps there: the player's prefs, when each
-// game was last played, the art lookups, the setup record and quiet mode's record of the settings it replaced.
+// Lamplit's data folder, %LOCALAPPDATA%\lamplit, and the JSON files it keeps there: the player's prefs, what the
+// player keeps per game (favourites, hidden games, last played, play time), the art lookups, the setup record and
+// quiet mode's record of the settings it replaced.
 
 use crate::APP;
 use crate::error::Result;

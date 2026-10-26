@@ -4,7 +4,7 @@
 
 import * as api from './api.js';
 import { showHints, toast } from './hints.js';
-import { showInfo } from './library.js';
+import { setGames, showInfo } from './library.js';
 import { SECTIONS, focusIndex, rowKey, sectionRows, sectionSummary, stepAutoOff, visibleSections } from './logic.js';
 import { sfx } from './sounds.js';
 import { els, state, withStoreLogo } from './state.js';
@@ -119,7 +119,7 @@ export function setStores(list) {
 
 export function openSettings() {
   state.mode = 'settings';
-  state.settings = { section: null, focus: null, idx: 0, rows: [] };
+  state.settings = { section: null, focus: null, idx: 0, rows: [], confirm: null };
   els.settings.classList.add('on');
   sfx.open();
   renderSettings();
@@ -139,6 +139,7 @@ export function backSettings() {
   if (!s.section) return closeSettings();
   s.focus = rowKey({ kind: 'section', key: s.section });
   s.section = null;
+  s.confirm = null;
   sfx.back();
   renderSettings();
 }
@@ -151,6 +152,8 @@ export function moveSettings(delta) {
   const next = focusable[Math.max(0, Math.min(focusable.length - 1, at + delta))];
   if (!next || next === s.rows[s.idx]) return sfx.edge();
   s.focus = rowKey(next);
+  // A Power row asks again once focus has left it.
+  s.confirm = null;
   sfx.move();
   renderSettings();
 }
@@ -201,6 +204,8 @@ async function adjustHeadset(kind, dir) {
 
 /** The rows that switch one of the player's prefs. */
 const PREF_ROWS = ['follows', 'touchmouse', 'steamport', 'onlineart'];
+/** What each row of Settings > Power calls. */
+const POWER = { sleep: api.powerSleep, restart: api.powerRestart, shutdown: api.powerShutDown };
 
 export async function selectSetting() {
   const s = state.settings;
@@ -251,6 +256,16 @@ export async function selectSetting() {
       await api.setupStart();
     } else if (row.kind === 'store') {
       await api.storesOpen(row.store);
+    } else if (row.kind === 'unhide') {
+      setGames(await api.librarySetHidden(row.id, false));
+      toast(`${row.label} is back in the row.`);
+    } else if (row.kind === 'power' && s.confirm !== row.id) {
+      s.confirm = row.id;
+    } else if (row.kind === 'power') {
+      s.confirm = null;
+      // The home screen is what shows when the PC wakes up, or if Windows doesn't go through with it.
+      closeSettings();
+      await POWER[row.id]();
     }
   } catch (e) {
     toast(e.message);

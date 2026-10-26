@@ -8,7 +8,6 @@ pub mod window;
 
 pub use watch::resume;
 
-use crate::data;
 use crate::error::{Error, Result};
 use crate::events::{self, Event, LaunchStep, Play, StepState};
 use crate::library::{Game, Launch};
@@ -16,10 +15,9 @@ use crate::prefs;
 use crate::stores::{self, Account, Processes, Store, steam};
 use crate::win::{self, process::keep_awake};
 use parking_lot::Mutex;
-use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use watch::Watch;
 
@@ -281,24 +279,6 @@ fn open_game(game: &Game) -> Result<()> {
     };
     log::info!("launch {} ({}) via {target}", game.name, game.id);
     Ok(())
-}
-
-// ---------- last played, so recent games come first ----------
-
-const PLAYED: &str = "played.json";
-
-pub fn load_played() -> HashMap<String, u64> {
-    data::load_or_default(PLAYED)
-}
-
-/// Called once the game runs: a launch the player cancels, or one that never gets going, isn't a play.
-fn record_played(id: &str) {
-    let mut played = load_played();
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
-    played.insert(id.to_string(), now);
-    if let Err(e) = data::save(PLAYED, &played) {
-        log::warn!("can't save {PLAYED}: {e}");
-    }
 }
 
 #[cfg(test)]
