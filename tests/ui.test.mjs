@@ -1079,6 +1079,17 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await idle(page);
   v = await view();
   check('a held Enter asks, and its repeat doesn\'t confirm', v.focus === 'RestartPress again to confirm' && !v.calls.slice(before).includes('power_restart'), `${v.focus} ${JSON.stringify(v.calls.slice(before))}`);
+  // Steam mirrors ✕ as Enter, and the key can come before the pad's own press: one press mustn't ask and answer.
+  // Moving off Restart and back clears the question the held Enter asked.
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(400);
+  const fresh = (await view()).calls.length;
+  await page.keyboard.press('Enter');
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  v = await view();
+  check('a mirrored Enter before the pad\'s ✕ asks once and doesn\'t confirm', v.focus === 'RestartPress again to confirm' && !v.calls.slice(fresh).includes('power_restart'), `${v.focus} ${JSON.stringify(v.calls.slice(fresh))}`);
   // The focused cover still shows beside Settings: a click on it mustn't answer the question either.
   await page.click('#track .cover.focus');
   await idle(page);

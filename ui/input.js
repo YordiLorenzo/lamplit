@@ -16,12 +16,25 @@ import { actionableStep, els, state } from './state.js';
 const padInUse = () => performance.now() - state.lastPad < 2000;
 
 /**
+ * A mirrored key can also come before the pad's own press, while the pad is idle: that press is the same one again.
+ * Without this, one press of ✕ could ask "Shut down?" and answer it.
+ */
+const MIRROR_MS = 300;
+let lastKey = { action: '', at: 0 };
+
+/**
  * @param {Action} action
  * @param {'pad' | 'key' | 'mouse'} source
  */
 export function act(action, source) {
-  if (source === 'pad') state.lastPad = performance.now();
-  else if (source === 'key' && padInUse()) return;
+  const now = performance.now();
+  if (source === 'pad') {
+    state.lastPad = now;
+    if (action === lastKey.action && now - lastKey.at < MIRROR_MS) return;
+  } else if (source === 'key') {
+    if (padInUse()) return;
+    lastKey = { action, at: now };
+  }
 
   if (state.mode === 'starting') {
     const s = actionableStep();
