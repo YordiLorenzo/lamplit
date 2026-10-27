@@ -64,7 +64,7 @@ impl Watch {
     /// a process the watcher has found since, and would make the lineage lose it, and what it starts.
     fn track(&self, procs: &[Proc]) -> HashSet<u32> {
         match &self.launched {
-            Some((exe, lineage)) => without_helpers(&lineage.lock().update(exe, procs), procs),
+            Some((exe, lineage)) => without_helpers(&lineage.lock().update(exe, &self.dirs, procs), procs),
             None => self.select(procs, false),
         }
     }
@@ -99,7 +99,9 @@ impl Watch {
     /// and end before the watcher first looks, which then has nothing else to tell the game's processes by.
     fn seed(&self, started: Held) {
         if let Some((_, lineage)) = &self.launched {
-            lineage.lock().game.insert((started.pid, started.started), Some(started));
+            let mut lineage = lineage.lock();
+            lineage.since = Some(started.started);
+            lineage.game.insert((started.pid, started.started), Some(started));
         }
     }
 
@@ -144,7 +146,8 @@ fn without_helpers(lineage: &HashSet<u32>, procs: &[Proc]) -> HashSet<u32> {
 
 /// Programs a game may start that are the player's own, not the game: a browser (a store page, a sign-in, patch notes),
 /// and the store and chat apps. A game outside any store is what came from its exe (`Lineage`); these, and what they
-/// start in turn, stay out of that, so they neither keep the game's session going and count as play time, nor close with it.
+/// start in turn, stay out of that, so they neither keep the game's session going and count as play time, nor close
+/// with it.
 const NOT_THE_GAME: &[&str] = &[
     "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "opera_gx.exe", "brave.exe", "vivaldi.exe", "iexplore.exe",
     "arc.exe", "steam.exe", "steamwebhelper.exe", "epicgameslauncher.exe", "eadesktop.exe", "upc.exe",
@@ -158,12 +161,15 @@ const NOT_THE_GAME: &[&str] = &[
 #[derive(Default)]
 pub struct Lineage {
     game: HashMap<(u32, u64), Option<Held>>,
+    /// When the process Lamplit started began (`Watch::seed`).
+    since: Option<u64>,
 }
 
 impl Lineage {
-    /// Adds the processes running `exe` (a `folder_key`) and every process one of the game's started, other than the
-    /// programs in NOT_THE_GAME, and returns those that run now.
-    fn update(&mut self, exe: &str, procs: &[Proc]) -> HashSet<u32> {
+    /// Adds the processes running `exe` (a `folder_key`), every process one of the game's started, and every one that
+    /// came through a step no look saw (see `came_through_unseen`), other than the programs in NOT_THE_GAME, and
+    /// returns those that run now. `dirs`: the game's folders.
+    fn update(&mut self, exe: &str, dirs: &[String], procs: &[Proc]) -> HashSet<u32> {
         for p in procs.iter().filter(|p| p.exe.is_some_and(|e| folder_key(e) == exe)) {
             self.add(p);
         }
@@ -172,7 +178,10 @@ impl Lineage {
             let found: Vec<&Proc> = procs
                 .iter()
                 .filter(|p| !self.game.contains_key(&(p.pid, p.started)) && !not_the_game(p))
-                .filter(|p| p.parent.is_some_and(|parent| self.started_by_game(parent, p.started, procs)))
+                .filter(|p| {
+                    p.parent.is_some_and(|parent| self.started_by_game(parent, p.started, procs))
+                        || self.came_through_unseen(p, dirs, procs)
+                })
                 .collect();
             if found.is_empty() {
                 break;
@@ -185,6 +194,17 @@ impl Lineage {
         // Windows may give its id to another process.
         self.game.retain(|&(pid, started), _| procs.iter().any(|p| p.pid == pid && p.started == started));
         self.game.keys().map(|&(pid, _)| pid).collect()
+    }
+
+    /// Whether `p` came from a step between the launcher and the game that no look saw: a helper that started the game
+    /// and ended between two looks, which leaves the game's parent unknown. It runs from the game's folders (`dirs`),
+    /// started since the process Lamplit started, and its parent has ended. A program the player opens there has a
+    /// parent that runs (Explorer, a browser), so it stays out, also from Downloads.
+    fn came_through_unseen(&self, p: &Proc, dirs: &[String], procs: &[Proc]) -> bool {
+        let inside = p.exe.is_some_and(|exe| dirs.iter().any(|d| folder_key(exe).starts_with(d.as_str())));
+        let parent_runs =
+            p.parent.is_some_and(|parent| procs.iter().any(|q| q.pid == parent && q.started <= p.started));
+        self.since.is_some_and(|since| p.started >= since) && inside && !parent_runs
     }
 
     /// The processes among `procs` that the lineage has, as it is.
@@ -637,15 +657,38 @@ mod tests {
         assert_eq!(watch.track(&unseen), [2].into());
     }
 
+    /// The launcher Lamplit started, which it keeps open from the start: this test's own process stands in for it.
+    fn launcher() -> Held {
+        let procs = Processes::now();
+        let me = procs.list().into_iter().find(|p| p.pid == std::process::id()).unwrap();
+        Held::open(me.pid, me.started).unwrap()
+    }
+
+    #[test]
+    fn a_game_started_through_a_step_no_look_saw_is_found_in_its_folder() {
+        // Found in D:\Games\Racer. Its launcher started a helper, which started the game and ended between two looks.
+        let exe = PathBuf::from(r"D:\Games\Racer\Launcher.exe");
+        let game =
+            Game::new(r"pc:d:\games\racer".into(), "Racer".into(), None, r"D:\Games\Racer".into(), Launch::Exe(exe));
+        let (watch, launcher) = (Watch::of(&game), launcher());
+        let at = launcher.started;
+        watch.seed(launcher);
+        let explorer = proc(900, r"C:\Windows\explorer.exe", 0, None);
+        let procs = [
+            explorer,
+            proc(2, r"D:\Games\Racer\bin\Racer.exe", at + 1, Some(5)),
+            // The player's own: one opened from Explorer, and one that ran before the game was started.
+            proc(3, r"D:\Games\Racer\Tools\editor.exe", at + 2, Some(900)),
+            proc(4, r"D:\Games\Racer\Tools\server.exe", at.saturating_sub(60), Some(6)),
+        ];
+        assert_eq!(watch.track(&procs), [2].into(), "the starting screen would stay over the game");
+        assert_eq!(watch.own_pids(&procs), [2].into());
+    }
+
     #[test]
     fn a_launcher_that_ends_before_the_first_look_still_leads_to_the_game() {
         let watch = racer(r"D:\Old Games\Racer\Launcher.exe", r"D:\Old Games\Racer");
-        // The launcher, which Lamplit keeps open from the start: this test's own process stands in for it.
-        let launcher = {
-            let procs = Processes::now();
-            let me = procs.list().into_iter().find(|p| p.pid == std::process::id()).unwrap();
-            Held::open(me.pid, me.started).unwrap()
-        };
+        let launcher = launcher();
         // It started bin\Racer.exe and ended before the watcher first looked.
         let game = [proc(2, r"D:\Old Games\Racer\bin\Racer.exe", launcher.started, Some(launcher.pid))];
         assert!(watch.track(&game).is_empty(), "nothing else leads to it");
