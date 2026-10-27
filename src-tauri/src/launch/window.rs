@@ -91,21 +91,33 @@ pub fn release(app: &AppHandle, generation: Option<u64>) {
 /// the desktop shows neither now nor when the game closes. The window may have Windows' foreground already (a game
 /// takes it as its window opens) while Lamplit still covers it. On the main thread, so the keeper's last raise comes
 /// first. False when the window has gone meanwhile (a game replacing its window while the screen faded): Lamplit then
-/// keeps holding the screen.
+/// keeps holding the screen. False too when the launch has stopped meanwhile (see `give_way`).
 pub fn hand_over(app: &AppHandle, generation: u64, to: isize) -> bool {
     let Some(&lamplit) = LAMPLIT.get() else { return false };
     let held = let_go(Some(generation));
     let (placed, answer) = std::sync::mpsc::channel();
+    let main = app.clone();
     let _ = app.run_on_main_thread(move || {
-        let to = HWND(to as *mut _);
-        let behind = window::place_behind(HWND(lamplit as *mut _), to);
-        if behind {
-            window::force_foreground(to);
-        }
-        let _ = placed.send(behind);
+        let current = main.state::<Launcher>().is_current(generation);
+        let _ = placed.send(give_way(current, held, generation, lamplit, to));
     });
-    let behind = answer.recv_timeout(Duration::from_secs(5)).unwrap_or(false);
-    if !behind && held {
+    answer.recv_timeout(Duration::from_secs(5)).unwrap_or(false)
+}
+
+/// The main thread's part of `hand_over`: Lamplit goes behind `to`, which gets the foreground, or, when `to` has
+/// gone, holds the screen again if it did (`held`). Nothing moves for a launch that has stopped meanwhile (not
+/// `current`): the player cancelled it during the fade, and may have started another game, whose starting screen now
+/// holds the screen. Cancelling and starting run on the main thread too, so it can't stop between this look and the
+/// moves.
+fn give_way(current: bool, held: bool, generation: u64, lamplit: isize, to: isize) -> bool {
+    if !current {
+        return false;
+    }
+    let to = HWND(to as *mut _);
+    let behind = window::place_behind(HWND(lamplit as *mut _), to);
+    if behind {
+        window::force_foreground(to);
+    } else if held {
         keep_on_top(generation);
     }
     behind
@@ -145,4 +157,25 @@ pub fn summon(app: &AppHandle) {
         None => bring_lamplit_forward(app),
     }
     events::emit(app, Event::Summoned(launcher.running_id()));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::win::window::tests::{destroy, next, window as hidden};
+
+    #[test]
+    fn a_launch_that_stopped_while_the_screen_faded_moves_no_window() {
+        // Lamplit holds the screen for the game started next, and the window of the one cancelled during its fade
+        // is up.
+        let (lamplit, game) = (hidden(true), hidden(false));
+        let id = |w: HWND| w.0 as isize;
+        assert!(!give_way(false, true, 1, id(lamplit), id(game)));
+        assert!(window::is_topmost(lamplit), "the next game's starting screen would go behind the cancelled game");
+        // The launch goes on: Lamplit goes right behind its game's window.
+        assert!(give_way(true, true, 1, id(lamplit), id(game)));
+        assert!(!window::is_topmost(lamplit) && next(game) == Some(lamplit), "{:?}", next(game));
+        destroy(lamplit);
+        destroy(game);
+    }
 }
