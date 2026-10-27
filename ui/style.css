@@ -321,7 +321,7 @@ body.still .hero, body:has(#lift.on) .hero { animation-play-state: paused; }
 
 body.launching #info { opacity: 0; }
 
-/* Black over everything while the game's window takes the screen (launch.js handOver). */
+/* Black over everything while the game's window takes the screen (launch.js curtain). Its 300 ms is watch.rs FADE. */
 #curtain {
   position: fixed;
   inset: 0;

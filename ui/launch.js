@@ -17,6 +17,7 @@ import { byId, els, focused, state, storeName, withStoreLogo } from './state.js'
  */
 function showStarting(g, sub, store = null) {
   if (state.launching !== g.id) state.steps = [];
+  liftCurtain();
   state.mode = 'starting';
   state.launching = g.id;
   renderSteps();
@@ -77,28 +78,32 @@ function endLaunch() {
   showHints();
 }
 
-/** How long the screen fades to black before Rust gives the game's window the screen (watch.rs FADE). */
-const FADE_MS = 300;
-/** By then Lamplit is behind the game's window, and the curtain lifts unseen. */
-const LIFT_AFTER_MS = 1500;
+/**
+ * How long the black waits for the game's window to get the screen: Rust's fade (watch.rs FADE) and the handover. If
+ * the window went meanwhile (a game that replaces its window), the black lifts on the starting screen, which shows
+ * until the next window is up.
+ */
+const HAND_OVER_MS = 2000;
+/** Once the game's window has the screen, Lamplit is behind it, and the black lifts unseen. */
+const LIFT_AFTER_MS = 1000;
 let curtainTimer = 0;
 
-/**
- * The game's window is up and gets the screen: the starting screen fades to black, so nothing shows between it and
- * the game, and the home screen is ready behind the curtain for when the game closes.
- */
-function handOver() {
+/** Black over the screen, which lifts after `ms`. @param {number} ms */
+function curtain(ms) {
   document.body.classList.add('curtain');
   clearTimeout(curtainTimer);
-  curtainTimer = setTimeout(() => {
-    endLaunch();
-    curtainTimer = setTimeout(() => document.body.classList.remove('curtain'), LIFT_AFTER_MS - FADE_MS);
-  }, FADE_MS);
+  curtainTimer = setTimeout(liftCurtain, ms);
+}
+
+function liftCurtain() {
+  clearTimeout(curtainTimer);
+  document.body.classList.remove('curtain');
 }
 
 export function cancelLaunch() {
   api.launchCancel();
   sfx.back();
+  liftCurtain();
   endLaunch();
 }
 
@@ -120,12 +125,19 @@ export function onPlay(play) {
   const g = byId(id);
   // Another game's news must not close the overlay of the one being started now.
   const mine = state.launching === null || state.launching === id;
-  if (play.state === 'running') {
+  if (play.state === 'up') {
+    // The game's window is up: the starting screen fades to black before it gets the screen, so nothing shows between
+    // them. The launch goes on until the window has the screen.
+    if (state.mode === 'starting' && state.launching === id) curtain(HAND_OVER_MS);
+  } else if (play.state === 'running') {
     state.running = id;
     // Only now: a launch the player cancels, or that a store check stops, isn't a play.
     if (g) g.last_played = Math.floor(Date.now() / 1000);
-    if (mine && state.mode === 'starting' && state.launching === id) handOver();
-    else if (mine) endLaunch();
+    if (mine) {
+      // Its window has the screen: the home screen gets ready under the black, for when the game closes.
+      if (document.body.classList.contains('curtain')) curtain(LIFT_AFTER_MS);
+      endLaunch();
+    }
   } else if (play.state === 'starting') {
     // Rust stops counting the game as running, also while the page starts another one.
     if (state.running === id) state.running = null;

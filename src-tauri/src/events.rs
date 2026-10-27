@@ -39,12 +39,14 @@ pub enum Event<'a> {
     Dock(dock::Show),
 }
 
-/// What became of a launched game. `starting`: it closed within `session::STUB_RUN` (20 s) of starting (a launcher
-/// handing over to the game, or a crash at start), and Lamplit waits for it to come back.
+/// What became of a launched game. `up`: its window is up, and gets the screen once the starting screen has faded to
+/// black; `running` follows once it has it. `starting`: it closed within `session::STUB_RUN` (20 s) of starting (a
+/// launcher handing over to the game, or a crash at start), and Lamplit waits for it to come back.
 #[derive(Clone, Serialize)]
 #[cfg_attr(test, derive(strum::EnumCount))]
 #[serde(tag = "state", rename_all = "lowercase")]
 pub enum Play<'a> {
+    Up { id: &'a str },
     Running { id: &'a str },
     Starting { id: &'a str },
     Ended { id: &'a str },
@@ -120,6 +122,7 @@ mod tests {
         assert_eq!(payload(&Event::Art { id: "steam:70", art: &art }), ipc_fixture!("art"));
         let id = "steam:70";
         let plays = [
+            Play::Up { id },
             Play::Running { id },
             Play::Starting { id },
             Play::Ended { id },

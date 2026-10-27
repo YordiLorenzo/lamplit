@@ -176,9 +176,10 @@ const tauri = /** @type {any} */ (window).__TAURI__;
 /** @typedef {'mix' | '2d' | '3d'} ScreensaverStyle  the screensaver's scenes: 2D and 3D in turn, or one kind */
 
 /**
- * What became of a launched game. `starting`: it closed within 20 s of starting (a launcher handing over to the game,
- * or a crash at start), and Lamplit waits for it to come back.
- * @typedef {{ state: 'running' | 'starting' | 'ended', id: string } | { state: 'failed', id: string, message: string }} Play
+ * What became of a launched game. `up`: its window is up, and gets the screen once the starting screen has faded to
+ * black; `running` follows once it has it. `starting`: it closed within 20 s of starting (a launcher handing over to
+ * the game, or a crash at start), and Lamplit waits for it to come back.
+ * @typedef {{ state: 'up' | 'running' | 'starting' | 'ended', id: string } | { state: 'failed', id: string, message: string }} Play
  */
 
 /**
