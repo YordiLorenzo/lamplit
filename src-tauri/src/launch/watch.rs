@@ -36,6 +36,21 @@ impl Watch {
 
     /// The game's processes among `procs` (pid, exe name, exe path), as `Processes::iter` lists them.
     pub fn pids<'a>(&self, procs: impl Iterator<Item = (u32, &'a OsStr, Option<&'a Path>)>) -> HashSet<u32> {
+        self.select(procs, false)
+    }
+
+    /// The processes among `procs` that are certainly the game's, for closing it: one whose path Windows tells counts
+    /// only when it runs from the game's folders. By its exe name alone, another program could be closed in its place.
+    pub fn own_pids<'a>(&self, procs: impl Iterator<Item = (u32, &'a OsStr, Option<&'a Path>)>) -> HashSet<u32> {
+        self.select(procs, true)
+    }
+
+    /// `certain`: an exe name counts only for a process whose path Windows doesn't tell.
+    fn select<'a>(
+        &self,
+        procs: impl Iterator<Item = (u32, &'a OsStr, Option<&'a Path>)>,
+        certain: bool,
+    ) -> HashSet<u32> {
         procs
             .filter(|(_, name, exe)| {
                 let name = name.to_string_lossy().to_lowercase();
@@ -44,11 +59,11 @@ impl Watch {
                 if name == "gamelaunchhelper.exe" {
                     return false;
                 }
-                self.names.contains(&name)
-                    || exe.is_some_and(|exe| {
-                        let exe = exe.to_string_lossy().to_lowercase();
-                        self.dirs.iter().any(|d| exe.starts_with(d))
-                    })
+                let in_folders = exe.is_some_and(|exe| {
+                    let exe = exe.to_string_lossy().to_lowercase();
+                    self.dirs.iter().any(|d| exe.starts_with(d))
+                });
+                in_folders || (self.names.contains(&name) && !(certain && exe.is_some()))
             })
             .map(|(pid, ..)| pid)
             .collect()
@@ -235,5 +250,31 @@ mod tests {
         // By name alone, for a process whose path Windows doesn't tell.
         let by_name = std::iter::once((5, OsStr::new("Runner.exe"), None));
         assert_eq!(watch.pids(listed.chain(by_name)), HashSet::from([1, 2, 5]));
+    }
+
+    #[test]
+    fn closing_takes_only_processes_that_are_certainly_the_games() {
+        let mut game = Game::new(
+            "xbox:example".into(),
+            "Example".into(),
+            Some(Store::Xbox),
+            PathBuf::from(r"D:\Games\Foo"),
+            Launch::Uri(String::new()),
+        );
+        game.exe_names = vec!["runner.exe".into()];
+        let watch = Watch::of(&game);
+        let (inside, elsewhere) = (Path::new(r"D:\Games\Foo\bin\Foo.exe"), Path::new(r"C:\Tools\runner.exe"));
+        let procs = || {
+            [
+                (1, OsStr::new("Foo.exe"), Some(inside)),
+                // Its path unknown: the name is all there is to go on.
+                (5, OsStr::new("Runner.exe"), None),
+                // Another program with the game's exe name, in a folder of its own.
+                (6, OsStr::new("runner.exe"), Some(elsewhere)),
+            ]
+            .into_iter()
+        };
+        assert_eq!(watch.pids(procs()), HashSet::from([1, 5, 6]));
+        assert_eq!(watch.own_pids(procs()), HashSet::from([1, 5]));
     }
 }

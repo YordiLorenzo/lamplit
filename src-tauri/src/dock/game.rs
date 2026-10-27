@@ -36,7 +36,7 @@ const ANSWER_WITHIN: Duration = Duration::from_secs(1);
 pub fn game_state(app: &AppHandle) -> Option<GameState> {
     let (id, watch) = app.state::<Launcher>().running()?;
     let name = name(app, &id);
-    let windows = launch::game_windows(&watch.pids(Processes::now().iter()));
+    let windows = launch::game_windows(&watch.own_pids(Processes::now().iter()));
     let responding = windows.iter().all(|&w| win::window::responds(w, ANSWER_WITHIN));
     let asked = ASKED.lock().as_ref().is_some_and(|(asked, at)| *asked == id && at.elapsed() >= GRACE);
     Some(GameState { id, name, responding, force_close: !responding || windows.is_empty() || asked })
@@ -58,9 +58,17 @@ pub fn close_game(app: &AppHandle, force: bool) -> Result<()> {
     let gone = || Error::Player("The game has already closed.".into());
     let (id, watch) = app.state::<Launcher>().running().ok_or_else(gone)?;
     let name = name(app, &id);
-    let pids = watch.pids(Processes::now().iter());
+    let procs = Processes::now();
+    let pids = watch.own_pids(procs.iter());
     if pids.is_empty() {
-        return Err(gone());
+        // Running by its exe name only, from a folder that isn't the game's: maybe another program.
+        return Err(if watch.pids(procs.iter()).is_empty() {
+            gone()
+        } else {
+            Error::Player(format!(
+                "Lamplit can't be sure which program is {name}, so it leaves it. Close it in the game."
+            ))
+        });
     }
     if force {
         let ended = pids
