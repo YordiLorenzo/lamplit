@@ -49,8 +49,11 @@ const work = mkdtempSync(path.join(tmpdir(), 'lamplit-stores-'));
       "install_folder_name" TEXT, "custom_install_folder" TEXT, PRIMARY KEY ("id"));`);
   const location = db.prepare('INSERT INTO "install_locations" VALUES (?, ?)');
   const game = db.prepare('INSERT INTO "games" ("id", "url", "title", "type", "classification") VALUES (?, ?, ?, ?, ?)');
-  const cave = db.prepare(`INSERT INTO "caves" ("id", "game_id", "upload_id", "verdict", "install_location_id",
-    "install_folder_name", "custom_install_folder", "installed_size") VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+  const insert = db.prepare(`INSERT INTO "caves" ("id", "game_id", "upload_id", "verdict", "install_location_id",
+    "install_folder_name", "custom_install_folder", "installed_size", "settings") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  // A cave's settings hold, among others, the launch target the player picked in the app.
+  const cave = (id, gameId, uploadId, verdictJson, location, folder, custom, size, settings = '{}') =>
+    insert.run(id, gameId, uploadId, verdictJson, location, folder, custom, size, settings);
   const candidate = (p, depth, flavor, size) => ({ path: p, depth, flavor, arch: 'amd64', size });
   const verdict = (basePath, candidates) => JSON.stringify({ basePath, totalSize: 123456789, candidates });
 
@@ -61,7 +64,7 @@ const work = mkdtempSync(path.join(tmpdir(), 'lamplit-stores-'));
   // The game's exe, a bigger crash handler next to it, a tool one folder down, and HTML pages padding the verdict
   // out past one page.
   const padding = Array.from({ length: 40 }, (_, i) => candidate(`docs/page-${i}.html`, 2, 'html', 2000 + i));
-  cave.run('cave-fennel', 1001, 5001, verdict(`${apps}\\fennel`, [
+  cave('cave-fennel', 1001, 5001, verdict(`${apps}\\fennel`, [
     candidate('Fennel.exe', 1, 'windows', 5000000),
     candidate('UnityCrashHandler64.exe', 1, 'windows', 9000000),
     candidate('tools/editor.exe', 2, 'windows', 20000000),
@@ -71,20 +74,20 @@ const work = mkdtempSync(path.join(tmpdir(), 'lamplit-stores-'));
 
   db.exec('BEGIN');
   game.run(1002, 'https://example.itch.io/thistle-tools', 'Thistle Tools', 'default', 'tool');
-  cave.run('cave-tool', 1002, 5002, verdict(`${apps}\\thistle-tools`, [candidate('thistle.exe', 1, 'windows', 100)]), 'loc-default', 'thistle-tools', '', 100);
+  cave('cave-tool', 1002, 5002, verdict(`${apps}\\thistle-tools`, [candidate('thistle.exe', 1, 'windows', 100)]), 'loc-default', 'thistle-tools', '', 100);
   game.run(1003, 'https://example.itch.io/web-toy', 'Web Toy', 'html', 'game');
-  cave.run('cave-web', 1003, 5003, verdict(`${apps}\\web-toy`, [candidate('index.html', 1, 'html', 100)]), 'loc-default', 'web-toy', '', 100);
+  cave('cave-web', 1003, 5003, verdict(`${apps}\\web-toy`, [candidate('index.html', 1, 'html', 100)]), 'loc-default', 'web-toy', '', 100);
   game.run(1004, 'https://example.itch.io/clover', 'Clover™', 'default', 'game');
-  cave.run('cave-custom', 1004, 5004, verdict('D:\\Games\\Clover', [candidate('bin/clover.exe', 2, 'windows', 100)]), '', 'clover', 'D:\\Games\\Clover', 100);
+  cave('cave-custom', 1004, 5004, verdict('D:\\Games\\Clover', [candidate('bin/clover.exe', 2, 'windows', 100)]), '', 'clover', 'D:\\Games\\Clover', 100, '{"sandbox":false,"launchTarget":"play"}');
   game.run(1005, 'https://example.itch.io/share-game', 'Share Game', 'default', 'game');
-  cave.run('cave-share', 1005, 5005, verdict('\\\\nas\\itch\\share-game', [candidate('share.exe', 1, 'windows', 100)]), 'loc-share', 'share-game', '', 100);
+  cave('cave-share', 1005, 5005, verdict('\\\\nas\\itch\\share-game', [candidate('share.exe', 1, 'windows', 100)]), 'loc-share', 'share-game', '', 100);
   for (let id = 2000; id < 2200; id++) game.run(id, `https://example.itch.io/filler-${id}`, `Filler ${id}`, 'default', 'game');
   db.exec('COMMIT');
 
   // A transaction that hasn't committed: a small cache makes SQLite spill its pages into the log before the commit.
   db.exec('PRAGMA cache_size = 2; BEGIN');
   game.run(1006, 'https://example.itch.io/pending', 'Pending', 'default', 'game');
-  cave.run('cave-pending', 1006, 5006, verdict(`${apps}\\pending`, [candidate('pending.exe', 1, 'windows', 100)]), 'loc-default', 'pending', '', 100);
+  cave('cave-pending', 1006, 5006, verdict(`${apps}\\pending`, [candidate('pending.exe', 1, 'windows', 100)]), 'loc-default', 'pending', '', 100);
   for (let id = 3000; id < 3040; id++) game.run(id, `https://example.itch.io/pending-${id}`, `Pending ${'x'.repeat(200)} ${id}`, 'default', 'game');
   copyFileSync(file, path.join(here, 'butler.db'));
   copyFileSync(`${file}-wal`, path.join(here, 'butler.db-wal'));

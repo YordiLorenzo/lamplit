@@ -19,6 +19,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["protocol-asset", "custom-protocol"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# itch.io games' launch manifests (.itch.toml). The version Tauri already builds for its config, so nothing new.
+toml = "1"
 thiserror = "2"
 # A mutex that never poisons: one panicking thread must not take every later command down with it.
 parking_lot = "0.13"
