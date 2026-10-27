@@ -76,6 +76,8 @@ const view = (page) =>
 /** The commands sent since `from` calls. */
 const since = async (page, from) => (await view(page)).calls.slice(from).map(([cmd, args]) => (args ? `${cmd} ${JSON.stringify(args)}` : cmd));
 const closes = async (page, from) => (await since(page, from)).filter((c) => c.startsWith('dock_close_game'));
+/** A close as the page sends it: for the game `g` the dock shows, in its session. */
+const closing = (force, g) => `dock_close_game ${JSON.stringify({ force, id: g.id, session: g.session })}`;
 
 /** Cross held on the focused tile for `ms`, then let go. */
 async function hold(page, ms) {
@@ -255,7 +257,7 @@ export async function dockTests({ open, close, check, shots }) {
     check('moving on lets go too', (await closes(page, from)).length === 0, JSON.stringify(await closes(page, from)));
     await emit(page, 'dock-pad', 'right');
     await hold(page, HELD_MS);
-    check('held until the ring is full, the game is asked to close', JSON.stringify(await closes(page, from)) === '["dock_close_game {\\"force\\":false}"]', JSON.stringify(await closes(page, from)));
+    check('held until the ring is full, the game is asked to close', JSON.stringify(await closes(page, from)) === JSON.stringify([closing(false, game)]), JSON.stringify(await closes(page, from)));
     await page.evaluate((g) => (window.__settings.game = g), hung);
     await emit(page, 'dock', closed);
     await emit(page, 'dock', opened);
@@ -266,7 +268,7 @@ export async function dockTests({ open, close, check, shots }) {
     from = v.calls.length;
     await page.screenshot({ path: path.join(shots, 'dock-force-close.png'), omitBackground: true });
     await hold(page, HELD_MS);
-    check('held, it ends the game', (await closes(page, from)).includes('dock_close_game {"force":true}'), JSON.stringify(await closes(page, from)));
+    check('held, it ends the game', (await closes(page, from)).includes(closing(true, hung)), JSON.stringify(await closes(page, from)));
     // Rust refuses (a game run as administrator): the dock says so.
     await page.evaluate((error) => {
       window.__settings.dock_close_game = () => {
@@ -386,12 +388,40 @@ export async function dockTests({ open, close, check, shots }) {
     check('the open dock offers Force close once the game stops responding', v.values.close === 'Force close|warn', v.values.close);
     const from = v.calls.length;
     await hold(page, HELD_MS);
-    check('held, it then ends the game', (await closes(page, from)).includes('dock_close_game {"force":true}'), JSON.stringify(await closes(page, from)));
+    check('held, it then ends the game', (await closes(page, from)).includes(closing(true, hung)), JSON.stringify(await closes(page, from)));
     await emit(page, 'dock', closed);
     const reads = async () => (await view(page)).calls.filter(([cmd]) => cmd === 'dock_state').length;
     const folded = await reads();
     await page.waitForTimeout(2500);
     check('the folded dock stops reading the game', (await reads()) === folded, `${folded} then ${await reads()}`);
+    await close(page);
+  }
+
+  // D13. The dock opens on what it knew of the game. A close held before Rust answers names that game and session,
+  // so Rust, which closes only the game that runs now, refuses it when another took its place.
+  {
+    const page = await openDock();
+    await emit(page, 'dock', closed);
+    const other = like(game, { id: 'steam:80', name: 'Other game', session: game.session + 1 });
+    await page.evaluate((now) => {
+      const s = window.__settings;
+      // Rust answers when the test says so.
+      window.__answers = [];
+      s.dock_state = () => new Promise((resolve) => window.__answers.push(() => resolve(now)));
+      // As Rust does: a close for a game or session that doesn't run now is refused.
+      s.dock_close_game = ({ id, session }) => {
+        if (id !== now.id || session !== now.session) throw { kind: 'player', message: 'The game has already closed.' };
+      };
+    }, other);
+    await emit(page, 'dock', opened);
+    for (let i = 0; i < 5; i++) await emit(page, 'dock-pad', 'right');
+    const from = (await view(page)).calls.length;
+    await hold(page, HELD_MS);
+    const sent = await closes(page, from);
+    check('a close held before Rust answers names the game and session the dock showed', JSON.stringify(sent) === JSON.stringify([closing(false, game)]), JSON.stringify(sent));
+    const v = await view(page);
+    check('Rust refuses it, and the dock says so', v.message.includes('already closed'), v.message);
+    await page.evaluate(() => window.__answers.splice(0).forEach((a) => a()));
     await close(page);
   }
 

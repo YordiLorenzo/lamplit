@@ -198,6 +198,7 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {string} name
  * @property {Art} art  its cover, background and logo
  * @property {number} started  when this session started, Unix seconds; 0 when Lamplit doesn't know
+ * @property {number} session  this launch of the game, which a close names
  * @property {boolean} responding  its window answers Windows
  * @property {boolean} force_close  the dock offers to end it: not responding, no window, or asked to close a while ago
  */
@@ -294,8 +295,11 @@ export const dockState = () => call('dock_state');
 export const dockResume = () => call('dock_resume');
 /** The home screen, in place of the dock. @returns {Promise<void>} */
 export const dockHome = () => call('dock_home');
-/** Asks the running game to close, or ends it. @param {boolean} force @returns {Promise<void>} */
-export const dockCloseGame = (force) => call('dock_close_game', { force });
+/**
+ * Asks the game the dock shows to close, or ends it; Rust refuses when another game or session runs now.
+ * @param {boolean} force @param {string} id @param {number} session @returns {Promise<void>}
+ */
+export const dockCloseGame = (force, id, session) => call('dock_close_game', { force, id, session });
 /** @returns {Promise<StoreStatus[]>} */
 export const storesStatus = () => call('stores_status');
 /** Shows a store app so the player can sign in or deal with an update. @param {StoreKey} store @returns {Promise<void>} */

@@ -28,6 +28,7 @@ use crate::prefs;
 use crate::win::{self, window::HWND};
 use parking_lot::Mutex;
 use serde::Serialize;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
@@ -69,6 +70,8 @@ const NEWS_FOR: Duration = Duration::from_millis(3200);
 
 /// The dock's window when the dock is switched on, and the thread that tells news. Runs in Tauri's setup.
 pub fn start(app: &AppHandle) {
+    // Before any launch: session numbers count from here.
+    LazyLock::force(&game::SESSIONS_FROM);
     if prefs::get(app).dock
         && let Err(e) = window::create(app)
     {

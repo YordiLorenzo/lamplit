@@ -547,13 +547,12 @@ function closeGame() {
   el?.classList.remove('holding');
   el?.classList.add('closing');
   setTimeout(() => el?.classList.remove('closing'), 450);
-  const d = state.data;
-  if (!d.game) return;
+  const game = state.data.game;
+  if (!game) return;
   sfx.launch();
-  run(async () => {
-    await api.dockCloseGame(d.game.force_close);
-    setGame(await api.dockState());
-  });
+  // The game as the dock shows it, which may be what it knew before Rust's answer: Rust closes nothing else. What
+  // Rust answers shows first; the game is read again after.
+  run(() => api.dockCloseGame(game.force_close, game.id, game.session)).then(rereadGame);
 }
 
 function select() {
