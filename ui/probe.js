@@ -428,13 +428,21 @@ async function dock() {
   afterFinish = () => (still = snap());
   await Promise.all([
     api.onDock((show) => {
-      if (show.mode === 'open') heard('dock-open', true);
+      // The window shows first, still and as the pill, until its frames come on time (dock/main.js steady): that wait
+      // is dock-show, and dock-open starts as the island starts to move (below).
+      if (show.mode === 'open') heard('dock-show', true);
       else if (show.mode === 'closed') heard(document.body.classList.contains('home') ? 'dock-home-lift' : 'dock-fold');
       else heard('dock-news');
     }),
     api.onDockPad((action) => (action === 'ok-up' ? touch() : begin(name(action, still)))),
   ]);
   watch('#clock, #session', () => null);
+  // The island starts to move: the wait before it ends there, not cut, and dock-open begins.
+  new MutationObserver(() => {
+    if ($('island').dataset.mode !== 'open' || run?.name !== 'dock-show') return;
+    finish();
+    begin('dock-open');
+  }).observe($('island'), { attributes: true, attributeFilter: ['data-mode'] });
 }
 
 await (page === 'dock' ? dock() : home());
