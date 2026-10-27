@@ -90,7 +90,9 @@ The payloads Rust sends the page are tested against the JSON in `tests/ipc/`, wh
 you change a payload, change its fixture, and both sides' tests tell you what else has to follow.
 
 To test discovery and launching of games outside any store, `tests/fixture-game` is a stand-in game (a window that
-stays open until closed) and `tests/fixtures.ps1` places copies of it. From the repository's root:
+stays open until closed) and `tests/fixtures.ps1` places copies of it. Named `LamplitFull.exe`, the stand-in starts
+as many games do (a small splash, a moment with no window, then a window over the whole screen for 25 seconds), for
+testing how Lamplit hands the screen over to a game. From the repository's root:
 
 ```powershell
 cargo build --release --manifest-path tests\fixture-game\Cargo.toml

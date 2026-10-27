@@ -166,13 +166,13 @@ function back() {
     sfx.back();
     render();
   } else {
-    close();
+    closeAdd();
     backTo?.();
   }
 }
 
-/** @param {boolean} [quiet]  no sound: what opens next has its own */
-function close(quiet = false) {
+/** Closes Add a game, also when a game's news takes the screen (launch.js). @param {boolean} [quiet]  no sound */
+export function closeAdd(quiet = false) {
   state.mode = 'browse';
   state.typing = null;
   els.add.classList.remove('on');
@@ -187,7 +187,7 @@ async function save() {
   try {
     const { id, games } = await api.libraryAddGame(a.exe, field.text);
     if (state.mode !== 'add') return;
-    close(true);
+    closeAdd(true);
     setGames(games);
     focusGame(id);
     renderRow();

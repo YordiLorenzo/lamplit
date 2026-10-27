@@ -24,7 +24,7 @@ export function showHints() {
   let html = '';
   if (state.mode === 'starting') {
     const s = actionableStep();
-    if (s) html += b('ok', `Open ${storeName(s.store) ?? 'the store app'}`);
+    if (s) html += b('ok', s.key === 'window' ? 'Show it' : `Open ${storeName(s.store) ?? 'the store app'}`);
     if (s?.state === 'block') html += b('triangle', 'Try anyway');
     html += b('back', 'Cancel');
   } else if (state.mode === 'details' && state.art.open) {

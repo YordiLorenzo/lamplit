@@ -72,7 +72,7 @@ export function act(action, source) {
   if (state.mode === 'starting') {
     const s = actionableStep();
     if (action === 'back') cancelLaunch();
-    else if (action === 'ok' && s) api.storesOpen(s.store).catch((e) => toast(e.message));
+    else if (action === 'ok' && s) api.launchShow(s.key === 'window' ? null : s.store).catch((e) => toast(e.message));
     else if (action === 'triangle' && s?.state === 'block') api.launchAnyway();
     return;
   }

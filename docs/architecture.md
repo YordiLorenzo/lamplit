@@ -22,7 +22,7 @@ src-tauri/
     library/         the game list: discovery, sorting, art and the art the player chose, favourites, hidden
                      games, play time, and games added by hand
     stores/          one file per store app; loose.rs finds games outside any store
-    launch/          starting a game, watching it, and Lamplit's own window
+    launch/          starting a game, watching it, handing the screen over to it, and Lamplit's own window
     dock/            the in-game dock: its window over a game, the news it shows, closing the game
     devices/         controllers (pad/), the headset, sound devices, where the sound goes
     system/          quiet mode, NVIDIA's overlay, first-time setup, sleep, restart and shut down
@@ -111,6 +111,9 @@ controller is read into the same buttons, by position (south is Cross or A), so 
 
 1. The page calls `launch_start` with the game's id and shows the starting screen.
 2. Rust starts a new launch generation, so an older launch's checks stop, and keeps the PC and the screen awake.
+   Lamplit holds the screen (`launch/window.rs`): its window is topmost, raised again every 250 ms because Windows
+   puts the taskbar back on top whenever another window takes the foreground, and counts as in front for the
+   controller. It doesn't take the foreground back from a window that opens later.
 3. For each store app in the game's `requires` list (its own store, then any publisher's launcher), `launch/mod.rs`:
    - stops with an error if the store app isn't installed;
    - starts it if it isn't running, and waits up to 90 seconds for it;
@@ -124,12 +127,18 @@ controller is read into the same buttons, by position (south is Cross or A), so 
    to start (`Battle.net.exe --exec="launch <code>"`), or the game's exe.
 6. `launch/watch.rs` reads the process list once a second. A process counts as the game when its exe is inside the
    game's folder, or has one of the game's exe names:
-   - Seen for 1.5 seconds: the game runs. A `play` event says `running`, Lamplit minimises itself and records the
-     time in `games.json`.
+   - Seen for 1.5 seconds: the game runs, and Lamplit records the time in `games.json`.
+   - Every 250 ms until then, `launch/handover.rs` judges the windows that opened since Play. One that covers the
+     screen and answers Windows for half a second (two seconds, and in front, for a program not in the game's
+     folders until the game runs) is the game's: a `play` event says `running`, the page fades to black, and Lamplit
+     places itself right behind that window and gives it the foreground. It stays there, not minimised, while the
+     game runs. A window that stays 5 seconds without covering the screen gets a `window` line on the starting
+     screen, which `launch_show` brings forward. After the game has run 12 seconds with only such windows of its own,
+     the front one gets the screen.
    - While it runs: the time between two polls that both see it counts as play time, at most 5 seconds per poll (a
      longer gap is the PC asleep). It is saved to `games.json` every minute and when the game's processes go.
    - Gone again within 20 seconds of starting: a launcher handing over to the game, or a crash at start. A `play`
-     event says `starting`, Lamplit comes forward and keeps waiting.
+     event says `starting`, Lamplit holds the screen again and keeps waiting.
    - Gone for 5 seconds after a longer run: the game has ended. A `games` event brings the new play time, a `play`
      event says `ended`, Lamplit comes forward, and after a Steam game it minimises Steam's window.
    - Nothing after 45 seconds and no download running: a hint that the store app may need the player. Nothing after

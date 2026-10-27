@@ -5,7 +5,9 @@
 
 use std::ops::ControlFlow;
 use std::time::Duration;
-use windows::Win32::Foundation::{LPARAM, WPARAM};
+use windows::Win32::Foundation::{LPARAM, RECT, WPARAM};
+use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
+use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow};
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, VK_MENU, keybd_event};
 use windows::Win32::UI::Shell::{
@@ -13,8 +15,10 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     ASFW_ANY, AllowSetForegroundWindow, BringWindowToTop, EnumWindows, GW_OWNER, GetForegroundWindow, GetWindow,
-    GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible, SHOW_WINDOW_CMD, SMTO_ABORTIFHUNG, SMTO_BLOCK,
-    SW_MINIMIZE, SW_RESTORE, SendMessageTimeoutW, SetForegroundWindow, ShowWindow, ShowWindowAsync, WM_NULL,
+    GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, HWND_NOTOPMOST, HWND_TOPMOST, IsIconic, IsWindowVisible,
+    SHOW_WINDOW_CMD, SMTO_ABORTIFHUNG, SMTO_BLOCK, SW_MINIMIZE, SW_RESTORE, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, SendMessageTimeoutW, SetForegroundWindow, SetWindowPos, ShowWindow, ShowWindowAsync,
+    WM_NULL,
 };
 use windows::core::BOOL;
 
@@ -51,6 +55,63 @@ pub fn title(window: HWND) -> String {
 pub fn is_visible(window: HWND) -> bool {
     // SAFETY: only reads the window's state.
     unsafe { IsWindowVisible(window) }.as_bool()
+}
+
+/// Windows counts the window as visible but doesn't draw it: a packaged app's window that is suspended or on another
+/// virtual desktop, say.
+pub fn is_cloaked(window: HWND) -> bool {
+    let mut cloaked = 0u32;
+    // SAFETY: the attribute is a u32, which `cloaked` holds, and its size goes with it.
+    let read =
+        unsafe { DwmGetWindowAttribute(window, DWMWA_CLOAKED, (&raw mut cloaked).cast(), size_of::<u32>() as u32) };
+    read.is_ok() && cloaked != 0
+}
+
+/// A rectangle on the screen, in pixels, right and bottom outside it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Rect {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+impl From<RECT> for Rect {
+    fn from(r: RECT) -> Self {
+        Rect { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
+    }
+}
+
+/// Where the window is on the screen.
+pub fn rect(window: HWND) -> Option<Rect> {
+    let mut r = RECT::default();
+    // SAFETY: r is a valid place for the answer; a stale handle makes the call fail.
+    unsafe { GetWindowRect(window, &raw mut r) }.ok()?;
+    Some(r.into())
+}
+
+/// The whole of the monitor the window is on (or nearest to).
+pub fn monitor(window: HWND) -> Option<Rect> {
+    let mut info = MONITORINFO { cbSize: size_of::<MONITORINFO>() as u32, ..Default::default() };
+    // SAFETY: MonitorFromWindow always returns a monitor with this flag, and info carries its own size.
+    let read = unsafe { GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &raw mut info) };
+    read.as_bool().then(|| info.rcMonitor.into())
+}
+
+/// Puts `window` right behind `front` without activating it; a topmost window stops being one.
+pub fn place_behind(window: HWND, front: HWND) {
+    let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
+    // SAFETY: changes only the window's place among the others; a stale handle makes the call fail.
+    let _ = unsafe { SetWindowPos(window, Some(front), 0, 0, 0, 0, flags) };
+}
+
+/// Puts the window above every window that isn't topmost (`on`), or back among them, without activating it. For
+/// another thread's window the change is posted to that thread, so a thread that is busy can't hold the caller up.
+pub fn set_topmost(window: HWND, on: bool) {
+    let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS;
+    let after = if on { HWND_TOPMOST } else { HWND_NOTOPMOST };
+    // SAFETY: changes only the window's place among the others; a stale handle makes the call fail.
+    let _ = unsafe { SetWindowPos(window, Some(after), 0, 0, 0, 0, flags) };
 }
 
 /// A window with an owner belongs to another one (a dialog or a tool window), rather than being an app's own.

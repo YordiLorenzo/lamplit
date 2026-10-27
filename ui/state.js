@@ -211,6 +211,9 @@ export function icon(id) {
   return svg;
 }
 
-/** The step the player can act on: a sign-in to do, or a store app that may be waiting for them. */
+/**
+ * The step the player can act on: a sign-in to do, a store app that may be waiting for them, or a window that opened
+ * and may need them (key "window").
+ */
 export const actionableStep = () =>
-  [...state.steps].reverse().find((s) => s.store && (s.state === 'block' || s.state === 'warn'));
+  [...state.steps].reverse().find((s) => (s.store || s.key === 'window') && (s.state === 'block' || s.state === 'warn'));

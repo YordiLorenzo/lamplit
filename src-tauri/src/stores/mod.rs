@@ -176,6 +176,19 @@ pub struct Status {
     pub account: Account,
 }
 
+/// One running process, as `Processes::list` gives it.
+#[derive(Clone, Copy)]
+pub struct Proc<'a> {
+    pub pid: u32,
+    pub name: &'a OsStr,
+    /// None when Windows doesn't tell.
+    pub exe: Option<&'a Path>,
+    /// Seconds since 1970. With the id, it tells a process from a later one that got the same id.
+    pub started: u64,
+    /// The process that started it. It may have ended since and handed its id on to a later process.
+    pub parent: Option<u32>,
+}
+
 /// The running processes and the exe each one runs from. To poll, keep one and `refresh` it: each process's exe is
 /// then looked up once. `default()` is empty until the first `refresh`.
 #[derive(Default)]
@@ -223,15 +236,13 @@ impl Processes {
         })
     }
 
-    /// Each process's parent: the process that started it, by id. Only a parent that started before the process
-    /// counts, since a parent that has ended may have handed its id on to another process.
-    pub fn parents(&self) -> HashMap<u32, u32> {
-        let all = self.sys.processes();
-        all.iter()
-            .filter_map(|(pid, p)| {
-                let parent = p.parent()?;
-                let earlier = all.get(&parent).is_some_and(|pp| pp.start_time() <= p.start_time());
-                earlier.then_some((pid.as_u32(), parent.as_u32()))
+    /// Each process with its start time and the process that started it, which `iter` leaves out.
+    pub fn list(&self) -> Vec<Proc<'_>> {
+        let started = |pid: u32| self.sys.process(sysinfo::Pid::from_u32(pid)).map_or(0, sysinfo::Process::start_time);
+        self.iter()
+            .map(|(pid, name, exe)| {
+                let parent = self.sys.process(sysinfo::Pid::from_u32(pid)).and_then(sysinfo::Process::parent);
+                Proc { pid, name, exe, started: started(pid), parent: parent.map(sysinfo::Pid::as_u32) }
             })
             .collect()
     }
@@ -382,10 +393,13 @@ mod tests {
     fn knows_which_process_started_another() {
         // Started by this test, and still running while it looks.
         let mut child = std::process::Command::new("cmd.exe").args(["/c", "ping -n 3 127.0.0.1 >nul"]).spawn().unwrap();
-        let parents = Processes::now().parents();
+        let procs = Processes::now();
+        let listed = procs.list().iter().find(|p| p.pid == child.id()).map(|p| (p.parent, p.started));
         child.kill().unwrap();
         child.wait().unwrap();
-        assert_eq!(parents.get(&child.id()), Some(&std::process::id()));
+        let (parent, started) = listed.expect("the child is listed");
+        assert_eq!(parent, Some(std::process::id()));
+        assert!(started > 1_700_000_000, "{started}");
     }
 
     #[test]
