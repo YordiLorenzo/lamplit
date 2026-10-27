@@ -14,11 +14,11 @@ use windows::Win32::UI::Shell::{
     QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN, SHQueryUserNotificationState,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    ASFW_ANY, AllowSetForegroundWindow, BringWindowToTop, EnumWindows, GW_OWNER, GetForegroundWindow, GetWindow,
-    GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, HWND_NOTOPMOST, HWND_TOPMOST, IsIconic, IsWindowVisible,
-    SHOW_WINDOW_CMD, SMTO_ABORTIFHUNG, SMTO_BLOCK, SW_MINIMIZE, SW_RESTORE, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SendMessageTimeoutW, SetForegroundWindow, SetWindowPos, ShowWindow, ShowWindowAsync,
-    WM_NULL,
+    ASFW_ANY, AllowSetForegroundWindow, BringWindowToTop, EnumWindows, GW_OWNER, GWL_EXSTYLE, GetForegroundWindow,
+    GetWindow, GetWindowLongPtrW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, HWND_NOTOPMOST,
+    HWND_TOPMOST, IsIconic, IsWindowVisible, SHOW_WINDOW_CMD, SMTO_ABORTIFHUNG, SMTO_BLOCK, SW_MINIMIZE, SW_RESTORE,
+    SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageTimeoutW, SetForegroundWindow, SetWindowPos,
+    ShowWindow, ShowWindowAsync, WM_NULL, WS_EX_TOPMOST,
 };
 use windows::core::BOOL;
 
@@ -98,11 +98,21 @@ pub fn monitor(window: HWND) -> Option<Rect> {
     read.as_bool().then(|| info.rcMonitor.into())
 }
 
-/// Puts `window` right behind `front` without activating it; a topmost window stops being one.
+/// Puts `window` behind `front` without activating it, among the windows that aren't topmost: right behind `front`, or,
+/// when `front` is topmost itself, at the top of those windows, since Windows keeps a window put behind a topmost one
+/// topmost too, above every ordinary window the player switches to.
 pub fn place_behind(window: HWND, front: HWND) {
+    let after = if is_topmost(front) { HWND_NOTOPMOST } else { front };
     let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
     // SAFETY: changes only the window's place among the others; a stale handle makes the call fail.
-    let _ = unsafe { SetWindowPos(window, Some(front), 0, 0, 0, 0, flags) };
+    let _ = unsafe { SetWindowPos(window, Some(after), 0, 0, 0, 0, flags) };
+}
+
+/// The window is above every window that isn't topmost.
+pub fn is_topmost(window: HWND) -> bool {
+    // SAFETY: only reads the window's extended style; a stale handle reads as 0.
+    let style = unsafe { GetWindowLongPtrW(window, GWL_EXSTYLE) } as u32;
+    style & WS_EX_TOPMOST.0 != 0
 }
 
 /// Puts the window above every window that isn't topmost (`on`), or back among them, without activating it. For
@@ -216,4 +226,41 @@ pub fn full_screen_app_in_front() -> bool {
     // SAFETY: takes nothing and returns a value.
     let state = unsafe { SHQueryUserNotificationState() };
     matches!(state, Ok(s) if s == QUNS_BUSY || s == QUNS_RUNNING_D3D_FULL_SCREEN || s == QUNS_PRESENTATION_MODE)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DestroyWindow, GW_HWNDNEXT, WINDOW_EX_STYLE, WS_POPUP,
+    };
+    use windows::core::w;
+
+    /// A hidden top-level window of this thread, topmost or not: the system's STATIC class needs no registering.
+    fn window(topmost: bool) -> HWND {
+        let style = if topmost { WS_EX_TOPMOST } else { WINDOW_EX_STYLE(0) };
+        // SAFETY: the class and title are constant strings; the window has no parent, menu or data.
+        unsafe {
+            CreateWindowExW(style, w!("STATIC"), w!("lamplit test"), WS_POPUP, 0, 0, 64, 64, None, None, None, None)
+        }
+        .unwrap()
+    }
+
+    #[test]
+    fn lamplit_behind_a_topmost_game_leaves_the_topmost_windows() {
+        let (lamplit, game, other) = (window(true), window(true), window(false));
+        place_behind(lamplit, game);
+        assert!(!is_topmost(lamplit), "it would stay above every ordinary window the player switches to");
+        // Behind a game that isn't topmost: right behind it.
+        set_topmost(lamplit, true);
+        assert!(is_topmost(lamplit));
+        place_behind(lamplit, other);
+        // SAFETY: reads the window after `other` in the z-order.
+        let next = unsafe { GetWindow(other, GW_HWNDNEXT) };
+        assert!(!is_topmost(lamplit) && next == Ok(lamplit), "{next:?}");
+        for w in [lamplit, game, other] {
+            // SAFETY: each window is this thread's, made above.
+            unsafe { DestroyWindow(w) }.unwrap();
+        }
+    }
 }
