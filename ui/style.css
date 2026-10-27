@@ -463,16 +463,19 @@ body.launching .cover.focus { scale: 1.1; }
   to   { opacity: 1; transform: translateX(60%); }
 }
 
-/* The menu, and Change art, beside the card: they slide out from behind it. */
+/* The menu, and Change art, beside the card: they slide out from behind it. Centred on the card, so a full one has
+   room above and below it, between the screen's safe area and the hints (6vh over its bottom edge). */
 .sheet {
+  --middle: calc(var(--card-y) + var(--card-h) / 2);
   position: absolute;
-  top: var(--card-y);
+  top: var(--middle);
+  translate: 0 -50%;
   left: var(--menu-x);
   width: var(--menu-w);
-  max-height: calc(100vh - var(--card-y) - var(--safe-y) - 6vh);
+  max-height: calc(2 * min(var(--middle) - var(--safe-y), 100vh - var(--middle) - var(--safe-y) - 6vh));
   display: flex;
   flex-direction: column;
-  padding: 4.4vh 4vh;
+  padding: 3.6vh 4vh;
   border-radius: 2.2vh;
   background: rgb(16 15 26 / .72);
   border: .12vh solid rgb(255 255 255 / .14);
@@ -489,11 +492,26 @@ body.launching .cover.focus { scale: 1.1; }
   pointer-events: auto;
   transition: opacity 240ms ease 150ms, transform var(--lift-open-ms) var(--lift-open) 90ms;
 }
-.sheet h2 { font-size: 4.6vh; font-weight: 650; line-height: 1.1; margin-bottom: 3vh; }
-#details dl { display: grid; grid-template-columns: auto 1fr; gap: 1.8vh 3vh; font-size: 2.4vh; }
-#details dt { color: var(--ink-dim); }
-#details dd { overflow-wrap: anywhere; }
-#dChoices { display: grid; gap: .8vh; margin-top: 4vh; padding: .4vh; }
+.sheet h2 { flex: none; font-size: 4.6vh; font-weight: 650; line-height: 1.1; margin-bottom: 2.4vh; }
+/* A long name takes three lines at most. */
+#dName { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+/* The details give way first: when the name, the details and the choices don't all fit, the details are cut short,
+   never a choice. */
+#details dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1.4vh 3vh;
+  min-height: 0;
+  overflow: hidden;
+  font-size: 2.4vh;
+}
+#details dt { color: var(--ink-dim); white-space: nowrap; }
+#details dd { min-width: 0; overflow-wrap: anywhere; }
+/* The folder in two lines at most: the path to it, cut short at its end (the middle of the whole path), and the
+   folder's own name, which says the most, cut short at its end if it must be. Both on one line when they fit. */
+#dDir { display: flex; flex-wrap: wrap; }
+#dDir span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#dChoices { flex: none; display: grid; gap: .8vh; margin-top: 3vh; padding: .4vh; }
 #dChoices .row { font-size: 2.6vh; padding: 1.5vh 2vh; }
 #dChoices .row.warn { color: #ffc75e; font-weight: 600; }
 

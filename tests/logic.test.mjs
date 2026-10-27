@@ -12,6 +12,7 @@ import {
   counts,
   detailChoices,
   focusIndex,
+  folderParts,
   liftLayout,
   matcher,
   nameAfter,
@@ -153,6 +154,14 @@ describe('detailChoices', () => {
     assert.equal(labels(added).at(-1), 'Remove from Lamplit');
     assert.equal(labels(added, null, true).at(-1), 'Press again to remove');
     assert.equal(detailChoices(added, null).at(-1).kind, 'remove');
+  });
+});
+
+describe('folderParts', () => {
+  test('the path to a folder, and its own name, which the game menu shows on a line of its own', () => {
+    assert.deepEqual(folderParts('C:\\Program Files\\WindowsApps\\Tomb_1.0'), ['C:\\Program Files\\WindowsApps\\', 'Tomb_1.0']);
+    assert.deepEqual(folderParts('D:\\Games\\Racer\\'), ['D:\\Games\\', 'Racer']);
+    assert.deepEqual(folderParts('Racer'), ['', 'Racer']);
   });
 });
 

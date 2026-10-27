@@ -181,6 +181,18 @@ export function detailChoices(g, running, removing = false) {
   ];
 }
 
+/**
+ * A folder as the game menu shows it: the path to it, with its last separator, and its own name, which goes on a
+ * line of its own when the two don't fit on one.
+ * @param {string} dir
+ * @returns {[string, string]}
+ */
+export function folderParts(dir) {
+  const trimmed = dir.replace(/[\\/]+$/, '');
+  const cut = Math.max(trimmed.lastIndexOf('\\'), trimmed.lastIndexOf('/')) + 1;
+  return [trimmed.slice(0, cut), trimmed.slice(cut)];
+}
+
 // ---------- the lifted game menu ----------
 
 /**
