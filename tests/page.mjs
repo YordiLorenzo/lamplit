@@ -112,6 +112,8 @@ export async function open(browser, uiDir, opts, viewport = { width: 1920, heigh
     })
   );
   await page.addInitScript(fakeTauri(opts));
+  // A script Rust adds to every page before its own (src-tauri/src/probe.rs), as `init`.
+  if (opts.init) await page.addInitScript(opts.init);
   await page.goto(`${pageOrigin}/${opts.file ?? 'index.html'}`);
   await page.waitForFunction(() => window.__logs.some((line) => line.startsWith('info ready')));
   return page;

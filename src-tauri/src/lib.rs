@@ -33,6 +33,7 @@ mod events;
 mod files;
 mod logging;
 mod prefs;
+mod probe;
 
 // The calls into Windows, the one place with unsafe code.
 #[allow(unsafe_code)]
@@ -97,7 +98,7 @@ fn first_lamplit_window() -> Option<win::window::HWND> {
 ///
 /// When Tauri can't start (WebView2 missing, for one).
 pub fn run() {
-    tauri::Builder::default()
+    probe::with(tauri::Builder::default())
         .plugin(logging::plugin())
         .manage(library::Library::default())
         .manage(launch::Launcher::default())

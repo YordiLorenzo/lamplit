@@ -13,6 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ipc, known, like, values } from './fixtures.mjs';
 import { dockTests } from './dock.mjs';
+import { probeTests } from './probe.mjs';
 import { assetOrigin, commands, cspHeader, emit, idle, open as openPage, pageOrigin, serveFile, settled, until } from './page.mjs';
 import { SCENES } from '../ui/screensaver/scenes.js';
 
@@ -2063,6 +2064,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
 }
 
 await dockTests({ open, close, check, shots });
+await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
 
 // 31. Every scene compiles and draws: each one in the screensaver's preview, served the way Tauri serves the page and
 // under the same content security policy, Gallery and Drift with the covers and hero art cut from the README's
