@@ -7,11 +7,11 @@ use super::window::{bring_lamplit_forward, minimize_lamplit};
 use super::{Launcher, step, update_text};
 use crate::events::{self, Event, Play, StepState};
 use crate::files::folder_key;
-use crate::library::{self, Game};
+use crate::library::{self, Game, Launch};
 use crate::stores::{Processes, Store, steam};
 use crate::win::process::keep_awake;
 use crate::win::window;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::ops::ControlFlow;
 use std::path::Path;
@@ -26,6 +26,9 @@ const STILL_WAITING: Duration = Duration::from_secs(45);
 pub struct Watch {
     dirs: Vec<String>,
     names: Vec<String>,
+    /// A game the player added by hand: the exe Lamplit starts. Its folder can hold other programs too (Downloads,
+    /// say), so closing the game takes this exe and what it started, not everything in the folder.
+    launched: Option<String>,
     /// When this launch opened the game. What the player asked of the game before then was about an earlier session.
     pub opened: Instant,
 }
@@ -33,7 +36,11 @@ pub struct Watch {
 impl Watch {
     fn of(g: &Game) -> Self {
         let dirs = std::iter::once(&g.dir).chain(&g.extra_dirs).map(|d| format!("{}\\", folder_key(d))).collect();
-        Watch { dirs, names: g.exe_names.clone(), opened: Instant::now() }
+        let launched = match &g.launch {
+            Launch::Exe(exe) if g.manual => Some(folder_key(exe)),
+            _ => None,
+        };
+        Watch { dirs, names: g.exe_names.clone(), launched, opened: Instant::now() }
     }
 
     /// The game's processes among `procs` (pid, exe name, exe path), as `Processes::iter` lists them.
@@ -43,8 +50,30 @@ impl Watch {
 
     /// The processes among `procs` that are certainly the game's, for closing it: one whose path Windows tells counts
     /// only when it runs from the game's folders. By its exe name alone, another program could be closed in its place.
-    pub fn own_pids<'a>(&self, procs: impl Iterator<Item = (u32, &'a OsStr, Option<&'a Path>)>) -> HashSet<u32> {
-        self.select(procs, true)
+    /// For a game added by hand, only its exe and the processes it started (`parents`, as `Processes::parents` gives
+    /// them) count: the rest of its folder may be anything.
+    pub fn own_pids<'a>(
+        &self,
+        procs: impl Iterator<Item = (u32, &'a OsStr, Option<&'a Path>)>,
+        parents: &HashMap<u32, u32>,
+    ) -> HashSet<u32> {
+        let procs: Vec<_> = procs.collect();
+        let own = self.select(procs.iter().copied(), true);
+        let Some(launched) = &self.launched else { return own };
+        let started: HashSet<u32> =
+            procs.iter().filter(|(.., exe)| exe.is_some_and(|e| folder_key(e) == *launched)).map(|p| p.0).collect();
+        // Up the line of parents: a few steps cover a launcher, a shell and the game, and a loop can't trap it.
+        let from_game = |mut pid: u32| {
+            for _ in 0..16 {
+                if started.contains(&pid) {
+                    return true;
+                }
+                let Some(&parent) = parents.get(&pid) else { return false };
+                pid = parent;
+            }
+            false
+        };
+        own.into_iter().filter(|&pid| from_game(pid)).collect()
     }
 
     /// `certain`: an exe name counts only for a process whose path Windows doesn't tell.
@@ -222,7 +251,6 @@ pub fn game_windows(pids: &HashSet<u32>) -> Vec<window::HWND> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library::Launch;
     use std::path::PathBuf;
 
     #[test]
@@ -277,6 +305,36 @@ mod tests {
             .into_iter()
         };
         assert_eq!(watch.pids(procs()), HashSet::from([1, 5, 6]));
-        assert_eq!(watch.own_pids(procs()), HashSet::from([1, 5]));
+        assert_eq!(watch.own_pids(procs(), &HashMap::new()), HashSet::from([1, 5]));
+    }
+
+    #[test]
+    fn closing_a_game_added_by_hand_takes_only_its_exe_and_what_it_started() {
+        // Added from Downloads, which holds other programs too.
+        let exe = PathBuf::from(r"D:\Downloads\Racer.exe");
+        let mut game =
+            Game::new("manual:racer".into(), "Racer".into(), None, PathBuf::from(r"D:\Downloads"), Launch::Exe(exe));
+        game.manual = true;
+        let watch = Watch::of(&game);
+        let paths = [
+            (1, r"D:\Downloads\Racer.exe"),
+            // What the game started: the game proper, and a helper it started through a shell outside the folder.
+            (2, r"D:\Downloads\Racer\RacerGame.exe"),
+            (3, r"C:\Windows\System32\cmd.exe"),
+            (4, r"D:\Downloads\Racer\helper.exe"),
+            // Another program in Downloads, and what it started.
+            (5, r"D:\Downloads\setup.exe"),
+            (6, r"D:\Downloads\setup-tmp\unpack.exe"),
+        ];
+        let procs = || {
+            paths.iter().map(|&(pid, exe)| {
+                let exe = Path::new(exe);
+                (pid, exe.file_name().unwrap(), Some(exe))
+            })
+        };
+        let parents = HashMap::from([(1, 100), (2, 1), (3, 1), (4, 3), (5, 100), (6, 5)]);
+        // Watching, the folder is enough to tell the game runs.
+        assert_eq!(watch.pids(procs()), HashSet::from([1, 2, 4, 5, 6]));
+        assert_eq!(watch.own_pids(procs(), &parents), HashSet::from([1, 2, 4]));
     }
 }

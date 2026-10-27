@@ -163,7 +163,8 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   and `WS_EX_TRANSPARENT`: the game keeps the foreground and its clicks. Only over a running game, with Lamplit not
   in front and no exclusive full screen.
 - **Close game** posts `WM_CLOSE` to the game's windows and gives the game the foreground, so it can ask whether to
-  quit. **Force close** ends the game's processes; the page offers it when a game window doesn't answer within a
+  quit. **Force close** ends the game's processes: those certainly the game's (`Watch::own_pids`), and for a game
+  added by hand only its exe and what it started. The page offers it when a game window doesn't answer within a
   second, the game has no window, or a close asked 10 seconds ago hasn't happened.
 
 The page sizes the dock in hundredths of the screen's height (`--u`, from `screen.height`), since its window covers

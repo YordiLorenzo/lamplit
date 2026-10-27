@@ -223,6 +223,19 @@ impl Processes {
         })
     }
 
+    /// Each process's parent: the process that started it, by id. Only a parent that started before the process
+    /// counts, since a parent that has ended may have handed its id on to another process.
+    pub fn parents(&self) -> HashMap<u32, u32> {
+        let all = self.sys.processes();
+        all.iter()
+            .filter_map(|(pid, p)| {
+                let parent = p.parent()?;
+                let earlier = all.get(&parent).is_some_and(|pp| pp.start_time() <= p.start_time());
+                earlier.then_some((pid.as_u32(), parent.as_u32()))
+            })
+            .collect()
+    }
+
     fn pid_of(&self, exe: &Path) -> Option<u32> {
         let want = exe.to_string_lossy().to_lowercase();
         self.iter().find(|(_, _, e)| e.is_some_and(|e| e.to_string_lossy().to_lowercase() == want)).map(|(pid, ..)| pid)
@@ -363,6 +376,16 @@ mod tests {
         assert_eq!(procs.pid_of(&exe), Some(me));
         let name = exe.file_name().unwrap().to_string_lossy().to_uppercase();
         assert!(pids_named(&["nothing.exe", name.as_str()]).contains(&me));
+    }
+
+    #[test]
+    fn knows_which_process_started_another() {
+        // Started by this test, and still running while it looks.
+        let mut child = std::process::Command::new("cmd.exe").args(["/c", "ping -n 3 127.0.0.1 >nul"]).spawn().unwrap();
+        let parents = Processes::now().parents();
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert_eq!(parents.get(&child.id()), Some(&std::process::id()));
     }
 
     #[test]
