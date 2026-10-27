@@ -70,8 +70,9 @@ impl Handover {
                 return Next::HandOver(w.id);
             }
         }
+        // Only a window that doesn't cover the screen: one that does gets it once it draws, however long that takes.
         if self.running_since.is_some_and(|t| now - t >= SETTLE)
-            && let Some(w) = windows.iter().find(|w| w.game)
+            && let Some(w) = windows.iter().find(|w| w.game && !w.covers)
         {
             return Next::HandOver(w.id);
         }
@@ -173,6 +174,15 @@ mod tests {
         let (t0, mut h) = (Instant::now(), Handover::default());
         let found = run(&mut h, t0, (0.0, 30.0), |_| (vec![seen(STEAM, false, false)], false));
         assert_eq!(found, [(5.0, Next::Hint { id: STEAM, own: false })]);
+    }
+
+    #[test]
+    fn a_game_over_the_screen_that_doesnt_draw_yet_waits_past_the_settling_time() {
+        // A game that takes over 12 s to set itself up, its window over the screen and not answering meanwhile.
+        let (t0, mut h) = (Instant::now(), Handover::default());
+        let found =
+            run(&mut h, t0, (0.0, 16.0), |t| (vec![Seen { answers: t >= 15.0, ..seen(GAME, true, true) }], true));
+        assert_eq!(found, [(15.5, Next::HandOver(GAME))]);
     }
 
     #[test]

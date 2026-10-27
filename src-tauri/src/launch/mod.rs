@@ -288,7 +288,9 @@ pub fn show_waiting(app: &AppHandle, store: Option<Store>) -> Result<()> {
     let waiting = launcher.waiting.lock().filter(|&w| win::window::is_visible(win::window::HWND(w as *mut _)));
     if let (Some(w), Some(generation)) = (waiting, launcher.starting()) {
         log::info!("showing the window that may need the player");
-        window::hand_over(app, generation, w);
+        if !window::hand_over(app, generation, w) {
+            return Err(Error::Player("That window has closed.".into()));
+        }
         return Ok(());
     }
     match store {
