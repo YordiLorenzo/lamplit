@@ -59,6 +59,8 @@ Every release of Lamplit, newest first. The format follows
 - Lamplit coming forward over a running game (holding PS, or the dock's Home) no longer appears at once: the home
   screen settles in under a veil in the game's colours, on the game. From the dock, the veil first comes over the game.
   Back to game does the reverse: the home screen eases out under the veil before the game comes forward.
+- The first press after Lamplit starts, the first step to each game and the first Find no longer drop frames on a
+  4K TV, and the background holds still under Settings, Find and Add a game.
 - Settings' quiet mode row shows how you switched it. Switched off where Windows' own settings were already quiet, it
   says Off, and that Windows is quiet on its own, rather than On.
 - Games from these three stores no longer turn up as games outside any store.

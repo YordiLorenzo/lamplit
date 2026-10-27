@@ -2430,6 +2430,46 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await close(page);
 }
 
+// 37. The home screen keeps its first presses within a frame's work: the audio device starts in idle time after start,
+// not inside the first sound; the accent colour comes from a small copy of the hero decoded off the main thread, not
+// from drawing the hero; and the hero's drift holds still under a panel, whose blur over a moving hero is drawn again
+// every frame.
+{
+  const watch = () => {
+    window.__made = [];
+    const Audio = window.AudioContext;
+    window.AudioContext = class extends Audio {
+      constructor(...args) {
+        super(...args);
+        window.__made.push('audio');
+      }
+    };
+    const draw = CanvasRenderingContext2D.prototype.drawImage;
+    CanvasRenderingContext2D.prototype.drawImage = function (source, ...rest) {
+      if (source instanceof HTMLImageElement) window.__made.push(`drawn ${source.naturalWidth}x${source.naturalHeight}`);
+      return draw.call(this, source, ...rest);
+    };
+  };
+  const page = await open({ games: [game(1), game(2), game(3)], init: watch });
+  await until(page, () => window.__made.includes('audio'));
+  const ahead = await page.evaluate(() => [...window.__made]);
+  check('the audio device starts after start, before the first press', JSON.stringify(ahead) === '["audio"]', JSON.stringify(ahead));
+  // The next game's colour, worked out from its hero.
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(500);
+  const made = await page.evaluate(() => [...window.__made]);
+  check('the first sound starts no audio device, and no hero is drawn for its colour', JSON.stringify(made) === '["audio"]', JSON.stringify(made));
+  const drift = () => page.evaluate(() => [...document.querySelectorAll('.hero')].map((h) => getComputedStyle(h).animationPlayState).join(' '));
+  await page.keyboard.press('c');
+  await idle(page);
+  const settings = await drift();
+  await page.keyboard.press('Escape');
+  await idle(page);
+  const home = await drift();
+  check('the hero holds still under a panel, and drifts again once it closes', settings === 'paused paused' && home === 'running running', `${settings} / ${home}`);
+  await close(page);
+}
+
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));
 check('every command Rust registers is called by a test', untested.length === 0, untested.join(', '));
