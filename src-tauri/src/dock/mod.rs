@@ -65,8 +65,9 @@ static SHOWN: Mutex<Shown> = Mutex::new(Shown::Hidden);
 /// Counts every showing and folding, so the timed hide of an earlier one does nothing.
 static SHOWING: AtomicU64 = AtomicU64::new(0);
 
-/// How long the page takes to fold the dock away (dock.css).
-const FOLD: Duration = Duration::from_millis(450);
+/// How long the page takes to fold the dock away: the island fades and shrinks a little, on the compositor alone
+/// (dock.css #island[data-mode='gone']).
+const FOLD: Duration = Duration::from_millis(300);
 /// How long the page takes to veil the game for Home (dock.css #veil), and how long the home window then has to draw
 /// itself behind the veil before it lifts.
 const VEIL: Duration = Duration::from_millis(220);
@@ -198,14 +199,16 @@ pub fn fold(app: &AppHandle, give_back: bool) {
         let Shown::Open { game } = std::mem::replace(&mut *SHOWN.lock(), Shown::Folding) else { return };
         let showing = SHOWING.fetch_add(1, Ordering::SeqCst) + 1;
         events::emit(&folded, Event::Dock(Show::Closed));
-        let Some(dock) = window::handle() else { return };
-        // While it folds, the mouse already goes through to the game.
-        win::dock::set_input(dock, win::dock::Input::Passive);
-        if give_back {
-            give_focus_back(&folded, HWND(game as *mut _));
-        }
-        hide_later(folded, showing, FOLD);
+        // The glass goes with the island, as dock.css folds it.
+        glass::fade(0.92, ms(260), ms(200), ms(40));
+        // The game gets the foreground once the fold has played: a game coming back to full speed, and window calls,
+        // cost the fold frames.
+        hide_later(folded, showing, FOLD, give_back.then_some(game));
     });
+}
+
+const fn ms(n: u64) -> Duration {
+    Duration::from_millis(n)
 }
 
 /// Home from the open dock. Its page veils the game in the game's colours, over the whole screen, which the open
@@ -217,6 +220,8 @@ pub fn home(app: &AppHandle) {
         return launch::window::summon(app);
     }
     let showing = SHOWING.load(Ordering::SeqCst);
+    // The glass goes with the island as it grows into the veil (dock.css body.home #island).
+    let _ = app.run_on_main_thread(|| glass::fade(1.08, ms(240), ms(200), Duration::ZERO));
     let veiled = app.clone();
     std::thread::spawn(move || {
         std::thread::sleep(VEIL);
@@ -267,8 +272,9 @@ pub fn hide(app: &AppHandle) {
     });
 }
 
-/// Hides the window after `after`, unless the dock was shown or folded again meanwhile.
-fn hide_later(app: AppHandle, showing: u64, after: Duration) {
+/// Hides the window after `after`, unless the dock was shown or folded again meanwhile, giving the foreground back to
+/// `give_back`'s window first.
+fn hide_later(app: AppHandle, showing: u64, after: Duration, give_back: Option<isize>) {
     std::thread::spawn(move || {
         std::thread::sleep(after);
         let hidden = app.clone();
@@ -278,9 +284,13 @@ fn hide_later(app: AppHandle, showing: u64, after: Duration) {
             }
             *SHOWN.lock() = Shown::Hidden;
             let Some(dock) = window::handle() else { return };
+            if let Some(game) = give_back {
+                give_focus_back(&hidden, HWND(game as *mut _));
+            }
             // Nothing took the foreground when the dock folded: the game closed when asked, say. A hidden window
-            // mustn't keep it, so Lamplit comes forward, as it would a moment later for a game that ended.
-            let stranded = win::window::foreground() == dock;
+            // mustn't keep it, so Lamplit comes forward, as it would a moment later for a game that ended. A game
+            // given the foreground back may still be on its way (launch::resume finds its window first).
+            let stranded = give_back.is_none() && win::window::foreground() == dock;
             win::dock::hide(dock);
             if stranded {
                 log::info!("dock: no window to go back to; Lamplit comes forward");
@@ -314,7 +324,7 @@ fn show_news(app: &AppHandle, news: &News) -> bool {
         let showing = SHOWING.fetch_add(1, Ordering::SeqCst) + 1;
         log::info!("dock: news \"{}\"", news.text);
         events::emit(&shown, Event::Dock(Show::Status(news)));
-        hide_later(shown, showing, NEWS_FOR);
+        hide_later(shown, showing, NEWS_FOR, None);
     });
     true
 }

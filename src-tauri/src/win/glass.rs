@@ -3,6 +3,8 @@
 // island's rounded shape. Acrylic for a whole window (DWMWA_SYSTEMBACKDROP_TYPE) fills the window's rectangle and
 // ignores a window region (seen on Windows 11 25H2, 2026-10-27), so it can't take the island's shape.
 
+use std::time::Duration;
+use windows::Foundation::TimeSpan;
 use windows::System::{DispatcherQueue, DispatcherQueueController};
 use windows::UI::Composition::Desktop::DesktopWindowTarget;
 use windows::UI::Composition::{CompositionRoundedRectangleGeometry, Compositor, SpriteVisual};
@@ -12,7 +14,7 @@ use windows::Win32::System::WinRT::Composition::ICompositorDesktopInterop;
 use windows::Win32::System::WinRT::{
     CreateDispatcherQueueController, DQTAT_COM_NONE, DQTYPE_THREAD_CURRENT, DispatcherQueueOptions,
 };
-use windows::core::{BOOL, Interface};
+use windows::core::{BOOL, HSTRING, Interface};
 use windows_numerics::{Vector2, Vector3};
 
 /// Where the glass goes in its window, in pixels, and the radius of its corners: where the dock's island rests.
@@ -70,11 +72,49 @@ impl Glass {
     /// Shows the glass with `shape`, or hides it.
     pub fn show(&self, shape: Option<Shape>) -> windows::core::Result<()> {
         let Some(s) = shape else { return self.visual.SetIsVisible(false) };
+        // As it was before a fade.
+        for property in ["Opacity", "Scale"] {
+            self.visual.StopAnimation(&HSTRING::from(property))?;
+        }
+        self.visual.SetOpacity(1.0)?;
+        self.visual.SetScale(Vector3 { X: 1.0, Y: 1.0, Z: 1.0 })?;
         let size = Vector2 { X: s.width, Y: s.height };
+        self.visual.SetCenterPoint(Vector3 { X: s.width / 2.0, Y: s.height, Z: 0.0 })?;
         self.visual.SetOffset(Vector3 { X: s.x, Y: s.y, Z: 0.0 })?;
         self.visual.SetSize(size)?;
         self.shape.SetSize(size)?;
         self.shape.SetCornerRadius(Vector2 { X: s.radius, Y: s.radius })?;
         self.visual.SetIsVisible(true)
     }
+
+    /// Fades the glass out as the island goes, on Windows' compositor: scaled to `scale` from its bottom centre over
+    /// `scale_for` on CSS's `cubic-bezier(.2, .9, .25, 1)` (the page's glide), and out to nothing over `fade_for` on
+    /// CSS's `ease`, `fade_after` in.
+    pub fn fade(
+        &self,
+        scale: f32,
+        scale_for: Duration,
+        fade_for: Duration,
+        fade_after: Duration,
+    ) -> windows::core::Result<()> {
+        let compositor = self.visual.Compositor()?;
+        let glide =
+            compositor.CreateCubicBezierEasingFunction(Vector2 { X: 0.2, Y: 0.9 }, Vector2 { X: 0.25, Y: 1.0 })?;
+        let shrink = compositor.CreateVector3KeyFrameAnimation()?;
+        shrink.InsertKeyFrameWithEasingFunction(1.0, Vector3 { X: scale, Y: scale, Z: 1.0 }, &glide)?;
+        shrink.SetDuration(time(scale_for))?;
+        self.visual.StartAnimation(&HSTRING::from("Scale"), &shrink)?;
+        let ease =
+            compositor.CreateCubicBezierEasingFunction(Vector2 { X: 0.25, Y: 0.1 }, Vector2 { X: 0.25, Y: 1.0 })?;
+        let out = compositor.CreateScalarKeyFrameAnimation()?;
+        out.InsertKeyFrameWithEasingFunction(1.0, 0.0, &ease)?;
+        out.SetDuration(time(fade_for))?;
+        out.SetDelayTime(time(fade_after))?;
+        self.visual.StartAnimation(&HSTRING::from("Opacity"), &out)
+    }
+}
+
+/// A duration as Windows.Foundation counts it, in 100 ns.
+fn time(d: Duration) -> TimeSpan {
+    TimeSpan { Duration: i64::try_from(d.as_nanos() / 100).unwrap_or(i64::MAX) }
 }

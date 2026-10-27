@@ -66,21 +66,17 @@ body.pointer { cursor: default; }
 }
 #island[data-mode='news'] { height: calc(var(--u) * 6.6); border-radius: calc(var(--u) * 3.3); }
 #island[data-mode='open'] { border-radius: calc(var(--u) * 4.8); }
-/* Folding: back into the pill and down onto the edge without a bounce, then gone. Rust hides the window 450 ms in
-   (dock/mod.rs FOLD). */
+/* Folding: it shrinks a little towards the edge and fades, keeping its size (main.js shape), so the compositor does it
+   alone: nothing is laid out or painted again on the full-screen window. Rust fades the real glass under it the same
+   way (dock/mod.rs fold) and hides the window 300 ms in (FOLD). */
 #island[data-mode='gone'] {
   opacity: 0;
-  scale: .6;
-  translate: -50% calc(var(--u) * 2.4);
+  scale: .92;
   pointer-events: none;
-  transition:
-    width 260ms var(--glide),
-    height 260ms var(--glide),
-    border-radius 260ms var(--glide),
-    opacity 180ms ease 160ms,
-    scale 300ms var(--glide) 100ms,
-    translate 300ms var(--glide) 100ms;
+  transition: scale 260ms var(--glide), opacity 200ms ease 40ms;
 }
+/* Folded out of sight (main.js rest): the pill on the edge, which the island springs open from. */
+#island[data-mode='gone'].rested { scale: .6; translate: -50% calc(var(--u) * 2.4); }
 
 /* The island's own glass: dark, then the game's art over it, blurred into its colours (main.js draws it small and
    blurred, and it is scaled up here, which costs nothing while the island moves); then a tint that keeps text readable
