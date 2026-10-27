@@ -12,6 +12,12 @@
  */
 
 /**
+ * Which two hero images a scene shows, `a` and `b`, how far it has gone from one to the other (0 to 1), and how many
+ * changes there have been.
+ * @typedef {{ a: number, b: number, mix: number, cycle: number }} HeroPick
+ */
+
+/**
  * @typedef {object} Scene
  * @property {string} id
  * @property {string} name  as the preview shows it
@@ -19,8 +25,8 @@
  * @property {string} source  GLSL that defines `vec3 scene(vec2 frag)`, and may set `coc`
  * @property {string} [lib]  GLSL that the scene's picture and its particles both use
  * @property {'covers' | 'heroes'} [needs]  art the scene can't show without (two heroes at least)
- * @property {(time: number, count: number) => { a: number, b: number, mix: number, cycle: number }} [heroes]  which
- *   two hero images the scene shows at `time`, and how far it has gone from the first to the second
+ * @property {(time: number, count: number, into?: HeroPick) => HeroPick} [heroes]  which two hero images the scene
+ *   shows at `time`, and how far it has gone from the first to the second, written into `into` when given
  * @property {{ count: number, vertex: string, fragment: string }} [particles]  instanced quads; the vertex shader
  *   places each from gl_InstanceID and gl_VertexID
  */
@@ -679,14 +685,19 @@ export const DRIFT = { hold: 22, change: 10 };
 
 /**
  * Which two of `count` hero images Drift shows at `time`, and how far it has gone from the first to the second
- * (0 while it holds, 0 to 1 during the change).
- * @param {number} time @param {number} count
+ * (0 while it holds, 0 to 1 during the change). The renderer passes the same `into` every frame, so drawing makes no
+ * garbage.
+ * @param {number} time @param {number} count @param {HeroPick} [into]
  */
-export function driftCycle(time, count) {
+export function driftCycle(time, count, into = { a: 0, b: 0, mix: 0, cycle: 0 }) {
   const length = DRIFT.hold + DRIFT.change;
-  const cycle = Math.floor(Math.max(0, time) / length);
-  const local = Math.max(0, time) - cycle * length;
-  return { a: cycle % count, b: (cycle + 1) % count, mix: Math.min(1, Math.max(0, (local - DRIFT.hold) / DRIFT.change)), cycle };
+  const t = Math.max(0, time);
+  const cycle = Math.floor(t / length);
+  into.a = cycle % count;
+  into.b = (cycle + 1) % count;
+  into.mix = Math.min(1, Math.max(0, (t - cycle * length - DRIFT.hold) / DRIFT.change));
+  into.cycle = cycle;
+  return into;
 }
 
 /**

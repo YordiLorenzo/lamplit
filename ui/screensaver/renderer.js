@@ -203,7 +203,6 @@ const SCENE_UNIFORMS = ['uRes', 'uTime', 'uSeed', 'uPal', 'uArtInfo', ...Object.
  */
 function noiseVolume() {
   const N = 64;
-  const out = new Uint8Array(N * N * N);
   /** @param {number} cells @param {number} seed */
   const lattice = (cells, seed) => {
     const v = new Float32Array(cells ** 3);
@@ -214,35 +213,39 @@ function noiseVolume() {
     }
     return v;
   };
-  const octaves = [
+  const fade = (/** @type {number} */ t) => t * t * t * (t * (t * 6 - 15) + 10);
+  const lerp = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ t) => a + (b - a) * t;
+  const sum = new Float64Array(N ** 3);
+  for (const { cells, v, w } of [
     { cells: 8, v: lattice(8, 7), w: 0.65 },
     { cells: 16, v: lattice(16, 19), w: 0.35 },
-  ];
-  const fade = (/** @type {number} */ t) => t * t * t * (t * (t * 6 - 15) + 10);
-  for (let z = 0; z < N; z++) {
-    for (let y = 0; y < N; y++) {
-      for (let x = 0; x < N; x++) {
-        let sum = 0;
-        for (const { cells, v, w } of octaves) {
-          const k = cells / N;
-          const [fx, fy, fz] = [x * k, y * k, z * k];
-          const [ix, iy, iz] = [Math.floor(fx), Math.floor(fy), Math.floor(fz)];
-          const [ux, uy, uz] = [fade(fx - ix), fade(fy - iy), fade(fz - iz)];
-          const at = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ c) =>
-            v[((a % cells) * cells + (b % cells)) * cells + (c % cells)];
-          const lerp = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ t) => a + (b - a) * t;
-          const x0 = lerp(lerp(at(ix, iy, iz), at(ix + 1, iy, iz), ux), lerp(at(ix, iy + 1, iz), at(ix + 1, iy + 1, iz), ux), uy);
-          const x1 = lerp(
-            lerp(at(ix, iy, iz + 1), at(ix + 1, iy, iz + 1), ux),
-            lerp(at(ix, iy + 1, iz + 1), at(ix + 1, iy + 1, iz + 1), ux),
-            uy
-          );
-          sum += lerp(x0, x1, uz) * w;
+  ]) {
+    // Each of the N steps along an axis lies between two lattice points (the second wrapping round), part of the way
+    // from one to the other, eased. That is the same on every axis, so it is worked out once, and the loop below
+    // makes no garbage.
+    const k = cells / N;
+    const lo = Int32Array.from({ length: N }, (_, x) => Math.floor(x * k));
+    const hi = lo.map((i) => (i + 1) % cells);
+    const u = Float64Array.from(lo, (i, x) => fade(x * k - i));
+    for (let z = 0; z < N; z++) {
+      for (let y = 0; y < N; y++) {
+        // The lattice is laid out x, then y, then z.
+        const y0z0 = lo[y] * cells + lo[z];
+        const y1z0 = hi[y] * cells + lo[z];
+        const y0z1 = lo[y] * cells + hi[z];
+        const y1z1 = hi[y] * cells + hi[z];
+        for (let x = 0; x < N; x++) {
+          const x0 = lo[x] * cells * cells;
+          const x1 = hi[x] * cells * cells;
+          const near = lerp(lerp(v[x0 + y0z0], v[x1 + y0z0], u[x]), lerp(v[x0 + y1z0], v[x1 + y1z0], u[x]), u[y]);
+          const far = lerp(lerp(v[x0 + y0z1], v[x1 + y0z1], u[x]), lerp(v[x0 + y1z1], v[x1 + y1z1], u[x]), u[y]);
+          sum[(z * N + y) * N + x] += lerp(near, far, u[z]) * w;
         }
-        out[(z * N + y) * N + x] = Math.round(sum * 255);
       }
     }
   }
+  const out = new Uint8Array(sum.length);
+  for (let i = 0; i < sum.length; i++) out[i] = Math.round(sum[i] * 255);
   return out;
 }
 
@@ -277,8 +280,14 @@ export class Renderer {
     this.gradients = new Map();
     /** @type {WeakMap<Palette, Record<Mood, Palette>>} */
     this.moods = new WeakMap();
+    /** @type {WeakMap<Palette, Float32Array>} a mood's palette in linear light, as uPal takes it */
+    this.linear = new WeakMap();
     /** @type {Map<object, { tex: WebGLTexture, aspect: number }>} art uploaded, per image or atlas */
     this.images = new Map();
+    /** uArtInfo and Drift's pick of hero images, filled in each frame rather than made anew. */
+    this.artInfo = new Float32Array(4);
+    /** @type {import('./scenes.js').HeroPick} */
+    this.pick = { a: 0, b: 0, mix: 0, cycle: 0 };
     /** @type {(Target | null)[]} the two scenes' buffers */
     this.targets = [null, null];
     /** @type {Target | null} */
@@ -303,6 +312,7 @@ export class Renderer {
         ])
       )
     );
+    this.passes = Object.values(this.pass);
   }
 
   /**
@@ -361,7 +371,8 @@ export class Renderer {
   /** Whether a scene, and the passes after it, can draw now. @param {Scene} scene */
   canDraw(scene) {
     const p = this.prepare(scene);
-    return Object.values(this.pass).every((x) => this.ready(x)) && this.ready(p.main) && this.ready(p.particles);
+    for (const pass of this.passes) if (!this.ready(pass)) return false;
+    return this.ready(p.main) && this.ready(p.particles);
   }
 
   /** The palette as a scene of that mood shows it (palette.js forMood), worked out once. @param {Palette} palette @param {Mood} mood */
@@ -372,6 +383,16 @@ export class Renderer {
       this.moods.set(palette, moods);
     }
     return moods[mood];
+  }
+
+  /** A mood's palette in linear light, as uPal takes it, worked out once. @param {Palette} colours */
+  linearOf(colours) {
+    let pal = this.linear.get(colours);
+    if (!pal) {
+      pal = new Float32Array(colours.flatMap((rgb) => rgb.map(toLinear)));
+      this.linear.set(colours, pal);
+    }
+    return pal;
   }
 
   /** A palette's gradient as a texture, made once per palette. @param {Palette} palette @param {Mood} mood */
@@ -497,12 +518,19 @@ export class Renderer {
     this.bloom = [];
   }
 
-  /** Frees the buffers and the art while the screensaver is away; the compiled scenes stay. */
+  /**
+   * Frees the buffers while the screensaver is away. The compiled scenes and the art's textures stay, so the next
+   * show doesn't upload the art again.
+   */
   release() {
     this.dropBuffers();
+    Object.assign(this.canvas, { width: 1, height: 1 });
+  }
+
+  /** Frees the art's textures, once the show has other art. */
+  dropArt() {
     for (const { tex } of this.images.values()) this.gl.deleteTexture(tex);
     this.images.clear();
-    Object.assign(this.canvas, { width: 1, height: 1 });
   }
 
   /** Swaps the two scenes' buffers, when the scene handing over has gone. */
@@ -538,53 +566,52 @@ export class Renderer {
   }
 
   /**
-   * Draws a scene into buffer `slot` (0 or 1).
+   * Draws a scene into buffer `slot` (0 or 1), `time` seconds into it. It runs every frame, so it makes no new objects.
    * @param {number} slot
-   * @param {Scene} scene
-   * @param {{ time: number, seed: number, palette: Palette, art: Art }} look
+   * @param {{ scene: Scene, seed: number, look: { palette: Palette }, art: Art }} showing  saver.js Showing
+   * @param {number} time
    */
-  drawScene(slot, scene, { time, seed, palette, art }) {
+  drawScene(slot, { scene, seed, look, art }, time) {
     const { gl } = this;
     const target = /** @type {Target} */ (this.targets[slot]);
     const p = this.prepare(scene);
-    const colours = this.inMood(palette, scene.mood);
-    const pal = colours.flatMap((rgb) => rgb.map(toLinear));
+    const colours = this.inMood(look.palette, scene.mood);
+    const pal = this.linearOf(colours);
 
     // The textures every program may read: the gradient, the noise, the scene's art.
     this.bind(UNIT.grad, this.gradientTexture(colours, scene.mood));
     this.bind(UNIT.noise, this.noise, gl.TEXTURE_3D);
-    let info = [0, 0, 0, 0];
-    let [art1, art2] = [this.blank, this.blank];
+    const info = this.artInfo.fill(0);
+    let art1 = this.blank;
+    let art2 = this.blank;
     if (scene.needs === 'covers' && art.atlas) {
       art1 = this.image(art.atlas.source).tex;
-      info = [art.atlas.count, art.atlas.cols, art.atlas.rows, 0];
+      info[0] = art.atlas.count;
+      info[1] = art.atlas.cols;
+      info[2] = art.atlas.rows;
     } else if (scene.needs === 'heroes' && scene.heroes && art.heroes.length > 1) {
-      const pick = scene.heroes(time, art.heroes.length);
-      const [a, b] = [this.image(art.heroes[pick.a]), this.image(art.heroes[pick.b])];
-      [art1, art2] = [a.tex, b.tex];
-      info = [pick.mix, a.aspect, b.aspect, pick.cycle];
+      const pick = scene.heroes(time, art.heroes.length, this.pick);
+      const a = this.image(art.heroes[pick.a]);
+      const b = this.image(art.heroes[pick.b]);
+      art1 = a.tex;
+      art2 = b.tex;
+      info[0] = pick.mix;
+      info[1] = a.aspect;
+      info[2] = b.aspect;
+      info[3] = pick.cycle;
     }
     this.bind(UNIT.art, art1);
     this.bind(UNIT.art2, art2);
 
-    /** The uniforms every program of the scene shares, in the program in use. @param {Program} prog */
-    const uniforms = (prog) => {
-      gl.uniform2f(prog.at.uRes, target.width, target.height);
-      gl.uniform1f(prog.at.uTime, time);
-      gl.uniform1f(prog.at.uSeed, seed);
-      gl.uniform3fv(prog.at.uPal, pal);
-      gl.uniform4fv(prog.at.uArtInfo, info);
-    };
-
     this.use(p.main, target);
-    uniforms(p.main);
+    this.sceneUniforms(p.main, target, time, seed, pal);
     this.draw();
     if (p.particles) {
       // Particles over the picture, each a soft dot with its colour premultiplied by how much it covers.
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.useProgram(p.particles.program);
-      uniforms(p.particles);
+      this.sceneUniforms(p.particles, target, time, seed, pal);
       gl.bindVertexArray(this.vao);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, scene.particles?.count ?? 0);
       gl.disable(gl.BLEND);
@@ -594,13 +621,27 @@ export class Renderer {
   }
 
   /**
-   * Puts the scene in buffer 0 on the screen, handing over to buffer 1 by `mix` in the way `way`, at `fade` of full
-   * brightness.
-   * @param {{ mix: number, way: number, fade: number, time: number }} frame
+   * The uniforms every program of a scene shares, in the program in use.
+   * @param {Program} prog @param {Target} target @param {number} time @param {number} seed @param {Float32Array} pal
    */
-  present({ mix, way, fade, time }) {
+  sceneUniforms(prog, target, time, seed, pal) {
     const { gl } = this;
-    const [a, b] = /** @type {Target[]} */ (this.targets);
+    gl.uniform2f(prog.at.uRes, target.width, target.height);
+    gl.uniform1f(prog.at.uTime, time);
+    gl.uniform1f(prog.at.uSeed, seed);
+    gl.uniform3fv(prog.at.uPal, pal);
+    gl.uniform4fv(prog.at.uArtInfo, this.artInfo);
+  }
+
+  /**
+   * Puts the scene in buffer 0 on the screen, handing over to buffer 1 by `mix` in the way `way`, at `fade` of full
+   * brightness, `time` seconds into the show.
+   * @param {number} mix @param {number} way @param {number} fade @param {number} time
+   */
+  present(mix, way, fade, time) {
+    const { gl } = this;
+    const a = /** @type {Target} */ (this.targets[0]);
+    const b = /** @type {Target} */ (this.targets[1]);
     const mixed = /** @type {Target} */ (this.mixed);
     const { pass } = this;
 
@@ -633,7 +674,8 @@ export class Renderer {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
     for (let i = this.bloom.length - 1; i > 0; i--) {
-      const [from, to] = [this.bloom[i], this.bloom[i - 1]];
+      const from = this.bloom[i];
+      const to = this.bloom[i - 1];
       this.use(pass.up, to, from.tex);
       gl.uniform2f(pass.up.at.uTexel, 0.5 / from.width, 0.5 / from.height);
       gl.uniform2f(pass.up.at.uRes, to.width, to.height);

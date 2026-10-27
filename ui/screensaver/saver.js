@@ -45,28 +45,110 @@ const MARK_IN_S = 10;
 const MARK_PEAK = 0.4;
 /** Gallery's covers, side by side in one image: up to this many, at this size each (2:3, as covers are). */
 const COVERS = { most: 8, cols: 4, width: 384, height: 576 };
-/** Drift's hero images: up to this many, scaled down to this width (Steam's are 3840 pixels wide). */
+/** Drift's hero images: up to this many, scaled to this width (Steam's are 3840 pixels wide). */
 const HEROES = { most: 4, width: 1600 };
 
+/** @type {Worker | null} the worker that scales art (scale.js), started on the first file */
+let scaler = null;
+/** @type {Map<number, (bitmap: ImageBitmap | null) => void>} the files sent to it, by the number they went with */
+const scaling = new Map();
+let sent = 0;
+
 /**
- * An image from a URL (Lamplit's asset protocol sends the CORS header, so WebGL may use it), or one already made.
- * @param {string | TexImageSource} src
- * @returns {Promise<TexImageSource>}
+ * An art file (a URL from Lamplit's asset protocol, which sends the CORS header) decoded and scaled to `size` in a
+ * worker, or null when it can't be: an image drawn into a canvas is decoded on the page's main thread, for 100 ms and
+ * more per hero image at 4x CPU. An image the preview has cut out already is used as it is.
+ * @param {string | TexImageSource | null | undefined} src
+ * @param {{ resizeWidth?: number, resizeHeight?: number }} size  one side keeps the image's shape
+ * @returns {Promise<TexImageSource | null>}
  */
-async function imageOf(src) {
-  if (typeof src !== 'string') return src;
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.src = src;
-  await img.decode();
-  return img;
+export function scaledArt(src, size) {
+  if (typeof src !== 'string') return Promise.resolve(src ?? null);
+  if (!scaler) {
+    const worker = (scaler = new Worker(new URL('./scale.js', import.meta.url)));
+    worker.onmessage = ({ data: { id, bitmap } }) => {
+      scaling.get(id)?.(bitmap);
+      scaling.delete(id);
+    };
+    // A worker that can't start would leave the show waiting for its colours: the files go without, and the next one
+    // tries a new worker.
+    worker.onerror = () => {
+      if (scaler === worker) scaler = null;
+      for (const answer of scaling.values()) answer(null);
+      scaling.clear();
+    };
+  }
+  const id = sent++;
+  scaler.postMessage({ id, url: src, size });
+  return new Promise((resolve) => scaling.set(id, resolve));
 }
 
-/** @param {number} width @param {number} height */
-const canvas2d = (width, height) => {
-  const c = Object.assign(document.createElement('canvas'), { width, height });
-  return { canvas: c, ctx: /** @type {CanvasRenderingContext2D} */ (c.getContext('2d')) };
-};
+/**
+ * The games' art as a show has it: the covers in one atlas, and the hero images, each with the look it is from.
+ * @typedef {{ atlas: Art['atlas'], heroes: { source: TexImageSource, look: number }[] }} ShowArt
+ */
+
+/** @type {ShowArt} */
+const NO_ART = { atlas: null, heroes: [] };
+
+/**
+ * The art made last, kept between shows: the covers and hero images it is made from, and the art once it is there.
+ * @type {{ from: unknown[], art: Promise<ShowArt>, ready: ShowArt | null }}
+ */
+let made = { from: [], art: Promise.resolve(NO_ART), ready: NO_ART };
+
+/**
+ * Gallery's atlas and Drift's hero images for `looks`, made once for the same art. Lamplit asks ahead, in idle time
+ * (index.js), so a show starts with them, and with their textures from the show before.
+ * @param {Look[]} looks
+ */
+export function artOf(looks) {
+  const from = looks.flatMap((l) => [l.cover, l.hero]);
+  if (from.length !== made.from.length || from.some((src, i) => src !== made.from[i])) {
+    const entry = { from, art: makeArt(looks), ready: /** @type {ShowArt | null} */ (null) };
+    entry.art.then((art) => (entry.ready = art));
+    made = entry;
+  }
+  return made;
+}
+
+/**
+ * The covers into one atlas, and the first HEROES.most hero images that load. Art that doesn't load is left out.
+ * @param {Look[]} looks
+ * @returns {Promise<ShowArt>}
+ */
+async function makeArt(looks) {
+  const covers = await Promise.all(looks.slice(0, COVERS.most).map((l) => scaledArt(l.cover, { resizeHeight: COVERS.height })));
+  /** @type {ShowArt['heroes']} */
+  const heroes = [];
+  for (let look = 0; look < looks.length && heroes.length < HEROES.most; look++) {
+    const source = await scaledArt(looks[look].hero, { resizeWidth: HEROES.width });
+    if (source) heroes.push({ source, look });
+  }
+  return { atlas: atlasOf(/** @type {TexImageSource[]} */ (covers.filter(Boolean))), heroes };
+}
+
+/** The covers side by side, each filling its cell and cropped to 2:3. @param {TexImageSource[]} covers */
+function atlasOf(covers) {
+  if (!covers.length) return null;
+  const cols = Math.min(COVERS.cols, covers.length);
+  const rows = Math.ceil(covers.length / cols);
+  const canvas = Object.assign(document.createElement('canvas'), { width: cols * COVERS.width, height: rows * COVERS.height });
+  const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
+  covers.forEach((img, i) => {
+    const { width, height } = /** @type {{ width: number, height: number }} */ (img);
+    const scale = Math.max(COVERS.width / width, COVERS.height / height);
+    const [w, h] = [width * scale, height * scale];
+    const [left, top] = [(i % cols) * COVERS.width, Math.floor(i / cols) * COVERS.height];
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(left, top, COVERS.width, COVERS.height);
+    ctx.clip();
+    ctx.drawImage(/** @type {CanvasImageSource} */ (img), left + (COVERS.width - w) / 2, top + (COVERS.height - h) / 2, w, h);
+    ctx.restore();
+  });
+  return { source: canvas, count: covers.length, cols, rows };
+}
 
 /**
  * An image, or part of one, drawn `width` × `height` and read back as RGBA bytes for palette.js. The image must be
@@ -99,6 +181,7 @@ const smooth = (x) => {
  * @property {number} start  show time at which the scene's own time is 0
  * @property {number} length  seconds before it hands over
  * @property {{ x: number, y: number, dx: number, dy: number }} path  where its mark drifts, in parts of the screen
+ * @property {Art} art  the art it draws with
  */
 
 export class Saver {
@@ -154,9 +237,11 @@ export class Saver {
     this.reason = '';
     /** @type {(() => void) | null} the next scene's mark, put up once the current one has faded */
     this.pendingMark = null;
+    /** The mark is at opacity 0. */
+    this.markHidden = false;
     this.releaseTimer = 0;
-    /** @type {{ atlas: Art['atlas'], heroes: { source: TexImageSource, look: number }[] }} the games' art, once loaded */
-    this.art = { atlas: null, heroes: [] };
+    /** The games' art, once it is there. */
+    this.art = NO_ART;
     /** How the scene on its way comes in (renderer.js WAYS); the preview can hold one. */
     this.way = 0;
     /** @type {number | null} */
@@ -195,61 +280,27 @@ export class Saver {
   setLooks(looks) {
     this.looks = looks.length ? looks : [{ palette: LAMPLIT }];
     this.lookAt = 0;
-    this.art = { atlas: null, heroes: [] };
-    this.loadArt(this.looks);
+    const art = artOf(this.looks);
+    this.useArt(art.ready ?? NO_ART);
+    // Art still on its way joins the show once it is there.
+    if (!art.ready) art.art.then((ready) => made === art && this.useArt(ready));
   }
 
-  /**
-   * The covers into one atlas and the hero images scaled down, for Gallery and Drift. They join the show once loaded;
-   * art that doesn't load is left out.
-   * @param {Look[]} looks
-   */
-  async loadArt(looks) {
-    const load = (/** @type {string | TexImageSource | null | undefined} */ src) => (src ? imageOf(src).catch(() => null) : null);
-    const [covers, heroes] = await Promise.all([
-      Promise.all(looks.slice(0, COVERS.most).map((l) => load(l.cover))),
-      Promise.all(looks.map((l) => load(l.hero))),
-    ]);
-    if (looks !== this.looks) return;
-    const found = /** @type {TexImageSource[]} */ (covers.filter(Boolean));
-    let atlas = null;
-    if (found.length) {
-      const cols = Math.min(COVERS.cols, found.length);
-      const rows = Math.ceil(found.length / cols);
-      const { canvas, ctx } = canvas2d(cols * COVERS.width, rows * COVERS.height);
-      found.forEach((img, i) => {
-        const { width, height } = /** @type {{ width: number, height: number }} */ (img);
-        // Fill the cell, cropping what doesn't fit 2:3.
-        const scale = Math.max(COVERS.width / width, COVERS.height / height);
-        const [w, h] = [width * scale, height * scale];
-        const [x, y] = [(i % cols) * COVERS.width + (COVERS.width - w) / 2, Math.floor(i / cols) * COVERS.height + (COVERS.height - h) / 2];
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect((i % cols) * COVERS.width, Math.floor(i / cols) * COVERS.height, COVERS.width, COVERS.height);
-        ctx.clip();
-        ctx.drawImage(/** @type {CanvasImageSource} */ (img), x, y, w, h);
-        ctx.restore();
-      });
-      atlas = { source: canvas, count: found.length, cols, rows };
-    }
-    const scaled = heroes.flatMap((img, look) => {
-      if (!img) return [];
-      const { width, height } = /** @type {{ width: number, height: number }} */ (img);
-      const w = Math.min(HEROES.width, width);
-      const { canvas, ctx } = canvas2d(w, Math.round((height * w) / width));
-      ctx.drawImage(/** @type {CanvasImageSource} */ (img), 0, 0, canvas.width, canvas.height);
-      return [{ source: canvas, look }];
-    });
-    this.art = { atlas, heroes: scaled.slice(0, HEROES.most) };
-    // The order so far was shuffled without them.
+  /** The art the show draws with from now on; the textures of the art before go. @param {ShowArt} art */
+  useArt(art) {
+    if (art === this.art) return;
+    this.renderer?.dropArt();
+    this.art = art;
+    // The order so far was shuffled without it.
     this.queue = [];
+    for (const s of [this.current, this.next]) if (s) s.art = this.artFor(s.lookIndex);
   }
 
-  /** The art a showing draws with: its own game's hero image first. @param {Showing} s @returns {Art} */
-  artFor(s) {
-    const { heroes } = this.art;
-    const first = Math.max(0, heroes.findIndex((h) => h.look === s.lookIndex));
-    return { atlas: this.art.atlas, heroes: [...heroes.slice(first), ...heroes.slice(0, first)].map((h) => h.source) };
+  /** The art a showing draws with: its own game's hero image first. @param {number} lookIndex @returns {Art} */
+  artFor(lookIndex) {
+    const { atlas, heroes } = this.art;
+    const first = Math.max(0, heroes.findIndex((h) => h.look === lookIndex));
+    return { atlas, heroes: [...heroes.slice(first), ...heroes.slice(0, first)].map((h) => h.source) };
   }
 
   /** The next scene in a shuffled order of those the art can show, never the one showing now. */
@@ -273,6 +324,7 @@ export class Saver {
       start,
       length: SCENE_S + (Math.random() - 0.5) * SCENE_SPREAD,
       path: { x: 0.08 + Math.random() * 0.5, y: 0.14 + Math.random() * 0.6, dx: Math.cos(angle) * 0.0022, dy: Math.sin(angle) * 0.0012 },
+      art: this.artFor(lookIndex),
     };
   }
 
@@ -398,10 +450,9 @@ export class Saver {
     if (this.root.dataset.scene !== cur.scene.id) this.root.dataset.scene = cur.scene.id;
     this.moveMark(blend);
     if (r && r.canDraw(cur.scene)) {
-      const look = (/** @type {Showing} */ s) => ({ time: this.clock - s.start, seed: s.seed, palette: s.look.palette, art: this.artFor(s) });
-      r.drawScene(0, cur.scene, look(cur));
-      if (blend > 0 && this.next) r.drawScene(1, this.next.scene, look(this.next));
-      r.present({ mix: blend, way: this.way, fade, time: this.clock });
+      r.drawScene(0, cur, this.clock - cur.start);
+      if (blend > 0 && this.next) r.drawScene(1, this.next, this.clock - this.next.start);
+      r.present(blend, this.way, fade, this.clock);
       this.shown();
     } else if (!r) {
       this.css.style.opacity = String(fade);
@@ -457,6 +508,9 @@ export class Saver {
     // A scene that is still blending in is under 6 s old, so its mark hasn't started to show.
     const show = smooth((t - 6) / MARK_IN_S) * (1 - smooth((t - (end - MARK_IN_S)) / MARK_IN_S));
     const opacity = (!showsMark(s.scene) || (this.logo.hidden && !this.name.textContent) ? 0 : MARK_PEAK) * show;
+    // A mark nobody sees stays where it is, so a frame makes no new strings for its style.
+    if (opacity === 0 && this.markHidden) return;
+    this.markHidden = opacity === 0;
     const { x, y, dx, dy } = s.path;
     const px = (x + dx * t) * innerWidth;
     const py = (y + dy * t + Math.sin(t * 0.07) * 0.01) * innerHeight;

@@ -205,4 +205,9 @@ describe("Drift's timing", () => {
     assert.deepEqual(seen, [0, 1, 2, 3]);
     assert.equal(driftCycle(4 * length + 1, 4).a, 0);
   });
+  test('writes into the pick it is given, so a frame makes no new object', () => {
+    const into = { a: 9, b: 9, mix: 9, cycle: 9 };
+    assert.equal(driftCycle(length + DRIFT.hold + DRIFT.change / 2, 3, into), into);
+    assert.deepEqual(into, { a: 1, b: 2, mix: 0.5, cycle: 1 });
+  });
 });
