@@ -2263,6 +2263,60 @@ await dockTests({ open, close, check, shots });
   await close(page);
 }
 
+// 35. The game menu at its fullest, on 1080p and 4K screens: a name over three lines, a game added by hand (Remove
+// from Lamplit is one more choice), its warning, and an Xbox app's folder path. Every choice stays inside the panel,
+// the panel stays clear of the hints, and the folder takes at most two lines, its own name on the second. Change art's
+// panel, with its keyboard open, fits too.
+for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }]) {
+  const folder = '39C668CD.TombRaiderDefinitiveEdition_1.0.65.0_x64_WW_r7bfsmp40f67j';
+  const tomb = game(1, {
+    name: 'Tomb Raider: Definitive Edition Game of the Year Collectors Bundle',
+    store: 'xbox',
+    requires: ['xbox'],
+    dir: `C:\\Program Files\\WindowsApps\\${folder}`,
+    manual: true,
+    last_played: 1761560000,
+    play_minutes: 600,
+  });
+  const page = await open({ games: [tomb] }, viewport);
+  const fit = (sheet, rows) =>
+    page.evaluate(
+      ([sheet, rows]) => {
+        const box = (el) => el.getBoundingClientRect();
+        const panel = box(document.getElementById(sheet));
+        const last = box([...document.querySelectorAll(rows)].at(-1));
+        const hints = box(document.getElementById('hint'));
+        const dir = document.getElementById('dDir');
+        const text = document.createRange();
+        text.selectNodeContents(dir);
+        return {
+          inside: last.bottom <= panel.bottom && last.top >= panel.top,
+          clear: panel.top >= innerHeight * 0.05 - 1 && panel.bottom <= hints.top,
+          lines: new Set([...text.getClientRects()].map((r) => Math.round(r.top))).size,
+          own: dir.lastElementChild?.textContent ?? '',
+        };
+      },
+      [sheet, rows]
+    );
+  await page.keyboard.press('i');
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await settled(page);
+  let f = await fit('details', '#dChoices .row');
+  const at = `${viewport.width}x${viewport.height}`;
+  check(`${at}: every choice of the fullest game menu is inside its panel, clear of the hints`, f.inside && f.clear, JSON.stringify(f));
+  check(`${at}: the folder takes at most two lines, its own name on the second`, f.lines <= 2 && f.own === folder, JSON.stringify(f));
+  await page.screenshot({ path: path.join(shots, `menu-fullest-${viewport.width}.png`) });
+  for (let i = 0; i < 2; i++) await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  await page.keyboard.press('f');
+  await settled(page);
+  f = await fit('artPick', '#artKeys [data-id]');
+  check(`${at}: Change art's keyboard is inside its panel, clear of the hints`, f.inside && f.clear, JSON.stringify(f));
+  await close(page);
+}
+
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));
 check('every command Rust registers is called by a test', untested.length === 0, untested.join(', '));

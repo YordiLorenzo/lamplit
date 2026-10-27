@@ -5,7 +5,7 @@
 import { assetUrl, libraryRemoveGame, librarySetFavourite, librarySetHidden } from './api.js';
 import { showHints, toast } from './hints.js';
 import { face, lift, lower, settle, showSheet } from './lift.js';
-import { accentOf, detailChoices, narrowed, playTimeText, playedText, rowOf, storeWarning, words } from './logic.js';
+import { accentOf, detailChoices, folderParts, narrowed, playTimeText, playedText, rowOf, storeWarning, words } from './logic.js';
 import { sfx } from './sounds.js';
 import { byId, els, focused, icon, state, storeName, withStoreLogo } from './state.js';
 
@@ -133,7 +133,7 @@ export function openDetails() {
   els.dPlayed.textContent = playedText(g.last_played).replace(/^Played /, '') || 'Not yet';
   // Lamplit counts from 0.2.0 on, so a game played before has no count of its own.
   els.dTime.textContent = playTimeText(g.play_minutes, true) || 'Not counted yet';
-  els.dDir.textContent = g.dir;
+  els.dDir.replaceChildren(...folderParts(g.dir).map((part) => Object.assign(document.createElement('span'), { textContent: part })));
   state.detailsIdx = 0;
   state.removing = false;
   renderChoices();
