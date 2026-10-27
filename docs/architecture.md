@@ -114,8 +114,9 @@ controller is read into the same buttons, by position (south is Cross or A), so 
 2. Rust starts a new launch generation, so an older launch's checks stop, and keeps the PC and the screen awake.
    Lamplit holds the screen (`launch/window.rs`): its window is topmost, raised again every 250 ms because Windows
    puts the taskbar back on top whenever another window takes the foreground, and counts as in front for the
-   controller. It doesn't take the foreground back from a window that opens later, other than a store app's during
-   the checks in step 3: a game may need the foreground to set its screen mode.
+   controller. It takes the foreground back from a window that opens later only during the checks in step 3 and while
+   it offers a window that may need the player (step 6), and never while a window of the game's covers the screen:
+   a game may need the foreground to set its screen mode.
 3. For each store app in the game's `requires` list (its own store, then any publisher's launcher), `launch/mod.rs`:
    - stops with an error if the store app isn't installed;
    - starts it if it isn't running, and waits up to 90 seconds for it;
@@ -142,9 +143,10 @@ controller is read into the same buttons, by position (south is Cross or A), so 
      game that replaces its window) leaves the launch and its starting screen going until the next one is up. Any
      other window that stays 5 seconds (a store app's, also one that opens maximised, or a small window of the
      game's) gets a `window` line on the starting screen, which `launch_show` brings forward: the newest such window,
-     and once it goes, the one before it again. With none left, the line says the window has closed, and Cross goes
-     back to a store app that may still need the player. Only the player gives such a window the screen. After the
-     game has run 12 seconds with only small windows of its own, the front one gets the screen.
+     and once it goes, the one before it again. While it offers one, the starting screen keeps the keyboard, so Enter
+     and Escape reach Show it and Cancel. With none left, the line says the window has closed, and Cross goes back to
+     a store app that may still need the player. Only the player gives such a window the screen. After the game has
+     run 12 seconds with only small windows of its own, the front one gets the screen.
    - For a game outside any store, added by hand or found (Windows' game list may name an exe in Downloads, which
      then counts as its folder), the game's processes are the exe Lamplit started and every process that came from
      it, wherever it runs from, leaving out Windows' own helpers (a shell, a console host) on the way, and the
