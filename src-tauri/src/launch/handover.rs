@@ -92,6 +92,13 @@ impl Handover {
         self.offered = newest.map(|w| w.id);
         newest.map_or(Next::Gone, |w| Next::Hint { id: w.id, own: w.own })
     }
+
+    /// Whether the starting screen keeps the keyboard, among `windows`: while it offers a window that may need the
+    /// player, Enter and Escape are for its Show it and Cancel, not for that window, which the player can't see. Not
+    /// while a window of the game's is over the screen: it may be setting its screen mode, which needs the foreground.
+    pub fn keeps_keys(&self, windows: &[Seen]) -> bool {
+        self.offered.is_some() && !windows.iter().any(|w| w.game && w.covers)
+    }
 }
 
 /// Whether a window at `window` covers the screen `screen`.
@@ -181,6 +188,19 @@ mod tests {
         let (t0, mut h) = (Instant::now(), Handover::default());
         let found = run(&mut h, t0, (0.0, 30.0), |_| (vec![seen(STEAM, false, false)], false));
         assert_eq!(found, [(5.0, Next::Hint { id: STEAM, own: false })]);
+    }
+
+    #[test]
+    fn the_starting_screen_keeps_the_keyboard_while_it_offers_a_window() {
+        let (t0, mut h) = (Instant::now(), Handover::default());
+        let launcher = vec![seen(STEAM, false, false)];
+        assert!(!h.keeps_keys(&launcher), "nothing offered yet");
+        let found = run(&mut h, t0, (0.0, 5.0), |_| (launcher.clone(), false));
+        assert_eq!(found, [(5.0, Next::Hint { id: STEAM, own: false })]);
+        assert!(h.keeps_keys(&launcher), "Enter and Escape would reach the window it offers, unseen");
+        // A window of the game's over the screen may be setting its screen mode: it keeps the foreground.
+        let loading = [launcher[0], Seen { answers: false, ..seen(GAME, true, true) }];
+        assert!(!h.keeps_keys(&loading));
     }
 
     #[test]

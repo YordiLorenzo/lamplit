@@ -4,7 +4,9 @@
 
 use super::handover::{self, Handover, Next, Seen};
 use super::session::{PlayClock, STUB_RUN, Step, Tracker};
-use super::window::{bring_lamplit_forward, hand_over, hold, is_lamplits, lamplit_screen, minimize_lamplit, release};
+use super::window::{
+    bring_lamplit_forward, hand_over, hold, is_lamplits, lamplit_screen, minimize_lamplit, release, take_keys,
+};
 use super::{Launcher, step, update_text};
 use crate::events::{self, Event, Play, StepState};
 use crate::files::folder_key;
@@ -40,8 +42,8 @@ pub struct Watch {
     /// A game outside any store, added by hand or found (Windows' game list may name an exe in Downloads): the exe
     /// Lamplit starts, and the processes seen coming from it. Its folder can hold other programs too, so the game is
     /// that exe and what it started, wherever that runs from (a launcher in `Launcher\` starts the game in `bin\`), and
-    /// not everything in the folder, as for a store's game. Shared by the copies of a watch: the watcher's polls and
-    /// the dock's close requests add to it.
+    /// not everything in the folder, as for a store's game. Shared by the copies of a watch: the watcher's looks add to
+    /// it (`track`), and the dock's close requests read it.
     launched: Option<(String, Arc<Mutex<Lineage>>)>,
     /// When this launch opened the game. What the player asked of the game before then was about an earlier session.
     pub opened: Instant,
@@ -57,10 +59,20 @@ impl Watch {
         Watch { dirs, names: g.exe_names.clone(), launched, opened: Instant::now() }
     }
 
-    /// The game's processes among `procs`.
+    /// The watcher's look at `procs`, the newest list of processes: the game's processes among them. Only these looks
+    /// add to a game's lineage and let go of what has ended. A list read earlier elsewhere (the dock's, say) may lack
+    /// a process the watcher has found since, and would make the lineage lose it, and what it starts.
+    fn track(&self, procs: &[Proc]) -> HashSet<u32> {
+        match &self.launched {
+            Some((exe, lineage)) => without_helpers(&lineage.lock().update(exe, procs), procs),
+            None => self.select(procs, false),
+        }
+    }
+
+    /// The game's processes among `procs`, as far as the watcher has found them.
     pub fn pids(&self, procs: &[Proc]) -> HashSet<u32> {
         match &self.launched {
-            Some(launched) => Self::lineage(launched, procs),
+            Some((_, lineage)) => without_helpers(&lineage.lock().known(procs), procs),
             None => self.select(procs, false),
         }
     }
@@ -69,7 +81,7 @@ impl Watch {
     /// only when it runs from the game's folders. By its exe name alone, another program could be closed in its place.
     pub fn own_pids(&self, procs: &[Proc]) -> HashSet<u32> {
         match &self.launched {
-            Some(launched) => Self::lineage(launched, procs),
+            Some((_, lineage)) => without_helpers(&lineage.lock().known(procs), procs),
             None => self.select(procs, true),
         }
     }
@@ -89,19 +101,6 @@ impl Watch {
         if let Some((_, lineage)) = &self.launched {
             lineage.lock().game.insert((started.pid, started.started), Some(started));
         }
-    }
-
-    /// For a game outside any store: its exe, and what that started, running now. Not the helpers of Windows' own a game
-    /// starts on the way (a shell, a console host), nor Xbox's GameLaunchHelper (see `select`), which aren't the game
-    /// and mustn't be closed with it; what they start still counts.
-    fn lineage((exe, lineage): &(String, Arc<Mutex<Lineage>>), procs: &[Proc]) -> HashSet<u32> {
-        let running = lineage.lock().update(exe, procs);
-        let windows = std::env::var_os("SystemRoot").map(|root| format!("{}\\", folder_key(Path::new(&root))));
-        let helper = |p: &Proc| {
-            p.name.eq_ignore_ascii_case("gamelaunchhelper.exe")
-                || p.exe.zip(windows.as_ref()).is_some_and(|(exe, windows)| folder_key(exe).starts_with(windows))
-        };
-        procs.iter().filter(|p| running.contains(&p.pid) && !helper(p)).map(|p| p.pid).collect()
     }
 
     /// `certain`: an exe name counts only for a process whose path Windows doesn't tell.
@@ -129,6 +128,18 @@ impl Watch {
             self.dirs.iter().any(|d| exe.starts_with(d))
         })
     }
+}
+
+/// For a game outside any store: the processes of its lineage among `procs`, `lineage`, other than the helpers of
+/// Windows' own a game starts on the way (a shell, a console host) and Xbox's GameLaunchHelper (see `Watch::select`),
+/// which aren't the game and mustn't be closed with it; what they start still counts.
+fn without_helpers(lineage: &HashSet<u32>, procs: &[Proc]) -> HashSet<u32> {
+    let windows = std::env::var_os("SystemRoot").map(|root| format!("{}\\", folder_key(Path::new(&root))));
+    let helper = |p: &Proc| {
+        p.name.eq_ignore_ascii_case("gamelaunchhelper.exe")
+            || p.exe.zip(windows.as_ref()).is_some_and(|(exe, windows)| folder_key(exe).starts_with(windows))
+    };
+    procs.iter().filter(|p| lineage.contains(&p.pid) && !helper(p)).map(|p| p.pid).collect()
 }
 
 /// Programs a game may start that are the player's own, not the game: a browser (a store page, a sign-in, patch notes),
@@ -174,6 +185,11 @@ impl Lineage {
         // Windows may give its id to another process.
         self.game.retain(|&(pid, started), _| procs.iter().any(|p| p.pid == pid && p.started == started));
         self.game.keys().map(|&(pid, _)| pid).collect()
+    }
+
+    /// The processes among `procs` that the lineage has, as it is.
+    fn known(&self, procs: &[Proc]) -> HashSet<u32> {
+        procs.iter().filter(|p| self.game.contains_key(&(p.pid, p.started))).map(|p| p.pid).collect()
     }
 
     fn add(&mut self, p: &Proc) {
@@ -250,7 +266,7 @@ pub fn watch_game(app: &AppHandle, generation: u64, game: &Game, before: &HashSe
         }
         procs.refresh();
         let list = procs.list();
-        let pids = watch.pids(&list);
+        let pids = watch.track(&list);
         save_play(!pids.is_empty());
         if !screen.handed && launcher.is_current(generation) && looking.look(&list, &pids, &watch) {
             screen.hand();
@@ -369,7 +385,13 @@ impl Looking<'_> {
     /// gets a line on the starting screen, which offers to show it.
     fn look(&mut self, procs: &[Proc], pids: &HashSet<u32>, watch: &Watch) -> bool {
         let (app, id, name) = (self.app, self.id, self.name);
-        match self.handover.poll(&seen_windows(self.before, procs, pids, watch), !pids.is_empty(), Instant::now()) {
+        let seen = seen_windows(self.before, procs, pids, watch);
+        let next = self.handover.poll(&seen, !pids.is_empty(), Instant::now());
+        // A window that may need the player takes the foreground as it opens, and with it the keys.
+        if self.handover.keeps_keys(&seen) {
+            take_keys(app, self.generation);
+        }
+        match next {
             Next::HandOver(to) => {
                 log::info!("{name}: its window is up; it gets the screen");
                 let emit = |play| events::emit(app, Event::Play(play));
@@ -540,7 +562,7 @@ mod tests {
             proc(6, r"C:\Tools\runner.exe", 0, None),
         ];
         let watch = example();
-        assert_eq!(watch.pids(&procs), HashSet::from([1, 5, 6]));
+        assert_eq!(watch.track(&procs), HashSet::from([1, 5, 6]));
         assert_eq!(watch.own_pids(&procs), HashSet::from([1, 5]));
     }
 
@@ -564,8 +586,8 @@ mod tests {
             proc(3, r"D:\Downloads\setup.exe", 102, Some(900)),
             proc(4, r"D:\Downloads\Tools\editor.exe", 103, Some(900)),
         ];
+        assert_eq!(watch.track(&procs), [1, 2].into());
         assert_eq!(watch.own_pids(&procs), [1, 2].into(), "closing the game would close the installer and the editor");
-        assert_eq!(watch.pids(&procs), [1, 2].into());
     }
 
     #[test]
@@ -583,21 +605,36 @@ mod tests {
             proc(6, r"D:\Downloads\setup-tmp\unpack.exe", 103, Some(5)),
         ];
         // The installer neither keeps the game running nor gets closed with it.
-        assert_eq!(watch.pids(&procs), HashSet::from([1, 2, 4]));
+        assert_eq!(watch.track(&procs), HashSet::from([1, 2, 4]));
         assert_eq!(watch.own_pids(&procs), HashSet::from([1, 2, 4]));
+    }
+
+    #[test]
+    fn a_close_request_with_an_older_look_leaves_the_game_as_the_watcher_saw_it() {
+        let watch = racer(r"D:\Old Games\Racer\Launcher.exe", r"D:\Old Games\Racer");
+        // The launcher started a patcher, which started the game, and each ended in turn.
+        let launcher = proc(1, r"D:\Old Games\Racer\Launcher.exe", 100, Some(900));
+        let patcher = proc(2, r"D:\Old Games\Racer\Patcher.exe", 101, Some(1));
+        let game = proc(3, r"D:\Old Games\Racer\bin\Racer.exe", 102, Some(2));
+        assert_eq!(watch.track(&[launcher, patcher]), [1, 2].into());
+        assert_eq!(watch.track(&[patcher, game]), [2, 3].into());
+        assert_eq!(watch.track(&[game]), [3].into());
+        // The dock read the processes before all that, while only the patcher ran, and asks now.
+        watch.own_pids(&[patcher]);
+        assert_eq!(watch.track(&[game]), [3].into(), "Lamplit would take the game for ended");
     }
 
     #[test]
     fn the_id_of_a_launcher_seen_gone_leads_to_the_game_no_more() {
         let watch = racer(r"D:\Old Games\Racer\Launcher.exe", r"D:\Old Games\Racer");
         let game = proc(2, r"D:\Old Games\Racer\bin\Racer.exe", 101, Some(1));
-        assert_eq!(watch.pids(&[proc(1, r"D:\Old Games\Racer\Launcher.exe", 100, Some(900)), game]), [1, 2].into());
+        assert_eq!(watch.track(&[proc(1, r"D:\Old Games\Racer\Launcher.exe", 100, Some(900)), game]), [1, 2].into());
         // The launcher has ended.
-        assert_eq!(watch.pids(&[game]), [2].into());
+        assert_eq!(watch.track(&[game]), [2].into());
         // Between two looks, another program got its id, started one and ended: no look saw it.
         let unseen = [game, proc(3, r"C:\Tools\helper.exe", 301, Some(1))];
         assert_eq!(watch.own_pids(&unseen), [2].into(), "closing the game would close the helper too");
-        assert_eq!(watch.pids(&unseen), [2].into());
+        assert_eq!(watch.track(&unseen), [2].into());
     }
 
     #[test]
@@ -611,9 +648,9 @@ mod tests {
         };
         // It started bin\Racer.exe and ended before the watcher first looked.
         let game = [proc(2, r"D:\Old Games\Racer\bin\Racer.exe", launcher.started, Some(launcher.pid))];
-        assert!(watch.pids(&game).is_empty(), "nothing else leads to it");
+        assert!(watch.track(&game).is_empty(), "nothing else leads to it");
         watch.seed(launcher);
-        assert_eq!(watch.pids(&game), HashSet::from([2]));
+        assert_eq!(watch.track(&game), HashSet::from([2]));
     }
 
     #[test]
@@ -644,10 +681,10 @@ mod tests {
             proc(7, r"D:\Downloads\Racer\RacerGame.exe", 101, Some(1)),
         ];
         let running: Vec<Proc> = game.iter().chain(&browser).copied().collect();
-        assert_eq!(watch.pids(&running), HashSet::from([1, 7]));
+        assert_eq!(watch.track(&running), HashSet::from([1, 7]));
         assert_eq!(watch.own_pids(&running), HashSet::from([1, 7]), "closing the game leaves the browser open");
         // The game has closed, the browser is still open: the session is over.
-        assert!(watch.pids(&browser).is_empty());
+        assert!(watch.track(&browser).is_empty());
     }
 
     #[test]
@@ -656,10 +693,10 @@ mod tests {
         let watch = racer(r"D:\Foo\Launcher\launcher.exe", r"D:\Foo\Launcher");
         let start =
             [proc(1, r"D:\Foo\Launcher\launcher.exe", 100, Some(900)), proc(2, r"D:\Foo\bin\Foo.exe", 101, Some(1))];
-        assert_eq!(watch.pids(&start), HashSet::from([1, 2]));
+        assert_eq!(watch.track(&start), HashSet::from([1, 2]));
         // The launcher has exited: the game runs on, and is the one to close.
         let later = [start[1]];
-        assert_eq!(watch.pids(&later), HashSet::from([2]));
+        assert_eq!(watch.track(&later), HashSet::from([2]));
         assert_eq!(watch.own_pids(&later), HashSet::from([2]));
     }
 
@@ -695,11 +732,11 @@ mod tests {
             proc(1, r"D:\Old Games\Racer\Launcher.exe", 100, Some(900)),
             proc(2, r"D:\Old Games\Racer\bin\Racer.exe", 101, Some(1)),
         ];
-        assert_eq!(watch.pids(&first), HashSet::from([1, 2]));
+        assert_eq!(watch.track(&first), HashSet::from([1, 2]));
         // The launcher has exited, and the game runs on. The dock's copy of the watch knows it too.
         let later = [proc(2, r"D:\Old Games\Racer\bin\Racer.exe", 101, Some(1))];
         assert_eq!(watch.clone().own_pids(&later), HashSet::from([2]));
-        assert_eq!(watch.pids(&later), HashSet::from([2]));
+        assert_eq!(watch.track(&later), HashSet::from([2]));
         // Id 1 goes to another program, which starts one in the game's folder: neither is the game's.
         let reused = [
             later[0],
@@ -710,6 +747,6 @@ mod tests {
         // That program exits, and what it started runs on: still not the game's, so closing the game leaves it open.
         let gone = [later[0], reused[2]];
         assert_eq!(watch.own_pids(&gone), HashSet::from([2]));
-        assert_eq!(watch.pids(&gone), HashSet::from([2]));
+        assert_eq!(watch.track(&gone), HashSet::from([2]));
     }
 }
