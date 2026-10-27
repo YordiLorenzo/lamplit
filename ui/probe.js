@@ -7,12 +7,12 @@
 //
 // The frame times are the gaps between requestAnimationFrame's timestamps, from the last frame before the press, so
 // the press's own work counts. Then the main thread's work per frame, which tells a frame that would miss 120 Hz's
-// 8.3 ms on a screen running at 60 Hz. Then, where they apply: the long animation frames, the time from the press to its
-// first frame and to the paint after it, how many presses it took (a held direction, typing), `cold` for the first of
-// its name since the page started, and `cut` when another press ended it early. The longest frames get a line of
-// their own (probe-detail), with the scripts that ran in them, and every frame's gap and work follow in a probe-frames
-// line, for percentiles over many runs. The interaction is named from the press and what was on screen then:
-// lift-open, row-step, settings-section-sound, dock-output-open.
+// 8.3 ms on a screen running at 60 Hz. Then, where they apply: the long animation frames, the late frames and when
+// they came, the time from the press to its first frame and to the paint after it, how many presses it took (a held
+// direction, typing), `cold` for the first of its name since the page started, and `cut` when another press ended it
+// early. The longest frames get a line of their own (probe-detail), with the scripts that ran in them, and every
+// frame's gap and work follow in a probe-frames line, for percentiles over many runs. The interaction is named from
+// the press and what was on screen then: lift-open, row-step, settings-section-sound, dock-output-open.
 
 import * as api from './api.js';
 
@@ -44,7 +44,8 @@ const FRAME_120 = 1000 / 120;
 let lastFrame = 0;
 /** The main thread's work on a frame: from its start to the first task after it was drawn. */
 const drawn = new MessageChannel();
-drawn.port1.onmessage = (e) => run?.work.push(performance.now() - e.data);
+// A frame's timestamp can be a little ahead of the clock (the vsync it is drawn for).
+drawn.port1.onmessage = (e) => run?.work.push(Math.max(0, performance.now() - e.data));
 /** @param {number} t */
 function frame(t) {
   lastFrame = t;
@@ -150,10 +151,9 @@ const longest = (list) => Math.round(Math.max(0, ...list.map((e) => e.duration))
 
 /** @param {Run} r */
 function report(r) {
-  const gaps = r.frames
-    .slice(1)
-    .map((t, i) => t - r.frames[i])
-    .sort((a, b) => a - b);
+  /** Each gap with when it began, from the press. @type {[number, number][]} */
+  const timed = r.frames.slice(1).map((t, i) => [r.frames[i] - r.t0, t - r.frames[i]]);
+  const gaps = timed.map(([, gap]) => gap).sort((a, b) => a - b);
   /** @param {string} type */
   const during = (type) => entries[type].filter((e) => e.startTime >= r.t0 - 1 && e.startTime <= r.end);
   const tasks = during('longtask');
@@ -168,6 +168,9 @@ function report(r) {
   if (first) line += `, first frame ${ms(first - r.t0)} ms`;
   const paint = during('event').find((e) => Math.abs(e.startTime - r.t0) < 1);
   if (paint) line += `, to paint ${Math.round(paint.duration)} ms`;
+  // The frames that came late (half a frame or more over the usual), and when: what the page did then is the cause.
+  const late = timed.filter(([, gap]) => gap > 1.5 * at(gaps, 0.5)).slice(0, 4);
+  if (late.length) line += `, late ${late.map(([when, gap]) => `${ms(gap)} at +${Math.round(when)}`).join(' ')}`;
   if (r.inputs > 1) line += `, inputs ${r.inputs}`;
   if (!named.has(r.name)) line += ', cold';
   if (r.cut) line += ', cut';
