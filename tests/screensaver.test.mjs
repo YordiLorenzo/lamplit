@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { LAMPLIT, forMood, fromOklch, gradient, medianCut, paletteOf, scenePalette, toOklch } from '../ui/screensaver/palette.js';
-import { DRIFT, SCENES, driftCycle, fragmentSource, particleSources, scenesFor, showsMark, stateSource } from '../ui/screensaver/scenes.js';
+import { DRIFT, SCENES, driftCycle, fragmentSource, nextOrder, particleSources, scenesFor, showsMark } from '../ui/screensaver/scenes.js';
 
 /** RGBA bytes of an image made of `parts`: [[r, g, b, a?], pixel count] each. */
 function image(...parts) {
@@ -144,33 +144,33 @@ describe('palettes by mood', () => {
 });
 
 describe('scenes', () => {
-  test('each has its own id, a kind, a mood and a scene function', () => {
-    assert.equal(new Set(SCENES.map((s) => s.id)).size, SCENES.length);
-    for (const s of SCENES) {
-      assert.ok(['2d', '3d'].includes(s.kind) && ['day', 'night'].includes(s.mood) && /vec3 scene\(vec2 frag\)/.test(s.source), s.id);
+  test('the seven scenes the player kept, each with its own id, a mood and a scene function', () => {
+    assert.deepEqual(SCENES.map((s) => s.id).sort(), ['aurora', 'drift', 'dunes', 'gallery', 'ink', 'nebula', 'ocean']);
+    for (const s of SCENES) assert.ok(['day', 'night'].includes(s.mood) && /vec3 scene\(vec2 frag\)/.test(s.source), s.id);
+  });
+  test('without art, the show still has its five other scenes', () => {
+    const bare = scenesFor({ covers: false, heroes: 0 });
+    assert.deepEqual(bare.map((s) => s.id).sort(), ['aurora', 'dunes', 'ink', 'nebula', 'ocean']);
+  });
+  test('Gallery comes in with the covers, Drift with two hero images', () => {
+    const ids = (have) => scenesFor(have).map((s) => s.id);
+    assert.ok(ids({ covers: true, heroes: 0 }).includes('gallery'));
+    assert.ok(!ids({ covers: false, heroes: 1 }).includes('drift'));
+    assert.ok(ids({ covers: false, heroes: 2 }).includes('drift'));
+    assert.deepEqual(ids({ covers: true, heroes: 4 }), SCENES.map((s) => s.id));
+  });
+  test('a new order holds every scene once and never starts with the one showing, so no scene follows itself', () => {
+    // A seeded random, so every run checks the same thousand orders.
+    let seed = 7;
+    const random = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+    let current = SCENES[0];
+    for (let i = 0; i < 1000; i++) {
+      const order = nextOrder(SCENES, current, random);
+      assert.deepEqual([...order].sort((a, b) => a.id.localeCompare(b.id)), [...SCENES].sort((a, b) => a.id.localeCompare(b.id)));
+      assert.notEqual(order[0], current, `order ${i}`);
+      current = order.at(-1);
     }
-  });
-  test('there are 2D and 3D scenes, so each style has something to show', () => {
-    assert.ok(SCENES.filter((s) => s.kind === '2d').length >= 2 && SCENES.filter((s) => s.kind === '3d').length >= 2);
-  });
-  test('without art or float buffers, each style still has scenes, none of them needing what is missing', () => {
-    for (const style of ['mix', '2d', '3d']) {
-      const bare = scenesFor(style, { covers: false, heroes: 0, float: false });
-      assert.ok(bare.length >= 3, style);
-      assert.ok(bare.every((s) => !s.needs && !s.state), JSON.stringify(bare.map((s) => s.id)));
-    }
-  });
-  test('Gallery comes in with the covers, Drift with two hero images, Flow with float buffers', () => {
-    const ids = (have) => scenesFor('mix', have).map((s) => s.id);
-    assert.ok(ids({ covers: true, heroes: 0, float: false }).includes('gallery'));
-    assert.ok(!ids({ covers: false, heroes: 1, float: true }).includes('drift'));
-    assert.ok(ids({ covers: false, heroes: 2, float: false }).includes('drift'));
-    assert.ok(ids({ covers: false, heroes: 0, float: true }).includes('flow'));
-    assert.deepEqual(ids({ covers: true, heroes: 4, float: true }), SCENES.map((s) => s.id));
-  });
-  test("a style keeps to its kind, whatever the art", () => {
-    const have = { covers: true, heroes: 4, float: true };
-    assert.ok(scenesFor('2d', have).every((s) => s.kind === '2d') && scenesFor('3d', have).every((s) => s.kind === '3d'));
+    assert.deepEqual(nextOrder([SCENES[0]], SCENES[0], random), [SCENES[0]]);
   });
   test("the game's logo drifts over every scene but the two that show the games' own art", () => {
     assert.deepEqual(SCENES.filter((s) => !showsMark(s)).map((s) => s.id).sort(), ['drift', 'gallery']);
@@ -179,11 +179,10 @@ describe('scenes', () => {
     for (const s of SCENES.filter((x) => x.needs)) assert.ok(['covers', 'heroes'].includes(s.needs ?? ''), s.id);
     assert.ok(SCENES.filter((x) => x.needs === 'heroes').every((x) => typeof x.heroes === 'function'));
   });
-  test('the shaders are put together for every scene, with particle and state shaders only where they belong', () => {
+  test('the shaders are put together for every scene, with particle shaders only where they belong', () => {
     for (const s of SCENES) {
       assert.match(fragmentSource(s), /^#version 300 es[\s\S]*void main\(\)/, s.id);
       assert.equal(!!particleSources(s), !!s.particles, s.id);
-      assert.equal(!!stateSource(s), !!s.state, s.id);
       if (s.particles) assert.match(particleSources(s)?.vertex ?? '', /gl_InstanceID/, s.id);
     }
   });

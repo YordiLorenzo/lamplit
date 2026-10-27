@@ -169,11 +169,8 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {boolean} steam_devtools  Lamplit opens Steam's DevTools port (the PS button guard and Steam's pop-ups)
  * @property {boolean} online_art  art comes from Steam's store too
  * @property {number} screensaver_minutes  minutes without input before the screensaver, 0 for never
- * @property {ScreensaverStyle} screensaver_style
  * @property {boolean} dock  holding PS over a game opens the dock rather than the home screen
  */
-
-/** @typedef {'mix' | '2d' | '3d'} ScreensaverStyle  the screensaver's scenes: 2D and 3D in turn, or one kind */
 
 /**
  * What became of a launched game. `up`: its window is up, and gets the screen once the starting screen has faded to
@@ -355,8 +352,6 @@ export const prefsSetSteamDevtools = (on) => call('prefs_set_steam_devtools', { 
 export const prefsSetOnlineArt = (on) => call('prefs_set_online_art', { on });
 /** @param {number} minutes 0 for never @returns {Promise<Prefs>} */
 export const prefsSetScreensaverMinutes = (minutes) => call('prefs_set_screensaver_minutes', { minutes });
-/** @param {ScreensaverStyle} style @returns {Promise<Prefs>} */
-export const prefsSetScreensaverStyle = (style) => call('prefs_set_screensaver_style', { style });
 /** @param {boolean} on @returns {Promise<Prefs>} */
 export const prefsSetDock = (on) => call('prefs_set_dock', { on });
 /** @returns {Promise<void>} once the PC has woken up again */

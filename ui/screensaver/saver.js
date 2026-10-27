@@ -6,13 +6,12 @@
 
 import { LAMPLIT } from './palette.js';
 import { Renderer, WAYS } from './renderer.js';
-import { scenesFor, showsMark } from './scenes.js';
+import { nextOrder, scenesFor, showsMark } from './scenes.js';
 
 /**
  * @typedef {import('./palette.js').Palette} Palette
  * @typedef {import('./scenes.js').Scene} Scene
  * @typedef {import('./scenes.js').Art} Art
- * @typedef {'mix' | '2d' | '3d'} Style
  */
 
 /**
@@ -130,8 +129,6 @@ export class Saver {
     /** @type {Look[]} */
     this.looks = [{ palette: LAMPLIT }];
     this.lookAt = 0;
-    /** @type {Style} */
-    this.style = 'mix';
     /** @type {Scene[]} scenes still to come before the order is shuffled again */
     this.queue = [];
     /** @type {Showing | null} */
@@ -255,32 +252,11 @@ export class Saver {
     return { atlas: this.art.atlas, heroes: [...heroes.slice(first), ...heroes.slice(0, first)].map((h) => h.source) };
   }
 
-  /** @param {Style} style */
-  setStyle(style) {
-    if (style === this.style) return;
-    this.style = style;
-    this.queue = [];
-  }
-
-  /** The scenes the style allows, and the art and the GPU can show. */
-  scenes() {
-    return scenesFor(this.style, {
-      covers: !!this.art.atlas,
-      heroes: this.art.heroes.length,
-      float: !!this.renderer?.float,
-    });
-  }
-
-  /** The next scene in a shuffled order, never the one showing now. */
+  /** The next scene in a shuffled order of those the art can show, never the one showing now. */
   pickScene() {
     if (!this.queue.length) {
-      const q = this.scenes();
-      for (let i = q.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [q[i], q[j]] = [q[j], q[i]];
-      }
-      if (q.length > 1 && q[0] === this.current?.scene) q.push(/** @type {Scene} */ (q.shift()));
-      this.queue = q;
+      const have = { covers: !!this.art.atlas, heroes: this.art.heroes.length };
+      this.queue = nextOrder(scenesFor(have), this.current?.scene);
     }
     return /** @type {Scene} */ (this.queue.shift());
   }
@@ -338,7 +314,6 @@ export class Saver {
   /** Shows `scene` in `look` at once, without a blend: the preview's keys. @param {Scene} scene @param {Look} look */
   cut(scene, look) {
     if (!this.current) return;
-    for (const s of [this.current, this.next]) if (s && s.scene !== scene) this.renderer?.forget(s.scene.id);
     this.next = null;
     this.current = { ...this.showing(scene, this.clock), look };
     this.pendingMark = null;
@@ -349,7 +324,6 @@ export class Saver {
   /** Hands over to the next scene now, or to `scene`. @param {Scene} [scene] */
   skip(scene) {
     if (!this.current) return;
-    if (this.next) this.renderer?.forget(this.next.scene.id);
     this.next = this.showing(scene ?? this.pickScene(), this.clock);
     this.next.start = Infinity;
   }
@@ -414,7 +388,6 @@ export class Saver {
     }
     const blend = this.next && this.next.start !== Infinity ? smooth((this.clock - this.next.start) / BLEND_S) : 0;
     if (this.next && blend >= 1) {
-      if (cur.scene !== this.next.scene) r?.forget(cur.scene.id);
       this.current = this.next;
       this.next = null;
       r?.swap();
@@ -500,7 +473,6 @@ export class Saver {
   info() {
     return {
       scene: this.current?.scene.name ?? '',
-      kind: this.current?.scene.kind ?? '',
       look: this.current?.look.name ?? '',
       mode: this.root.dataset.mode ?? '',
       fps: Math.round(this.fps),

@@ -24,6 +24,12 @@ const GRACE_MS = 450;
  * page under a still pointer changes, and a touchpad used as a mouse twitches.
  */
 const POINTER_PX = 8;
+/**
+ * After Show it now, the hand settles on the mouse: for this long after the click the pointer may move freely, and
+ * where it comes to rest is where a move is measured from. Over Moonlight's absolute mouse the pointer never quite
+ * keeps still.
+ */
+const SETTLE_MS = 1000;
 /** The games whose art colours the show: favourites first, then the most recently played. */
 const GAMES = 8;
 
@@ -40,6 +46,8 @@ let heldKey = '';
 /** Where the pointer was last seen, and where it was when the screensaver showed. */
 let pointer = { x: NaN, y: NaN };
 let anchor = { x: NaN, y: NaN };
+/** When the player asked for the show that is on its way or showing (Show it now); -Infinity when it started itself. */
+let askedAt = -Infinity;
 
 /** Lamplit is in front and no game runs. */
 const allowed = () => !state.running && !document.hidden && document.hasFocus();
@@ -77,10 +85,15 @@ export function wake(action) {
   return false;
 }
 
-/** Settings > Screensaver > Show it now. The press that asked for it, and a key Steam mirrors from it, don't end it. */
+/**
+ * Settings > Screensaver > Show it now. The press that asked for it, and a key Steam mirrors from it, don't end it, and
+ * neither does the pointer that clicked it moving a little (onPointerMove).
+ */
 export function showScreensaver() {
   const now = performance.now();
   swallow = { action: 'ok', until: now + GRACE_MS };
+  askedAt = now;
+  anchor = pointer;
   show(now);
 }
 
@@ -90,11 +103,13 @@ async function show(asked = performance.now()) {
   preparing = true;
   const looks = await gameLooks();
   preparing = false;
-  if (lastInput > asked || !allowed()) return;
+  if (lastInput > asked || !allowed()) {
+    askedAt = -Infinity;
+    return;
+  }
   showing = true;
-  anchor = pointer;
+  if (askedAt === -Infinity) anchor = pointer;
   saver ??= makeSaver();
-  saver.setStyle(state.prefs?.screensaver_style ?? SAVER_DEFAULT.style);
   saver.setLooks(looks);
   saver.start();
   const why = saver.reason ? ` (${saver.reason})` : '';
@@ -112,6 +127,7 @@ function makeSaver() {
 function hide() {
   if (!showing) return;
   showing = false;
+  askedAt = -Infinity;
   saver?.stop();
 }
 
@@ -175,14 +191,28 @@ function onKey(e) {
   e.stopImmediatePropagation();
 }
 
-/** @param {PointerEvent} e */
+/**
+ * The pointer wakes the screensaver once it has moved POINTER_PX from where it was. While one is on its way, any move
+ * calls it off, except for a show the player asked for: that one lets the hand settle first (SETTLE_MS), and is
+ * called off only by a move as far as would wake it.
+ * @param {PointerEvent} e
+ */
 function onPointerMove(e) {
+  const now = performance.now();
   const moved = e.screenX !== pointer.x || e.screenY !== pointer.y;
   pointer = { x: e.screenX, y: e.screenY };
-  if (showing) {
+  const asked = askedAt > -Infinity;
+  if (asked && now - askedAt < SETTLE_MS) {
+    anchor = pointer;
+    return;
+  }
+  if (showing || (asked && preparing)) {
     if (Number.isNaN(anchor.x)) anchor = pointer;
-    else if (Math.hypot(pointer.x - anchor.x, pointer.y - anchor.y) > POINTER_PX) woke('', performance.now());
-  } else if (moved) lastInput = performance.now();
+    else if (Math.hypot(pointer.x - anchor.x, pointer.y - anchor.y) > POINTER_PX) {
+      if (showing) woke('', now);
+      else lastInput = now;
+    }
+  } else if (moved) lastInput = now;
 }
 
 /** A click or the wheel. The screensaver covers the page, so a click that wakes it lands on nothing. @param {Event} e */

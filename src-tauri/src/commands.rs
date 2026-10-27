@@ -11,7 +11,7 @@ use crate::dock;
 use crate::error::{Error, Result};
 use crate::launch::{self, Launcher};
 use crate::library::{self, ArtChoice, Game, Library};
-use crate::prefs::{self, Prefs, ScreensaverStyle};
+use crate::prefs::{self, Prefs};
 use crate::stores::steam::devtools;
 use crate::stores::{self, Store};
 use crate::system::{overlay, power, quiet, setup};
@@ -255,11 +255,6 @@ pub async fn prefs_set_online_art(app: AppHandle, on: bool) -> Result<Prefs> {
 #[tauri::command]
 pub async fn prefs_set_screensaver_minutes(app: AppHandle, minutes: u32) -> Result<Prefs> {
     blocking(move || prefs::change(&app, |p| p.screensaver_minutes = minutes).map(|()| prefs::get(&app))).await?
-}
-
-#[tauri::command]
-pub async fn prefs_set_screensaver_style(app: AppHandle, style: ScreensaverStyle) -> Result<Prefs> {
-    blocking(move || prefs::change(&app, |p| p.screensaver_style = style).map(|()| prefs::get(&app))).await?
 }
 
 /// The dock is switched on or off: off, holding PS over a game brings the home screen.

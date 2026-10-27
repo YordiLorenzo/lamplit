@@ -189,7 +189,7 @@ export function scenePalette(swatches) {
 }
 
 /**
- * A scene in daylight colours (silk, waves, dunes), or light on a dark ground (ink, forms, glass, aurora).
+ * A scene in daylight colours (dunes, ocean), or light on a dark ground (ink, gallery, drift, nebula, aurora).
  * @typedef {'day' | 'night'} Mood
  */
 

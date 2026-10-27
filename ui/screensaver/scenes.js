@@ -15,7 +15,6 @@
  * @typedef {object} Scene
  * @property {string} id
  * @property {string} name  as the preview shows it
- * @property {'2d' | '3d'} kind
  * @property {import('./palette.js').Mood} mood  which way palette.js forMood adapts the palette
  * @property {string} source  GLSL that defines `vec3 scene(vec2 frag)`, and may set `coc`
  * @property {string} [lib]  GLSL that the scene's picture and its particles both use
@@ -24,14 +23,12 @@
  *   two hero images the scene shows at `time`, and how far it has gone from the first to the second
  * @property {{ count: number, vertex: string, fragment: string }} [particles]  instanced quads; the vertex shader
  *   places each from gl_InstanceID and gl_VertexID
- * @property {{ size: number, decay: number, update: string }} [state]  particles that move on: where each one is, in a
- *   size × size float texture that `update` writes every frame, and a trail that keeps `decay` of itself each frame
  */
 
 /**
  * What every program gets: the buffer's size in pixels, seconds since the scene began, a number from 0 to 1 that
  * makes each showing different, the palette in linear light (0 deep, 1 to 3 main, 4 light), the main colours as a
- * looping gradient (palette.js gradient), smooth noise in a 3D texture, and the scene's art, trail and particle state.
+ * looping gradient (palette.js gradient), smooth noise in a 3D texture, and the scene's art.
  * Then hashes without sin (Dave Hoskins), which stay stable on every GPU, and gradient noise.
  */
 const SHARED = `
@@ -45,7 +42,7 @@ uniform float uSeed;
 uniform vec3 uPal[5];
 uniform sampler2D uGrad;
 uniform sampler3D uNoise;
-uniform sampler2D uArt, uArt2, uTrail, uState;
+uniform sampler2D uArt, uArt2;
 uniform vec4 uArtInfo;
 
 float hash12(vec2 p) {
@@ -120,73 +117,6 @@ const MAIN = `
 void main() {
   vec3 c = max(scene(gl_FragCoord.xy), 0.);
   fragColor = vec4(c, clamp(coc, 0., 1.));
-}
-`;
-
-/** Silk: colour draped like satin in long folds, bent by domain warping and lit by a light that wanders. */
-const silk = `
-vec2 warp(vec2 uv, float t) {
-  vec2 q = vec2(fbm(uv * .8 + vec2(0., t), 3), fbm(uv * .8 + vec2(5.2, 1.3 - t * .8), 3));
-  return vec2(fbm(uv * .7 + 1.4 * q + vec2(1.7 + t * .6, 9.2), 3), fbm(uv * .7 + 1.4 * q + vec2(8.3, 2.8 - t * .5), 3));
-}
-// Long folds across the cloth, bent by the warp into flowing curves.
-float folds(vec2 uv, float t) {
-  vec2 r = warp(uv, t);
-  vec2 w = uv + .9 * r;
-  return .6 * sin(dot(w, vec2(1.2, .5)) * 3.2 + 2.2 * r.y + t * 1.5);
-}
-vec3 scene(vec2 frag) {
-  vec2 uv = (frag - .5 * uRes) / uRes.y;
-  float t = uTime * .03 + uSeed * 37.;
-  vec2 r = warp(uv, t);
-  // The colour runs along the gradient across the cloth, so neighbouring colours blend in OKLab (palette.js)
-  // instead of averaging to grey.
-  vec3 base = grad(.45 * uv.x + .25 * uv.y + .7 * r.x - .45 * r.y + t * .12);
-  // The folds' slope, a pixel or two to each side, for the light.
-  float e = 1.5 / uRes.y;
-  float h = folds(uv, t);
-  vec2 slope = vec2(folds(uv + vec2(e, 0), t) - h, folds(uv + vec2(0, e), t) - h) / e;
-  vec3 n = normalize(vec3(-slope * .3, 1.));
-  vec3 l = normalize(vec3(cos(t * 2.1) * .7, .5 + sin(t * 1.6) * .4, .6));
-  float lit = smoothstep(-.7, 1., dot(n, l));
-  // A broad pool of light that wanders, and the deep tone in the valleys of the folds.
-  vec2 spot = vec2(.55 * sin(t * 1.3), .3 * cos(t * 1.7));
-  float pool = .55 + .6 * exp(-dot(uv - spot, uv - spot) * 1.6);
-  vec3 col = dim(mix(uPal[0], base, .15 + .85 * lit), (.18 + .95 * lit) * pool);
-  // Satin: a sheen that runs along the folds.
-  float nh = max(dot(n, normalize(l + vec3(0, 0, 1))), 0.);
-  col += mix(base, uPal[4], .5) * (pow(nh, 10.) * .25 + pow(nh, 40.) * .3) * pool;
-  return col;
-}
-`;
-
-/** Waves: layers of soft bands, back to front, each casting a shadow on the one behind it. */
-const waves = `
-vec3 scene(vec2 frag) {
-  vec2 uv = frag / uRes;
-  float aspect = uRes.x / uRes.y;
-  float x = uv.x * aspect;
-  float t = uTime * .045 + uSeed * 19.;
-  vec3 col = mix(uPal[0] * .7, dim(grad(t * .2 + .1), .45), uv.y * .8);
-  float px = 1.5 / uRes.y;
-  const int N = 7;
-  for (int i = 0; i < N; i++) {
-    float fi = float(i) / float(N - 1);
-    float base = .98 - fi * .82;
-    float edge = base
-      + .085 * sin(x * (1.05 + fi * .5) + t * (1. + fi * .7) + fi * 5.1)
-      + .045 * sin(x * (2.2 - fi * .6) - t * 1.4 + fi * 2.3)
-      + .05 * gnoise(vec2(x * .7 + t * .6, fi * 7.3 + t * .1));
-    float d = edge - uv.y;
-    // The band in front darkens what lies just above its edge.
-    col *= 1. - .42 * exp(min(d, 0.) * 22.) * step(d, 0.);
-    vec3 band = dim(grad(fi * .55 + x * .07 + t * .12), mix(.42, 1., fi));
-    // Lit along its top edge, darker further down.
-    band = dim(band, mix(1.05, .62, smoothstep(0., .3, d)));
-    band += uPal[4] * exp(-max(d, 0.) * 55.) * .16 * (.4 + .6 * fi);
-    col = mix(col, band, smoothstep(-px, px, d));
-  }
-  return col;
 }
 `;
 
@@ -331,163 +261,6 @@ vec3 scene(vec2 frag) {
   // Far dunes go soft, the near sand a little too; the middle distance and the sky stay sharp.
   float depth = edge > .5 ? nearT : t;
   if (hit || edge > .5) coc = smoothstep(16., 70., depth) * .65 + smoothstep(3.5, 1.2, depth) * .4;
-  return col;
-}
-`;
-
-/** Forms: soft shapes that drift, meet and melt into each other, glossy, coloured by the way each part faces. */
-const forms = `
-float T;
-float smin(float a, float b, float k) {
-  float h = clamp(.5 + .5 * (b - a) / k, 0., 1.);
-  return mix(b, a, h) - k * h * (1. - h);
-}
-float map(vec3 p) {
-  float d = 1e3;
-  for (int i = 0; i < 6; i++) {
-    float fi = float(i);
-    vec3 c = vec3(sin(T * (.31 + .05 * fi) + fi * 1.3) * 1.35,
-                  cos(T * (.23 + .04 * fi) + fi * 2.1) * .75,
-                  sin(T * (.19 + .03 * fi) + fi * .7) * 1.3);
-    d = smin(d, length(p - c) - (.52 + .17 * sin(fi * 1.7 + T * .4)), .8);
-  }
-  return d;
-}
-// What a glossy surface mirrors: a soft studio, light above and the deep tone below, with two broad lights.
-vec3 studio(vec3 r) {
-  vec3 col = mix(uPal[0] * .6, grad(.3 + r.x * .15) * .35, smoothstep(-.4, .8, r.y));
-  col += uPal[4] * pow(max(dot(r, normalize(vec3(.5, .8, -.3))), 0.), 24.) * 1.6;
-  col += grad(.7) * pow(max(dot(r, normalize(vec3(-.8, .2, -.4))), 0.), 10.) * .5;
-  return col;
-}
-vec3 scene(vec2 frag) {
-  vec2 uv = (frag - .5 * uRes) / uRes.y;
-  T = uTime * .1 + uSeed * 50.;
-  float a = uTime * .016 + uSeed * 6.283;
-  vec3 ro = vec3(sin(a) * 6.2, .8 * sin(uTime * .011 + uSeed * 3.), cos(a) * 6.2);
-  vec3 rd = lookAt(ro, vec3(0)) * normalize(vec3(uv, 1.8));
-  vec3 col = uPal[0] * (.3 + .55 * exp(-dot(uv, uv) * 2.));
-  float t = 0., halo = 0.;
-  bool hit = false;
-  for (int i = 0; i < 90; i++) {
-    float d = map(ro + rd * t);
-    halo += exp(-d * 2.6);
-    if (d < .001) { hit = true; break; }
-    t += d;
-    if (t > 16.) break;
-  }
-  col += grad(T * .05 + uv.x * .1) * halo * .008;
-  if (hit) {
-    vec3 p = ro + rd * t;
-    vec2 k = vec2(1, -1) * .0015;
-    vec3 n = normalize(k.xyy * map(p + k.xyy) + k.yyx * map(p + k.yyx) + k.yxy * map(p + k.yxy) + k.xxx * map(p + k.xxx));
-    float ndv = clamp(dot(n, -rd), 0., 1.);
-    vec3 l = normalize(vec3(.6, .7, -.4));
-    // A narrow stretch of the gradient across each form, drifting slowly: two neighbouring colours, not a rainbow.
-    float g = dot(n, normalize(vec3(.4, .8, .3))) * .14 + p.x * .06 + p.y * .03 + T * .02 + uSeed;
-    // A soft body lit from above, light that seems to pass through its thin edges, and a clear coat that mirrors.
-    vec3 body = grad(g) * (.12 + .7 * max(dot(n, l), 0.) + .25 * (.5 + .5 * n.y));
-    body += grad(g + .12) * pow(1. - ndv, 2.) * .55;
-    float fres = .04 + .96 * pow(1. - ndv, 5.);
-    col = body + studio(reflect(rd, n)) * mix(.12, 1., fres);
-    coc = smoothstep(.4, 3., abs(t - 6.2)) * .8;
-  }
-  return col;
-}
-`;
-
-/**
- * Glass: clear forms that turn slowly in front of soft coloured light. Each bends the light behind it, splitting it a
- * little into colours at the edges, and mirrors the room with a thin film's colours; the background is out of focus.
- */
-const glass = `
-float T;
-mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
-float torus(vec3 p, vec2 r) { return length(vec2(length(p.xz) - r.x, p.y)) - r.y; }
-float roundBox(vec3 p, vec3 b, float r) {
-  vec3 q = abs(p) - b;
-  return length(max(q, 0.)) + min(max(q.x, max(q.y, q.z)), 0.) - r;
-}
-float map(vec3 p) {
-  vec3 a = p - vec3(-1.55 + .2 * sin(T * .3), .3 * sin(T * .4), .2);
-  a.xz *= rot(T * .21);
-  a.xy *= rot(T * .17 + 1.);
-  float d = torus(a, vec2(.78, .27));
-  vec3 b = p - vec3(1.5, -.2 + .2 * cos(T * .35), .5);
-  b.yz *= rot(T * .19);
-  b.xy *= rot(T * .13 + .4);
-  d = min(d, roundBox(b, vec3(.42), .2));
-  vec3 c = p - vec3(.15 * sin(T * .2), 1. + .15 * sin(T * .5), 1.7);
-  return min(d, length(c) - .48);
-}
-vec3 normalAt(vec3 p) {
-  vec2 k = vec2(1, -1) * .0015;
-  return normalize(k.xyy * map(p + k.xyy) + k.yyx * map(p + k.yyx) + k.yxy * map(p + k.yxy) + k.xxx * map(p + k.xxx));
-}
-// The light behind the glass: the deep tone, three slow pools of colour and one thin bright line, far away. Directions
-// map onto it stereographically, which is smooth for any direction the glass bends the light into (a division by z,
-// clamped, would draw a hard outline where the clamp starts).
-vec3 backdrop(vec3 rd) {
-  vec2 q = 2. * rd.xy / (1. + max(rd.z, -.9));
-  vec3 col = uPal[0] * mix(1.1, .35, smoothstep(-.7, .9, q.y));
-  for (int i = 0; i < 3; i++) {
-    float fi = float(i);
-    vec2 c = vec2(sin(T * .13 + fi * 2.1) * .95, cos(T * .11 + fi * 1.7) * .5);
-    vec2 d = q - c;
-    col += uPal[i + 1] * exp(-dot(d, d) * 5.5) * .65;
-  }
-  float line = abs(q.y - .02 - .16 * sin(q.x * 1.3 + T * .25));
-  return col + uPal[4] * smoothstep(.014, 0., line) * .32;
-}
-// What the glass mirrors: the backdrop, and two soft studio lights.
-vec3 room(vec3 r) {
-  return backdrop(r) * .6 + uPal[4] * (pow(max(dot(r, normalize(vec3(-.5, .7, -.5))), 0.), 60.) * 6.
-                                      + pow(max(dot(r, normalize(vec3(.8, .3, -.4))), 0.), 16.) * .9);
-}
-// The glass at p, seen along rd, as thick glass: the light behind is bent by the front surface alone, by more than
-// one thin surface would bend it, and each colour a little differently. The front surface is smooth everywhere, so the
-// bending is too: following the light out through the back would show the back's bevels as a second, offset form,
-// and where light can't leave (total internal reflection) the picture would jump.
-vec3 glassAt(vec3 p, vec3 rd) {
-  vec3 n = normalAt(p);
-  // Never quite edge-on: at a grazing angle the normal changes from one pixel to the next and the rim would sparkle.
-  float ndv = clamp(dot(n, -rd), .08, 1.);
-  float fres = .04 + .96 * pow(1. - ndv, 5.);
-  vec3 bend = (refract(rd, n, 1. / 1.45) - rd) * 2.4;
-  vec3 through;
-  for (int c = 0; c < 3; c++) through[c] = backdrop(normalize(rd + bend * (1. + (float(c) - 1.) * .025)))[c];
-  // Light crossing more glass (seen face on) is tinted a little more, towards the palette's light colour; towards the
-  // edges, where the light travels furthest through the glass, a little less of it gets through.
-  through *= mix(vec3(1), uPal[4] * 1.15, .25 * ndv) * mix(.55, 1.1, smoothstep(.12, .7, ndv));
-  vec3 film = grad(ndv * 1.7 + T * .04);
-  vec3 r = reflect(rd, n);
-  vec3 col = mix(through, room(r) * mix(vec3(1), film * 1.5, .55), fres);
-  // The studio's key light, mirrored on the glass at any angle.
-  col += uPal[4] * pow(max(dot(r, normalize(vec3(-.5, .7, -.5))), 0.), 90.) * 1.2;
-  // A soft bright edge where the glass turns away, as light gathers in the thickness of a rim.
-  return col + mix(film, uPal[4], .5) * pow(1. - ndv, 2.5) * .16;
-}
-vec3 scene(vec2 frag) {
-  vec2 uv = (frag - .5 * uRes) / uRes.y;
-  T = uTime * .12 + uSeed * 60.;
-  vec3 ro = vec3(.6 * sin(uTime * .013 + uSeed * 5.), .3 * sin(uTime * .017), -6.);
-  vec3 rd = lookAt(ro, vec3(0, .1, .5)) * normalize(vec3(uv, 1.9));
-  // The ray's closest pass by a form it missed, as an angle, gives a soft edge round each form.
-  float t = 0., near = 1e3, nearT = 0.;
-  bool hit = false;
-  for (int i = 0; i < 80; i++) {
-    float d = map(ro + rd * t);
-    if (d < .001) { hit = true; break; }
-    if (d / t < near) { near = d / t; nearT = t; }
-    t += d;
-    if (t > 14.) break;
-  }
-  if (hit) return glassAt(ro + rd * t, rd);
-  vec3 col = backdrop(rd);
-  float pixel = 1.2 / (uRes.y * 1.9);
-  float edge = 1. - smoothstep(0., pixel, near);
-  if (edge > 0.) col = mix(col, glassAt(ro + rd * nearT, rd), edge);
-  coc = .85 * (1. - edge);
   return col;
 }
 `;
@@ -890,89 +663,15 @@ void main() {
 `,
 };
 
-/**
- * Flow: four thousand particles carried by a slowly changing current, each leaving a long fading trail, so the
- * current shows as fine lines of light. The current is the curl of a noise field: it has no sources or sinks, so
- * the particles never bunch up or thin out.
- */
-const FLOW_SIZE = 64;
-const flowLib = `
-float potential(vec2 q, float t) { return fbm3(vec3(q * .75, t * .012 + uSeed * 10.), 2) + .18 * q.y; }
-// The current at p (0 to 1 across the screen), in screens per second.
-vec2 current(vec2 p, float t) {
-  float aspect = uRes.x / uRes.y;
-  vec2 q = vec2(p.x * aspect, p.y);
-  float e = .004;
-  float n0 = potential(q, t);
-  vec2 v = vec2(potential(q + vec2(0, e), t) - n0, -(potential(q + vec2(e, 0), t) - n0)) / e;
-  return v * vec2(1. / aspect, 1.) * .05;
-}
-`;
-const flowUpdate = `
-uniform float uDt;
-uniform int uInit;
-out vec4 fragColor;
-void main() {
-  ivec2 id = ivec2(gl_FragCoord.xy);
-  vec4 s = texelFetch(uState, id, 0);
-  vec2 r = hash22(vec2(id) + fract(uTime * 7.13) * 91.);
-  float r3 = hash12(vec2(id).yx + fract(uTime * 3.7) * 53.);
-  // (x, y) across the screen, the particle's age and how long it lives, in seconds.
-  if (uInit == 1 || s.z > s.w || s.x < -.02 || s.x > 1.02 || s.y < -.02 || s.y > 1.02) {
-    s = vec4(r, uInit == 1 ? r3 * 10. : 0., 7. + r3 * 9.);
-  } else {
-    s.xy += current(s.xy, uTime) * uDt;
-    s.z += uDt;
-  }
-  fragColor = s;
-}
-`;
-const flowParticles = {
-  count: FLOW_SIZE * FLOW_SIZE,
-  vertex: `
-out vec3 vColor;
-out vec2 vCorner;
-void main() {
-  int id = gl_InstanceID;
-  vec4 s = texelFetch(uState, ivec2(id % ${FLOW_SIZE}, id / ${FLOW_SIZE}), 0);
-  vec2 v = current(s.xy, uTime);
-  float speed = length(v) * 20.;
-  float life = sin(3.14159 * clamp(s.z / s.w, 0., 1.));
-  vColor = grad(s.x * .35 + s.y * .25 + uTime * .006 + uSeed) * (.45 + .55 * min(speed, 1.)) * life * .22;
-  int k = gl_VertexID;
-  vCorner = vec2(k == 1 || k == 4 || k == 5 ? 1. : -1., k == 2 || k == 3 || k == 5 ? 1. : -1.);
-  gl_Position = vec4(s.xy * 2. - 1. + vCorner * 1.1 / uRes, 0., 1.);
-}
-`,
-  fragment: `
-in vec3 vColor;
-in vec2 vCorner;
-void main() { fragColor = vec4(vColor * smoothstep(1.2, .2, length(vCorner)), 1.); }
-`,
-};
-const flow = `
-vec3 scene(vec2 frag) {
-  vec2 uv = frag / uRes;
-  vec2 q = uv - .5;
-  vec3 col = uPal[0] * (.1 + .12 * (1. - dot(q, q) * 2.));
-  return col + texture(uTrail, uv).rgb;
-}
-`;
-
 /** @type {Scene[]} */
 export const SCENES = [
-  { id: 'silk', name: 'Silk', kind: '2d', mood: 'day', source: silk },
-  { id: 'dunes', name: 'Dunes', kind: '3d', mood: 'day', source: dunes },
-  { id: 'gallery', name: 'Gallery', kind: '3d', mood: 'night', source: gallery, needs: 'covers' },
-  { id: 'waves', name: 'Waves', kind: '2d', mood: 'day', source: waves },
-  { id: 'ocean', name: 'Ocean', kind: '3d', mood: 'day', source: ocean },
-  { id: 'flow', name: 'Flow', kind: '2d', mood: 'night', source: flow, lib: flowLib, particles: flowParticles, state: { size: FLOW_SIZE, decay: 0.99, update: flowUpdate } },
-  { id: 'forms', name: 'Forms', kind: '3d', mood: 'night', source: forms },
-  { id: 'drift', name: 'Drift', kind: '2d', mood: 'night', source: drift, lib: driftLib, particles: driftParticles, needs: 'heroes', heroes: driftCycle },
-  { id: 'ink', name: 'Ink', kind: '2d', mood: 'night', source: ink },
-  { id: 'nebula', name: 'Nebula', kind: '3d', mood: 'night', source: nebula },
-  { id: 'glass', name: 'Glass', kind: '3d', mood: 'night', source: glass },
-  { id: 'aurora', name: 'Aurora', kind: '3d', mood: 'night', source: aurora },
+  { id: 'dunes', name: 'Dunes', mood: 'day', source: dunes },
+  { id: 'gallery', name: 'Gallery', mood: 'night', source: gallery, needs: 'covers' },
+  { id: 'ocean', name: 'Ocean', mood: 'day', source: ocean },
+  { id: 'drift', name: 'Drift', mood: 'night', source: drift, lib: driftLib, particles: driftParticles, needs: 'heroes', heroes: driftCycle },
+  { id: 'ink', name: 'Ink', mood: 'night', source: ink },
+  { id: 'nebula', name: 'Nebula', mood: 'night', source: nebula },
+  { id: 'aurora', name: 'Aurora', mood: 'night', source: aurora },
 ];
 
 /** Drift's timing: each hero image holds this long, in seconds, then takes this long to become the next one. */
@@ -991,19 +690,29 @@ export function driftCycle(time, count) {
 }
 
 /**
- * The scenes a show can use: those of the style, without the ones whose art isn't there (Gallery needs covers,
- * Drift two hero images) or that need float buffers the GPU can't render to (Flow).
- * @param {'mix' | '2d' | '3d'} style
- * @param {{ covers: boolean, heroes: number, float: boolean }} have
+ * The scenes a show can use: all of them but those whose art isn't there (Gallery needs covers, Drift two hero
+ * images).
+ * @param {{ covers: boolean, heroes: number }} have
  */
-export function scenesFor(style, have) {
-  return SCENES.filter(
-    (s) =>
-      (style === 'mix' || s.kind === style) &&
-      (s.needs !== 'covers' || have.covers) &&
-      (s.needs !== 'heroes' || have.heroes >= 2) &&
-      (!s.state || have.float)
-  );
+export function scenesFor(have) {
+  return SCENES.filter((s) => (s.needs !== 'covers' || have.covers) && (s.needs !== 'heroes' || have.heroes >= 2));
+}
+
+/**
+ * The scenes in a new shuffled order (Fisher-Yates) that doesn't start with `current`, so one scene never follows
+ * itself when the order comes round again.
+ * @param {Scene[]} scenes
+ * @param {Scene | null | undefined} current
+ * @param {() => number} [random]
+ */
+export function nextOrder(scenes, current, random = Math.random) {
+  const order = [...scenes];
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  if (order.length > 1 && order[0] === current) order.push(/** @type {Scene} */ (order.shift()));
+  return order;
 }
 
 /**
@@ -1023,5 +732,3 @@ export function particleSources(scene) {
   return { vertex: head + scene.particles.vertex, fragment: `${head}out vec4 fragColor;\n${scene.particles.fragment}` };
 }
 
-/** The shader that moves a scene's particles on, null when it has none. @param {Scene} scene */
-export const stateSource = (scene) => (scene.state ? `#version 300 es${SHARED}${scene.lib ?? ''}${scene.state.update}` : null);

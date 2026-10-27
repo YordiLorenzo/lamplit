@@ -13,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ipc, known, like, values } from './fixtures.mjs';
 import { dockTests } from './dock.mjs';
-import { commands, cspHeader, emit, idle, open as openPage, pageOrigin, serveFile, settled, until } from './page.mjs';
+import { assetOrigin, commands, cspHeader, emit, idle, open as openPage, pageOrigin, serveFile, settled, until } from './page.mjs';
 import { SCENES } from '../ui/screensaver/scenes.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -1527,15 +1527,14 @@ const saverOn = (page) => until(page, () => document.querySelector('#saver.on'))
   await close(page);
 }
 
-// 29. Settings > Screensaver: ← and → step the delay (Off among them) and the scenes, saved through Rust; Off keeps it
-// away; Show it now shows it, in the scenes chosen, and the ✕ that asked for it doesn't end it.
+// 29. Settings > Screensaver: ← and → step the delay (Off among them), saved through Rust; Off keeps it away; Show it
+// now shows it, and the ✕ that asked for it doesn't end it.
 {
   const page = await open({ games: [game(1), game(2)], clock: true });
   await page.evaluate((prefs) => {
     const s = (window.__settings = { prefs });
     s.prefs_state = () => s.prefs;
     s.prefs_set_screensaver_minutes = ({ minutes }) => ((s.prefs.screensaver_minutes = minutes), s.prefs);
-    s.prefs_set_screensaver_style = ({ style }) => ((s.prefs.screensaver_style = style), s.prefs);
   }, ipc('prefs'));
   const view = () =>
     page.evaluate(() => ({
@@ -1552,13 +1551,13 @@ const saverOn = (page) => until(page, () => document.querySelector('#saver.on'))
   await idle(page);
   await down('Screensaver');
   let v = await view();
-  check('Settings lists the screensaver with its delay and scenes', v.focus === 'ScreensaverAfter 5 min · 2D and 3D', v.focus);
+  check('Settings lists the screensaver with its delay', v.focus === 'ScreensaverAfter 5 min', v.focus);
   await page.keyboard.press('Enter');
   await idle(page);
   v = await view();
   check(
-    'the Screensaver section: the delay, the scenes and Show it now',
-    JSON.stringify(v.rows.slice(0, 3)) === '["Starts after5 min","Scenes2D and 3D","Show it now"]' && v.focus === 'Starts after5 min',
+    'the Screensaver section: the delay and Show it now, and no choice of scenes',
+    JSON.stringify(v.rows.slice(0, 2)) === '["Starts after5 min","Show it now"]' && !v.rows.some((r) => r.startsWith('Scenes')) && v.focus === 'Starts after5 min',
     JSON.stringify(v.rows)
   );
   for (let i = 0; i < 3; i++) {
@@ -1571,11 +1570,6 @@ const saverOn = (page) => until(page, () => document.querySelector('#saver.on'))
     JSON.stringify(v.sent) === '[["prefs_set_screensaver_minutes",{"minutes":2}],["prefs_set_screensaver_minutes",{"minutes":0}]]' && v.focus === 'Starts afterOff',
     JSON.stringify(v)
   );
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('ArrowRight');
-  await idle(page);
-  v = await view();
-  check('→ steps the scenes to 2D only', JSON.stringify(v.sent.at(-1)) === '["prefs_set_screensaver_style",{"style":"2d"}]' && v.focus === 'Scenes2D', JSON.stringify(v));
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await page.clock.fastForward('30:00');
@@ -1593,7 +1587,7 @@ const saverOn = (page) => until(page, () => document.querySelector('#saver.on'))
   await emit(page, 'pad', 'ok');
   await saverOn(page);
   s = await saverView(page);
-  check("Show it now shows the screensaver in the scenes chosen, and the ✕ that asked doesn't end it", s.on && SCENES.some((x) => x.kind === '2d' && x.id === s.scene), JSON.stringify(s));
+  check("Show it now shows the screensaver, and the ✕ that asked doesn't end it", s.on && SCENES.some((x) => x.id === s.scene), JSON.stringify(s));
   await page.clock.runFor(600);
   await page.keyboard.press('Escape');
   v = await view();
@@ -2105,13 +2099,13 @@ await dockTests({ open, close, check, shots });
   // Thirty seconds into a scene its game's logo or name has drifted in, but not over the scenes that show the games'
   // own art.
   const marks = {};
-  for (const id of ['silk', 'gallery', 'drift']) {
+  for (const id of ['ink', 'gallery', 'drift']) {
     await page.goto(`${pageOrigin}/ui/screensaver/preview.html?scene=${id}&at=30&hud=0`);
     await page.waitForFunction(() => document.querySelector('#saver.on'), null, { timeout: 30000 }).catch(() => {});
     await page.waitForTimeout(400);
     marks[id] = await page.evaluate(() => Number(document.querySelector('.saver-mark').style.opacity));
   }
-  check("the game's logo drifts over Silk but not over Gallery or Drift", marks.silk > 0.2 && marks.gallery === 0 && marks.drift === 0, JSON.stringify(marks));
+  check("the game's logo drifts over Ink but not over Gallery or Drift", marks.ink > 0.2 && marks.gallery === 0 && marks.drift === 0, JSON.stringify(marks));
   await page.close();
 }
 
@@ -2340,6 +2334,50 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await settled(page);
   f = await fit('artPick', '#artKeys [data-id]');
   check(`${at}: Change art's keyboard is inside its panel, clear of the hints`, f.inside && f.clear, JSON.stringify(f));
+  await close(page);
+}
+
+// 33. Show it now with a mouse (over Moonlight, say): the pointer that clicked moves a pixel or two while the
+// screensaver gets its colours ready, and as the hand settles; that neither calls it off nor ends it. A real move,
+// once the hand has settled, still ends it.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  // The art takes a moment to load, as it can on a TV PC, so the moves below come while the show gets ready.
+  await page.route(`${assetOrigin}/**`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await route.fallback();
+  });
+  const focus = () => page.evaluate(() => document.querySelector('#settingsList .row.focus')?.textContent ?? '');
+  await page.keyboard.press('c');
+  await idle(page);
+  for (let i = 0; i < 12 && !(await focus()).startsWith('Screensaver'); i++) await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  const row = await page.evaluate(() => {
+    const r = [...document.querySelectorAll('#settingsList .row')].find((x) => x.textContent.startsWith('Show it now'));
+    const b = r?.getBoundingClientRect();
+    return b ? { x: b.x + b.width / 2, y: b.y + b.height / 2 } : null;
+  });
+  await page.mouse.move(row.x, row.y);
+  await page.waitForTimeout(100);
+  await page.mouse.click(row.x, row.y);
+  for (const [dx, dy] of [[1, 0], [2, 1], [3, 1], [2, 3]]) {
+    await page.mouse.move(row.x + dx, row.y + dy);
+    await page.waitForTimeout(60);
+  }
+  await saverOn(page);
+  let v = await saverView(page);
+  check('Show it now starts though the pointer moves a pixel or two while it gets ready', v.on, JSON.stringify(v));
+  await page.mouse.move(row.x + 14, row.y + 9);
+  v = await saverView(page);
+  check('the hand settling on the mouse right after the click leaves it on', v.on, JSON.stringify(v));
+  await page.waitForTimeout(1100);
+  await page.mouse.move(row.x + 16, row.y + 11);
+  v = await saverView(page);
+  check('a pixel or two once settled leaves it on', v.on, JSON.stringify(v));
+  await page.mouse.move(row.x + 60, row.y + 40);
+  v = await saverView(page);
+  check('a real move of the mouse ends it', !v.on, JSON.stringify(v));
   await close(page);
 }
 

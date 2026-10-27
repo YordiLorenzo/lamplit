@@ -17,14 +17,14 @@ Every release of Lamplit, newest first. The format follows
   over a game in exclusive full screen holding PS brings the home screen as before. Settings > Overlay and pop-ups
   switches it off.
 - A screensaver. After a few minutes without input, while Lamplit is in front and no game runs, generative art covers
-  the screen, so a still home screen can't mark an OLED TV: five 2D and seven 3D scenes drawn with WebGL2, coloured
-  from the art of your games, with a game's logo or name drifting faintly through each, and finished with a soft
-  bloom, a filmic tone curve and depth of field. Gallery shows your covers in a dark room with a glossy floor, Drift
-  turns one game's hero art into another's through thousands of points of light, and Flow, Ocean and Nebula draw a
-  current of light, the sea at sunset and a nebula. A new scene comes in every minute and a half or so, in a
-  crossfade, through the dark parts first, through drifting noise or pushing in, and after an hour it fades to black. The first press only ends it. Settings > Screensaver
-  sets the delay (Off, 2, 5, 10 or 20 minutes; 5 by default) and the scenes (2D and 3D, only 2D, or only 3D), and
-  shows it now. Without WebGL2 it shows a moving gradient.
+  the screen, so a still home screen can't mark an OLED TV: seven scenes drawn with WebGL2 (Gallery, Drift, Dunes,
+  Ocean, Ink, Nebula and Aurora), coloured from the art of your games, and finished with a soft bloom, a filmic tone
+  curve and depth of field. Gallery shows your covers in a dark room with a glossy floor, and Drift turns one game's
+  hero art into another's through thousands of points of light; over the other five a game's logo or name drifts
+  faintly. A new scene comes in every minute and a half or so, in a crossfade, through the dark parts first, through
+  drifting noise or pushing in, and after an hour it fades to black. The first press only ends it.
+  Settings > Screensaver sets the delay (Off, 2, 5, 10 or 20 minutes; 5 by default) and shows it now. Without WebGL2
+  it shows a moving gradient.
 - `ui/screensaver/preview.html` shows the screensaver's scenes in a normal browser, for working on them.
 - Battle.net: its installed games, from Battle.net's own list. Lamplit starts Battle.net, waits until its log says it
   has signed in, and asks it to start the game. A game too new for Lamplit's list of launch codes opens on its page
