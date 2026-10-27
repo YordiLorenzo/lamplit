@@ -135,20 +135,36 @@ fn windows_exes(verdict: &Value) -> Vec<String> {
 /// game's own setting says so, or, without one, when the app's preference (`isolate_apps`) or the manifest's action
 /// asks for it (perform-launch.ts in the app). Such a game goes to the app's launcher, `itch-setup --run-game`
 /// (itch 26.20 and later), which starts it through butler in the sandbox. Started from its exe, it would run with all
-/// the player's access. Its processes then belong to the sandbox's account, so Lamplit also knows them by name.
+/// the player's access. Its processes then belong to the sandbox's account, so Lamplit also knows them by name. So
+/// does an action that asks for an itch.io API key: butler hands the game one for the session (`ITCHIO_API_KEY`), and
+/// started from its exe, the game would get none.
 fn launch(cave: &Cave, isolate_apps: bool, setup: &Path) -> Option<(Launch, Vec<String>)> {
     let scanned = || {
         let picked = cave.target.as_deref().and_then(|t| cave.exes.iter().find(|e| same_path(e, t)));
         let exe = picked.into_iter().chain(&cave.exes).filter_map(|rel| inside(&cave.dir, rel)).find(|p| p.is_file());
-        exe.map(|exe| (exe, Vec::new(), false))
+        exe.map(|exe| Start { exe, args: Vec::new(), sandbox: false, api_key: false })
     };
-    let (exe, args, opt_in) = manifest_action(&cave.dir, cave.target.as_deref()).or_else(scanned)?;
-    if cave.sandbox.unwrap_or(isolate_apps || opt_in) {
+    let start = manifest_action(&cave.dir, cave.target.as_deref()).or_else(scanned)?;
+    if start.api_key || cave.sandbox.unwrap_or(isolate_apps || start.sandbox) {
         let run = format!("--appname itch --run-game {}", cave.game_id);
-        return Some((Launch::ExeArgs(setup.to_path_buf(), run), vec![file_name(&exe).to_lowercase()]));
+        return Some((Launch::ExeArgs(setup.to_path_buf(), run), vec![file_name(&start.exe).to_lowercase()]));
     }
-    let launch = if args.is_empty() { Launch::Exe(exe) } else { Launch::ExeArgs(exe, command_line(&args)) };
+    let launch = if start.args.is_empty() {
+        Launch::Exe(start.exe)
+    } else {
+        Launch::ExeArgs(start.exe, command_line(&start.args))
+    };
     Some((launch, Vec::new()))
+}
+
+/// A game's own start: its exe and arguments, and what it asks of the app.
+struct Start {
+    exe: PathBuf,
+    args: Vec<String>,
+    /// The manifest's action opts into the sandbox.
+    sandbox: bool,
+    /// The manifest's action asks for an itch.io API key (`scope`), which only the app hands out.
+    api_key: bool,
 }
 
 /// Whether the app's preference to run every game in its sandbox is on (preferences.json in the app's data folder).
@@ -158,7 +174,8 @@ fn isolate_apps(preferences: &Path) -> bool {
 }
 
 /// A game's `.itch.toml`, at the top of its folder (https://itch.io/docs/itch/integrating/manifest.html). Lamplit
-/// reads the actions' name, path, args, platform and sandbox opt-in; the rest (API scope, prerequisites) is the app's.
+/// reads the actions' name, path, args, platform, sandbox opt-in and API scope; the rest (prerequisites, console
+/// window, translated names) is the app's.
 #[derive(Deserialize)]
 struct Manifest {
     #[serde(default)]
@@ -176,12 +193,15 @@ struct Action {
     platform: Option<String>,
     #[serde(default)]
     sandbox: bool,
+    /// `profile:me` asks the app for an API key; butler refuses any other scope.
+    #[serde(default)]
+    scope: String,
 }
 
-/// The exe, arguments and sandbox opt-in of the manifest's action for this game, if it ships a manifest with one that
-/// runs on Windows: one with no platform or `windows`, whose path (`{{EXT}}` standing for `.exe`) is an exe in the
-/// game's folder. URLs, folders and other platforms' files are left out, as butler leaves them out on Windows.
-fn manifest_action(dir: &Path, picked: Option<&str>) -> Option<(PathBuf, Vec<String>, bool)> {
+/// The start the manifest's action for this game names, if the game ships a manifest with an action that runs on
+/// Windows: one with no platform or `windows`, whose path (`{{EXT}}` standing for `.exe`) is an exe in the game's
+/// folder. URLs, folders and other platforms' files are left out, as butler leaves them out on Windows.
+fn manifest_action(dir: &Path, picked: Option<&str>) -> Option<Start> {
     let text = read_text(&dir.join(".itch.toml"))?;
     let manifest: Manifest = toml::from_str(&text)
         .map_err(|e| log::info!("discovery itch: {} has a manifest Lamplit can't read: {e}", dir.display()))
@@ -201,7 +221,12 @@ fn manifest_action(dir: &Path, picked: Option<&str>) -> Option<(PathBuf, Vec<Str
     let at = |t: &str| actions.iter().find(|(a, path, _)| same_path(&a.path, t) || same_path(path, t));
     let (action, _, exe) =
         picked.and_then(|t| named(t).or_else(|| at(t))).or_else(|| named("play")).or(actions.first())?;
-    Some((exe.clone(), action.args.clone(), action.sandbox))
+    Some(Start {
+        exe: exe.clone(),
+        args: action.args.clone(),
+        sandbox: action.sandbox,
+        api_key: !action.scope.is_empty(),
+    })
 }
 
 /// Two paths relative to a game's folder, in either slash and with or without `./`, are the same.
@@ -402,6 +427,23 @@ name = "vcredist-2015-x64"
         assert_eq!(launch(&set(false), true, setup), from_exe);
         fs::remove_file(dir.join(".itch.toml")).unwrap();
         assert_eq!(launch(&set(true), false, setup), handed);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_game_that_asks_for_an_api_key_goes_to_the_apps_launcher() {
+        let (dir, cave) = install("apikey", &[r"bin\Game.exe"], &[r"bin\Game.exe"]);
+        let setup = Path::new(r"C:\Users\player\AppData\Local\itch\itch-setup.exe");
+        let run = "--appname itch --run-game 1".to_string();
+        let handed = Some((Launch::ExeArgs(setup.to_path_buf(), run), vec!["game.exe".to_string()]));
+        let manifest = "[[actions]]\nname = 'play'\npath = 'bin/Game.exe'\nargs = ['--online']\n";
+        fs::write(dir.join(".itch.toml"), manifest).unwrap();
+        let from_exe = Some((Launch::ExeArgs(dir.join(r"bin\Game.exe"), "--online".into()), Vec::new()));
+        assert_eq!(launch(&cave(None), false, setup), from_exe);
+        // Only the app hands out the key, also to a game kept out of the sandbox.
+        fs::write(dir.join(".itch.toml"), format!("{manifest}scope = 'profile:me'\n")).unwrap();
+        assert_eq!(launch(&cave(None), false, setup), handed);
+        assert_eq!(launch(&Cave { sandbox: Some(false), ..cave(None) }, false, setup), handed);
         fs::remove_dir_all(&dir).unwrap();
     }
 

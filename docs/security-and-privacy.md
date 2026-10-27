@@ -104,7 +104,7 @@ These don't change any setting, but you may notice them:
   `Battle.net.exe --exec="launch <code>"`, or `--game=<id>` to open Battle.net on the game's page. An itch.io game
   that the itch app runs in its sandbox (a Windows account of its own, with less access than yours) starts through
   the app's launcher, `itch-setup --run-game <id>`, which keeps it in the sandbox; Lamplit never starts such a game
-  from its exe.
+  from its exe. So does a game that asks the itch app for an itch.io API key, which only the app hands out.
 - It closes Steam's Big Picture mode whenever it opens, and minimises Steam's main window when Lamplit takes the
   screen back after a Steam game.
 - It keeps the PC and the screen awake while a game is starting or Steam is updating it, and lets them sleep again
