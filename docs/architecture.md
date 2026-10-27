@@ -78,7 +78,8 @@ one that crashes later, which is why the supervisor exists.
 
 Lamplit keeps its files in the data folder, `%LOCALAPPDATA%\lamplit`: `prefs.json`, `games.json` (per game id:
 favourite, hidden, when it was last played, how long Lamplit saw it run, the art the player chose, and for a game
-added by hand its name and exe; 0.1.0's `played.json` is still read for the last-played times), `art.json` and
+added by hand its name and exe, or that it was removed again, which keeps it off the row when a scan finds its exe
+outside any store; 0.1.0's `played.json` is still read for the last-played times), `art.json` and
 `art\<steam appid>\` (art lookups and downloads), `setup.json` (setup is done, for which exe) and `quiet-saved.json`
 (the settings quiet mode replaced), plus the logs. WebView2 keeps its profile in
 `%LOCALAPPDATA%\io.github.yordilorenzo.lamplit`.

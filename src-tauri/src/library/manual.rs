@@ -24,6 +24,11 @@ pub fn id(exe: &Path) -> String {
     format!("manual:{}", folder_key(exe))
 }
 
+/// The exe of the game added by hand as `id`, in lower case.
+pub fn exe_of(id: &str) -> Option<PathBuf> {
+    id.strip_prefix("manual:").map(PathBuf::from)
+}
+
 /// The game a games.json entry adds. Its folder is the exe's game folder, so the watch after a launch counts every
 /// process from there as the game, as it does for games outside any store.
 pub fn game(id: &str, m: &Manual) -> Game {

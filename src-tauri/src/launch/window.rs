@@ -40,14 +40,20 @@ pub fn lamplit_in_front() -> bool {
 /// window that opens later isn't kept from Windows' foreground: a game may need it to set its screen mode.
 pub fn hold(app: &AppHandle, generation: u64) {
     bring_lamplit_forward(app);
-    keep_on_top(generation);
+    keep_on_top(generation, || app.state::<Launcher>().is_current(generation));
 }
 
-/// Keeps Lamplit's window on top for launch `generation`, without bringing it forward (see `hold`).
-fn keep_on_top(generation: u64) {
-    let Some(&lamplit) = LAMPLIT.get() else { return };
+/// Keeps Lamplit's window on top for launch `generation`, without bringing it forward (see `hold`), unless that launch
+/// has stopped (`current` says): cancelled, or another game started. It looks under the hold's lock, which a cancel
+/// takes after it has stopped the launch, so a cancel can't come between the look and the hold and leave Lamplit on
+/// top for good.
+fn keep_on_top(generation: u64, current: impl FnOnce() -> bool) {
     let mut held = HOLD.lock();
+    if !current() {
+        return;
+    }
     *held = generation;
+    let Some(&lamplit) = LAMPLIT.get() else { return };
     if KEEPER.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -118,7 +124,7 @@ fn give_way(current: bool, held: bool, generation: u64, lamplit: isize, to: isiz
     if behind {
         window::force_foreground(to);
     } else if held {
-        keep_on_top(generation);
+        keep_on_top(generation, || current);
     }
     behind
 }
@@ -163,6 +169,15 @@ pub fn summon(app: &AppHandle) {
 mod tests {
     use super::*;
     use crate::win::window::tests::{destroy, next, window as hidden};
+
+    #[test]
+    fn a_launch_that_has_stopped_doesnt_hold_the_screen() {
+        // Cancelled while its store app's sign-in was checked, which then asks for the screen again.
+        keep_on_top(7, || false);
+        assert_eq!(*HOLD.lock(), 0, "Lamplit would stay above every other window for good");
+        keep_on_top(7, || true);
+        assert!(let_go(Some(7)));
+    }
 
     #[test]
     fn a_launch_that_stopped_while_the_screen_faded_moves_no_window() {
