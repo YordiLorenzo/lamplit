@@ -52,17 +52,27 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Closing the home window (Alt+F4) closes the dock with it. Tauri ends the app only once its last window has gone,
-/// so the hidden dock would keep Lamplit running with no window, holding the single-instance lock: starting Lamplit
-/// again would only look for that window and stop. Lamplit never keeps its window open on a close request.
-pub fn close_with_main<R: Runtime>(app: &tauri::AppHandle<R>, event: &RunEvent) {
-    if let RunEvent::WindowEvent { label, event: WindowEvent::CloseRequested { .. }, .. } = event
-        && label == "main"
+/// A window asked to close (Alt+F4), as the app's run loop hears of it. Returns true when it was the dock's: the
+/// dock folds away as for Circle, and its window stays, since Lamplit keeps its handle for the next hold of PS.
+///
+/// Closing the home window closes the dock with it. Tauri ends the app only once its last window has gone, so the
+/// hidden dock would keep Lamplit running with no window, holding the single-instance lock: starting Lamplit again
+/// would only look for that window and stop. Lamplit never keeps its home window open on a close request.
+pub fn on_close_request<R: Runtime>(app: &tauri::AppHandle<R>, event: &RunEvent) -> bool {
+    let RunEvent::WindowEvent { label, event: WindowEvent::CloseRequested { api, .. }, .. } = event else {
+        return false;
+    };
+    if label == LABEL {
+        api.prevent_close();
+        return true;
+    }
+    if label == "main"
         && let Some(dock) = app.get_webview_window(LABEL)
     {
         DOCK.store(0, Ordering::SeqCst);
         let _ = dock.destroy();
     }
+    false
 }
 
 pub fn destroy(app: &AppHandle) {

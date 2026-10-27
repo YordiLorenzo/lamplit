@@ -158,7 +158,8 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   open dock all the same: Lamplit reads it whatever window is in front.
 - **Folding**, the page plays the fold and Rust hides the window 450 ms later. The window that was in front when the
   dock opened gets the foreground back, or the game's window if that one has gone. When another window takes the
-  foreground, the dock folds and leaves it there.
+  foreground, the dock folds and leaves it there. Alt+F4 on the dock folds it as Circle does: its window refuses to
+  close, since Lamplit keeps its handle for the next hold of PS.
 - **News** (`dock/news.rs`) shows in a strip around the folded pill at the bottom centre, with `WS_EX_NOACTIVATE`
   and `WS_EX_TRANSPARENT`: the game keeps the foreground and its clicks. Only over a running game, with Lamplit not
   in front and no exclusive full screen.

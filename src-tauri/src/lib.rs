@@ -50,7 +50,7 @@ const TITLE: &str = "Lamplit";
 pub use error::Error;
 // For main.rs's test of closing the home window: Tauri's window code needs Common Controls 6, which the app manifest
 // asks for, and only the exe's test binary carries that manifest.
-pub use dock::{LABEL as DOCK_LABEL, close_with_main};
+pub use dock::{LABEL as DOCK_LABEL, on_close_request};
 pub use logging::to_file as log_to_file;
 pub use system::setup::{FLAG as SETUP_FLAG, FOR_FLAG as SETUP_FOR_FLAG, run as setup};
 pub use win::process::attach_parent_console;
@@ -167,7 +167,11 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("Lamplit failed to start")
-        .run(|app, event| dock::close_with_main(app, &event));
+        .run(|app, event| {
+            if dock::on_close_request(app, &event) {
+                dock::fold(app, true);
+            }
+        });
 }
 
 /// Every 10 s: Steam kept in line whenever it runs, and quiet-mode changes that had to wait (for Steam to start, or
