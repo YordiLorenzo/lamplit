@@ -1006,6 +1006,13 @@ export function scenesFor(style, have) {
   );
 }
 
+/**
+ * Whether the game's logo or name drifts over the scene. Not over Gallery and Drift: they show the game's own covers
+ * and hero art, where a logo crossing another game's cover reads as a glitch.
+ * @param {Scene} scene
+ */
+export const showsMark = (scene) => !scene.needs;
+
 /** A scene's whole fragment shader. @param {Scene} scene */
 export const fragmentSource = (scene) => COMMON + (scene.lib ?? '') + scene.source + MAIN;
 
