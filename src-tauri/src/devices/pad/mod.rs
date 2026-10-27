@@ -310,6 +310,7 @@ fn read(mut dev: HidDevice, api: &Mutex<HidApi>, path: &CStr, bluetooth: bool, i
 /// POLL_EVERY while one is connected, and only looking for new ones every LOOK_EVERY otherwise.
 fn poll(app: &AppHandle) {
     let (mut xbox, mut others) = (xbox::Slots::default(), other::Others::default());
+    other::hear_removals();
     let mut look_at = Instant::now();
     loop {
         let now = Instant::now();

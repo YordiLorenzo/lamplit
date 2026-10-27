@@ -16,13 +16,19 @@ use super::{Battery, Connection, Controller, Kind, dualsense, xbox};
 use crate::devices::Charge;
 use crate::dock;
 use crate::launch::window;
+use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::time::Instant;
 use tauri::AppHandle;
+use windows::Foundation::EventHandler;
 use windows::Gaming::Input::{GameControllerButtonLabel, GameControllerSwitchPosition, RawGameController};
 use windows::System::Power::BatteryStatus;
 
 const VALVE: u16 = 0x28DE;
+
+/// The ids of the controllers Windows said went, until the next read lets go of what they held: the next look for
+/// controllers can be two seconds away, and Cross held on the dock's Close game would finish its hold meanwhile.
+static WENT: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// The controllers being read.
 #[derive(Default)]
@@ -42,7 +48,8 @@ struct Pad {
     buttons: Vec<bool>,
     switches: Vec<GameControllerSwitchPosition>,
     axes: Vec<f64>,
-    /// None while Lamplit isn't in front, when Windows sends it nothing: reading starts over when it comes back.
+    /// None while the controller isn't read: Lamplit isn't in front (Windows sends it nothing then), or the reading
+    /// failed. Reading starts over when it is read again.
     navigation: Option<Navigation>,
 }
 
@@ -62,10 +69,10 @@ impl Others {
                 return;
             }
         };
-        self.pads.retain(|pad| {
+        self.pads.retain_mut(|pad| {
             let here = found.iter().any(|(id, _)| *id == pad.id);
             if !here {
-                super::unlist(app, &pad.id);
+                forget(app, pad);
             }
             here
         });
@@ -81,7 +88,7 @@ impl Others {
                 (Some(_), Some(_)) => super::set_battery(app, &id, battery(&raw)),
                 (Some(at), None) => {
                     log::info!("controller: {vendor:04X}:{product:04X} is read through XInput now");
-                    super::unlist(app, &self.pads.swap_remove(at).id);
+                    forget(app, &mut self.pads.swap_remove(at));
                     self.left_out.insert(id);
                 }
                 (None, None) => {
@@ -133,19 +140,14 @@ impl Others {
     /// Reads each controller once while Lamplit is in front: the steps its buttons make by `now`.
     pub fn read(&mut self, now: Instant) -> Vec<(Kind, Action)> {
         let in_front = in_front();
+        let went = std::mem::take(&mut *WENT.lock());
         let mut actions = Vec::new();
         for pad in &mut self.pads {
-            if !in_front {
-                pad.navigation = None;
-                continue;
-            }
-            if pad.raw.GetCurrentReading(&mut pad.buttons, &mut pad.switches, &mut pad.axes).is_err() {
-                continue;
-            }
-            let input = input(&pad.layout, &pad.buttons, pad.switches.first().copied(), &pad.axes);
-            let navigation = pad.navigation.get_or_insert_with(|| Navigation::starting_from(input));
-            let steps = navigation.update(input, now).into_iter().chain(navigation.tick(now));
-            actions.extend(steps.map(|action| (pad.kind, action)));
+            let read = in_front
+                && !went.contains(&pad.id)
+                && pad.raw.GetCurrentReading(&mut pad.buttons, &mut pad.switches, &mut pad.axes).is_ok();
+            let input = read.then(|| input(&pad.layout, &pad.buttons, pad.switches.first().copied(), &pad.axes));
+            actions.extend(steps(&mut pad.navigation, input, now).into_iter().map(|action| (pad.kind, action)));
         }
         actions
     }
@@ -162,15 +164,51 @@ fn in_front() -> bool {
     window::lamplit_in_front() || dock::is_open()
 }
 
+/// The steps a controller's `input` makes by `now`. None when it isn't read: what it held is let go, so Cross held on
+/// the dock's Close game doesn't finish its hold, and reading starts over when it is read again, so a button held
+/// meanwhile isn't a press.
+fn steps(navigation: &mut Option<Navigation>, input: Option<Input>, now: Instant) -> Vec<Action> {
+    let Some(input) = input else {
+        return navigation.take().map(|mut navigation| navigation.let_go()).unwrap_or_default();
+    };
+    let navigation = navigation.get_or_insert_with(|| Navigation::starting_from(input));
+    let mut steps = navigation.update(input, now);
+    steps.extend(navigation.tick(now));
+    steps
+}
+
+/// Takes a controller that is gone, or read another way now, off the list, letting go of the buttons it held.
+fn forget(app: &AppHandle, pad: &mut Pad) {
+    for action in steps(&mut pad.navigation, None, Instant::now()) {
+        super::act(app, pad.kind, action);
+    }
+    super::unlist(app, &pad.id);
+}
+
+/// Hears from Windows when a controller goes, for as long as Lamplit runs.
+pub fn hear_removals() {
+    let went = EventHandler::<RawGameController>::new(|_, raw| {
+        WENT.lock().push(id(raw.ok()?)?);
+        Ok(())
+    });
+    if let Err(e) = RawGameController::RawGameControllerRemoved(&went) {
+        log::warn!("controller: Windows.Gaming.Input won't say when a controller goes: {e}");
+    }
+}
+
 /// Every controller Windows.Gaming.Input knows, by an id that stays the same while it is connected.
 fn connected() -> windows::core::Result<Vec<(String, RawGameController)>> {
     let list = RawGameController::RawGameControllers()?;
     (0..list.Size()?)
         .map(|i| {
             let raw = list.GetAt(i)?;
-            Ok((format!("wgi:{}", raw.NonRoamableId()?), raw))
+            Ok((id(&raw)?, raw))
         })
         .collect()
+}
+
+fn id(raw: &RawGameController) -> windows::core::Result<String> {
+    Ok(format!("wgi:{}", raw.NonRoamableId()?))
 }
 
 /// Controllers read another way, told by their USB ids alone: a DualSense over HID, and Valve's, which are Steam
@@ -321,6 +359,18 @@ mod tests {
 
     fn directinput(buttons: &[bool], hat: Option<GameControllerSwitchPosition>, axes: &[f64]) -> Input {
         input(&Layout::DIRECTINPUT, buttons, hat, axes)
+    }
+
+    #[test]
+    fn a_controller_no_longer_read_lets_go_of_cross() {
+        let (mut navigation, t) = (None, Instant::now());
+        let cross = Input { south: true, ..Input::default() };
+        assert!(steps(&mut navigation, Some(Input::default()), t).is_empty());
+        assert_eq!(steps(&mut navigation, Some(cross), t), vec![Action::Nav("ok")]);
+        // Gone, or its reading failed: Cross is let go, and the dock's hold with it.
+        assert_eq!(steps(&mut navigation, None, t), vec![Action::Release("ok-up")]);
+        // Read again with Cross still down: reading starts over, so that is no new press.
+        assert!(steps(&mut navigation, Some(cross), t).is_empty());
     }
 
     #[test]
