@@ -99,7 +99,7 @@ function shape(mode) {
   if (mode === 'gone') return squeeze();
   const face = mode === 'open' ? els.dock : els.news;
   const [width, height] = [`${face.offsetWidth}px`, `${face.offsetHeight}px`];
-  // What the island shows now: a dock that has just opened is still the pill for two frames (open).
+  // What the island shows now: a dock that has just opened is still the pill until its frames come on time (open).
   const from = els.island.dataset.mode;
   const moves = mode !== from || width !== els.island.style.width || height !== els.island.style.height;
   if (moves) dropGlass();
@@ -224,8 +224,41 @@ let newsTimer = 0;
 let gameTimer = 0;
 /** Counts the openings, so one that a fold came before doesn't open. */
 let openings = 0;
-/** The dock is open and shows so: not in its first two frames, which still show the pill (open). */
+/** The dock is open and shows so: not in its first frames, while it waits to spring open (open). */
 const shown = () => state.mode === 'open' && els.island.dataset.mode === 'open';
+/** The longest the spring waits for the frames to come on time after the window shows (steady). */
+const STEADY_MS = 100;
+
+/**
+ * Calls `then` once two frames in a row have come on time, or STEADY_MS in at the latest. On time is within half a
+ * frame of the shortest gap between frames so far, both by the time each frame was due and by when it ran: Chromium
+ * may hand a frame that ran late the time it was due.
+ * @param {() => void} then
+ */
+function steady(then) {
+  /** The gaps between the frames by when they were due. @type {number[]} */
+  const due = [];
+  /** Each gap by when the frame was due or by when it ran, the longer. @type {number[]} */
+  const gaps = [];
+  let first = 0;
+  let last = 0;
+  let lastRan = 0;
+  /** @param {number} t */
+  const frame = (t) => {
+    const now = performance.now();
+    if (last) {
+      due.push(t - last);
+      gaps.push(Math.max(t - last, now - lastRan));
+    }
+    first ||= now;
+    last = t;
+    lastRan = now;
+    const onTime = (/** @type {number} */ gap) => gap <= Math.min(...due) * 1.5;
+    if ((gaps.length >= 2 && gaps.slice(-2).every(onTime)) || now - first >= STEADY_MS) then();
+    else requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
 
 function open() {
   state.leaving = false;
@@ -242,16 +275,16 @@ function open() {
   // Open at once for the controller, the keyboard and the answers drawn meanwhile.
   state.mode = 'open';
   render();
-  // The window has just come up over the game, which Windows composes anew for a frame or two: the spring starts
-  // after them, while nothing on screen moves yet.
+  // The island takes its size while it shows nothing yet, so the spring has only its clip to move.
+  if (els.island.dataset.mode === 'gone') unfold(els.dock);
+  // The window has just come up over the game, and its first frames come late while Windows composes the screen anew,
+  // for one frame or a few: the spring starts once they come on time.
   const mine = ++openings;
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() => {
-      if (mine !== openings) return;
-      shape('open');
-      meter('dock: open', springMs + 130);
-    })
-  );
+  steady(() => {
+    if (mine !== openings) return;
+    shape('open');
+    meter('dock: open', springMs + 130);
+  });
   sfx.open();
   refresh();
   clearInterval(gameTimer);

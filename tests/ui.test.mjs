@@ -2527,6 +2527,67 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await close(page);
 }
 
+// 39. Opening Settings > Screensaver gets the screensaver ready in idle time, a row before Show it now, so the show
+// doesn't make its renderer on the press; a show and a warm-up close together make one renderer between them; and
+// nothing is made while a game runs. The delay is Off here, so the warm-up after two quiet seconds stays out of it.
+{
+  const prefs = { ...ipc('prefs'), screensaver_minutes: 0 };
+  /** A page whose WebGL renderers are counted. */
+  const counted = async () => {
+    const page = await open({ games: [game(1), game(2)], init: `window.__settings = ${JSON.stringify({ prefs_state: prefs })}` });
+    await page.evaluate(() => {
+      window.__renderers = 0;
+      const get = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+        if (type === 'webgl2') window.__renderers++;
+        return get.call(this, type, ...rest);
+      };
+    });
+    return page;
+  };
+  const renderers = (page) => page.evaluate(() => window.__renderers);
+  /** Opens Settings > Screensaver from the home screen or the list of sections. */
+  const section = async (page) => {
+    const focus = () => page.evaluate(() => document.querySelector('#settingsList .row.focus')?.textContent ?? '');
+    if (!(await page.evaluate(() => document.getElementById('settings').classList.contains('on')))) await page.keyboard.press('c');
+    for (let i = 0; i < 12 && !(await focus()).startsWith('Screensaver'); i++) await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+  };
+
+  let page = await counted();
+  await running(page, 'pc:1');
+  await section(page);
+  await page.waitForTimeout(500);
+  check('Settings > Screensaver makes nothing while a game runs', (await renderers(page)) === 0, `${await renderers(page)} renderers`);
+  await emit(page, 'play', play('ended', 'pc:1'));
+  await page.keyboard.press('Escape');
+  await section(page);
+  await page.waitForTimeout(500);
+  const ahead = { renderers: await renderers(page), shown: (await saverView(page)).on };
+  check('Settings > Screensaver makes the renderer in idle time, before Show it now', ahead.renderers === 1 && !ahead.shown, JSON.stringify(ahead));
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await saverOn(page);
+  check('Show it now then starts on that renderer', (await renderers(page)) === 1, `${await renderers(page)} renderers`);
+  await close(page);
+
+  // Show it now before the warm-up has had its idle time: the idle callbacks wait until the show is on.
+  page = await counted();
+  await page.evaluate(() => {
+    const waiting = [];
+    window.requestIdleCallback = (callback) => waiting.push(callback);
+    window.__idle = () => waiting.splice(0).forEach((callback) => callback());
+  });
+  await section(page);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await saverOn(page);
+  await page.evaluate(() => window.__idle());
+  await page.waitForTimeout(300);
+  check('a show before the warm-up has run, and the warm-up after it, make one renderer', (await renderers(page)) === 1, `${await renderers(page)} renderers`);
+  await close(page);
+}
+
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));
 check('every command Rust registers is called by a test', untested.length === 0, untested.join(', '));

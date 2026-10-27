@@ -171,8 +171,8 @@ How it works, and its limits:
 - **Made from your games.** Each scene takes its colours from the art of one of your games, favourites and the most
   recently played first, and that game's logo or name drifts faintly through it. Gallery shows your covers on a
   glossy floor, and Drift turns one game's hero art into another's through thousands of points of light. Night scenes
-  keep a deep blue dark, and no scene lets a yellow fade to olive. Lamplit gets the art ready in the background while
-  it sits unused for a moment, so the screensaver comes and goes without a stutter.
+  keep a deep blue dark, and no scene lets a yellow fade to olive. Lamplit gets the screensaver ready in the background
+  while it sits unused for a moment, or as Settings > Screensaver opens, so it comes and goes without a stutter.
 - **Easy on the TV.** Nothing on it stands still, its average brightness is held down, and after an hour it fades to
   black. It draws at part of the screen's resolution and at most 30 frames a second, and stops the moment a game
   starts. Without WebGL2 it shows a slowly moving gradient instead.

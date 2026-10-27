@@ -179,9 +179,10 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   before. A second hold folds the dock. Over exclusive full screen, Windows shows no other window, and one that takes
   the foreground makes the game leave full screen.
 - **Open**, the window covers the game's screen, transparent but for the dock, and takes the foreground, as the home
-  screen does. The island takes its size at once, clipped to the pill at its bottom centre, and the clip springs open:
-  the folding below in reverse, with nothing laid out per frame. The spring starts two frames after the window shows:
-  Windows composes the game anew for a frame or two when a window comes up over it. When a game starts the hidden page gets ready (it
+  screen does. The island takes its size at once, while it still shows nothing, clipped to the pill at its bottom
+  centre. Once two frames in a row have come on time (or 100 ms in), the clip springs open: the folding below in
+  reverse, with nothing laid out per frame. The window's first frames over the game come late while Windows composes
+  the screen anew, and the spring waits them out. When a game starts the hidden page gets ready (it
   reads what it shows, draws and decodes the art, and works out the open layout once), and the real glass is made with
   the window, so the first opening has nothing to do but open.
   A window that left the game the foreground (`WS_EX_NOACTIVATE`) would leave the game reading every press: XInput,
