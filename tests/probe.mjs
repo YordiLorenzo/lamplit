@@ -97,7 +97,8 @@ export async function probeTests({ open, close, check, games }) {
     await page.keyboard.press('ArrowRight');
     await until(page, () => window.__logs.some((l) => l.startsWith('info probe: dock dock-step ')));
     const lines = (await probeLines(page)).filter((l) => LINE.test(l));
-    check('a measurement build: the dock logs its opening and its steps', lines.map((l) => l.match(LINE)[2]).join() === 'dock-open,dock-step', JSON.stringify(lines));
+    // The wait while the window shows the pill (dock-show), then the opening from when the island starts to move.
+    check('a measurement build: the dock logs its wait, its opening and its steps', lines.map((l) => l.match(LINE)[2]).join() === 'dock-show,dock-open,dock-step', JSON.stringify(lines));
     await close(page);
   }
 }
