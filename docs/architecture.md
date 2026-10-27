@@ -137,7 +137,9 @@ controller is read into the same buttons, by position (south is Cross or A), so 
      app's, also one that opens maximised, or a small window of the game's) gets a `window` line on the starting
      screen, which `launch_show` brings forward; only the player gives such a window the screen. After the game has
      run 12 seconds with only small windows of its own, the front one gets the screen.
-   - For a game added by hand, the game's processes are the exe Lamplit started and every process that came from it.
+   - For a game added by hand, the game's processes are the exe Lamplit started and every process that came from it,
+     wherever it runs from, leaving out Windows' own helpers (a shell, a console host) on the way, and the player's
+     own programs it may open, with what they start: a browser, a store or chat app (`NOT_THE_GAME` in `watch.rs`).
      Windows tells the started process's id and start time at launch, so a launcher that starts the game and exits
      before the first poll still leads to it.
    - While it runs: the time between two polls that both see it counts as play time, at most 5 seconds per poll (a

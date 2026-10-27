@@ -15,6 +15,7 @@ use crate::win::window;
 use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::ops::ControlFlow;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
@@ -37,8 +38,9 @@ pub struct Watch {
     dirs: Vec<String>,
     names: Vec<String>,
     /// A game the player added by hand: the exe Lamplit starts, and the processes seen coming from it. Its folder can
-    /// hold other programs too (Downloads, say), so the game is that exe and what it started, not everything in the
-    /// folder. Shared by the copies of a watch: the watcher's polls and the dock's close requests add to it.
+    /// hold other programs too (Downloads, say), so the game is that exe and what it started, wherever that runs from
+    /// (a launcher in `Launcher\` starts the game in `bin\`), and not everything in the folder. Shared by the copies of
+    /// a watch: the watcher's polls and the dock's close requests add to it.
     launched: Option<(String, Arc<Mutex<Lineage>>)>,
     /// When this launch opened the game. What the player asked of the game before then was about an earlier session.
     pub opened: Instant,
@@ -57,7 +59,7 @@ impl Watch {
     /// The game's processes among `procs`.
     pub fn pids(&self, procs: &[Proc]) -> HashSet<u32> {
         match &self.launched {
-            Some(launched) => Self::lineage(launched, procs).intersection(&self.select(procs, true)).copied().collect(),
+            Some(launched) => Self::lineage(launched, procs),
             None => self.select(procs, false),
         }
     }
@@ -65,10 +67,9 @@ impl Watch {
     /// The processes among `procs` that are certainly the game's, for closing it: one whose path Windows tells counts
     /// only when it runs from the game's folders. By its exe name alone, another program could be closed in its place.
     pub fn own_pids(&self, procs: &[Proc]) -> HashSet<u32> {
-        let own = self.select(procs, true);
         match &self.launched {
-            Some(launched) => Self::lineage(launched, procs).intersection(&own).copied().collect(),
-            None => own,
+            Some(launched) => Self::lineage(launched, procs),
+            None => self.select(procs, true),
         }
     }
 
@@ -89,9 +90,17 @@ impl Watch {
         }
     }
 
-    /// For a game added by hand: its exe, and what that started, running now.
+    /// For a game added by hand: its exe, and what that started, running now. Not the helpers of Windows' own a game
+    /// starts on the way (a shell, a console host), nor Xbox's GameLaunchHelper (see `select`), which aren't the game
+    /// and mustn't be closed with it; what they start still counts.
     fn lineage((exe, lineage): &(String, Arc<Mutex<Lineage>>), procs: &[Proc]) -> HashSet<u32> {
-        lineage.lock().update(exe, procs)
+        let running = lineage.lock().update(exe, procs);
+        let windows = std::env::var_os("SystemRoot").map(|root| format!("{}\\", folder_key(Path::new(&root))));
+        let helper = |p: &Proc| {
+            p.name.eq_ignore_ascii_case("gamelaunchhelper.exe")
+                || p.exe.zip(windows.as_ref()).is_some_and(|(exe, windows)| folder_key(exe).starts_with(windows))
+        };
+        procs.iter().filter(|p| running.contains(&p.pid) && !helper(p)).map(|p| p.pid).collect()
     }
 
     /// `certain`: an exe name counts only for a process whose path Windows doesn't tell.
@@ -121,20 +130,30 @@ impl Watch {
     }
 }
 
+/// Programs a game may start that are the player's own, not the game: a browser (a store page, a sign-in, patch notes),
+/// and the store and chat apps. A game added by hand is what came from its exe (`Lineage`); these, and what they start
+/// in turn, stay out of that, so they neither keep the game's session going and count as play time, nor close with it.
+const NOT_THE_GAME: &[&str] = &[
+    "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "opera_gx.exe", "brave.exe", "vivaldi.exe", "iexplore.exe",
+    "arc.exe", "steam.exe", "steamwebhelper.exe", "epicgameslauncher.exe", "eadesktop.exe", "upc.exe",
+    "ubisoftconnect.exe", "battle.net.exe", "battle.net launcher.exe", "discord.exe", "overwolf.exe",
+];
+
 /// The processes that came from a game's exe, by id and start time, kept from poll to poll: a launcher that starts the
 /// game and exits leaves the game its own. The start time tells a process from a later one that got the same id.
 #[derive(Default)]
 pub struct Lineage(HashSet<(u32, u64)>);
 
 impl Lineage {
-    /// Adds the processes running `exe` (a `folder_key`) and every process one of the game's started, and returns
-    /// those that run now.
+    /// Adds the processes running `exe` (a `folder_key`) and every process one of the game's started, other than the
+    /// programs in NOT_THE_GAME, and returns those that run now.
     fn update(&mut self, exe: &str, procs: &[Proc]) -> HashSet<u32> {
         self.0.extend(procs.iter().filter(|p| p.exe.is_some_and(|e| folder_key(e) == exe)).map(|p| (p.pid, p.started)));
+        let not_the_game = |p: &Proc| NOT_THE_GAME.iter().any(|n| p.name.eq_ignore_ascii_case(n));
         loop {
             let found: Vec<(u32, u64)> = procs
                 .iter()
-                .filter(|p| !self.0.contains(&(p.pid, p.started)))
+                .filter(|p| !self.0.contains(&(p.pid, p.started)) && !not_the_game(p))
                 .filter(|p| p.parent.is_some_and(|parent| self.started_by_game(parent, p.started, procs)))
                 .map(|p| (p.pid, p.started))
                 .collect();
@@ -515,6 +534,43 @@ mod tests {
         // Another program's window that was open already isn't looked at; a new one is.
         assert!(!looked_at(8, &before, false));
         assert!(looked_at(9, &before, false));
+    }
+
+    #[test]
+    fn the_browser_a_game_added_by_hand_opens_isnt_the_game() {
+        let watch = racer(r"D:\Downloads\Racer.exe", r"D:\Downloads");
+        let chrome = r"C:\Program Files\Google\Chrome\Application\chrome.exe";
+        let browser = [
+            proc(2, chrome, 102, Some(1)),
+            // What the browser starts: its tabs, and a crash reporter by another name.
+            proc(3, chrome, 103, Some(2)),
+            proc(4, r"C:\Program Files\Google\Chrome\Application\crashpad_handler.exe", 103, Some(2)),
+            // Steam, which a link opened, and a game Steam starts.
+            proc(5, r"C:\Program Files (x86)\Steam\steam.exe", 104, Some(1)),
+            proc(6, r"D:\SteamLibrary\steamapps\common\Other\other.exe", 105, Some(5)),
+        ];
+        let game = [
+            proc(1, r"D:\Downloads\Racer.exe", 100, Some(900)),
+            proc(7, r"D:\Downloads\Racer\RacerGame.exe", 101, Some(1)),
+        ];
+        let running: Vec<Proc> = game.iter().chain(&browser).copied().collect();
+        assert_eq!(watch.pids(&running), HashSet::from([1, 7]));
+        assert_eq!(watch.own_pids(&running), HashSet::from([1, 7]), "closing the game leaves the browser open");
+        // The game has closed, the browser is still open: the session is over.
+        assert!(watch.pids(&browser).is_empty());
+    }
+
+    #[test]
+    fn a_launcher_added_by_hand_leads_to_the_game_in_another_folder() {
+        // Its folder is Launcher, and the game it starts runs from a folder beside it.
+        let watch = racer(r"D:\Foo\Launcher\launcher.exe", r"D:\Foo\Launcher");
+        let start =
+            [proc(1, r"D:\Foo\Launcher\launcher.exe", 100, Some(900)), proc(2, r"D:\Foo\bin\Foo.exe", 101, Some(1))];
+        assert_eq!(watch.pids(&start), HashSet::from([1, 2]));
+        // The launcher has exited: the game runs on, and is the one to close.
+        let later = [start[1]];
+        assert_eq!(watch.pids(&later), HashSet::from([2]));
+        assert_eq!(watch.own_pids(&later), HashSet::from([2]));
     }
 
     #[test]
