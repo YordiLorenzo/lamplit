@@ -1,9 +1,10 @@
-// When Lamplit hands the screen over to a game it has started, judged from the windows that opened since Play. The
-// game is up once a window covers the screen and draws (answers Windows) for a moment: a small splash, a store app's
-// "launching" window or the desktop in between don't count. A window that stays without covering the screen may need
-// the player (a launcher with a Play button, a sign-in, a licence question), so the starting screen points at it.
-// Once the game has run a while with only such a window of its own, that window gets the screen: a launcher, or a game
-// that runs in a window.
+// When Lamplit hands the screen over to a game it has started, judged from the windows that opened since Play and the
+// game's own. The game is up once a window of the game's processes covers the screen and draws (answers Windows) for
+// a moment: a small splash, a store app's window (also one that opens maximised) or the desktop in between don't
+// count. Any other window that stays may need the player (a launcher with a Play button, a sign-in, a licence
+// question), so the starting screen points at it, and the player decides. Once the game has run a while with only
+// windows of its own that don't cover the screen, the front one gets the screen: a launcher, or a game that runs in a
+// window.
 
 use crate::win::window::Rect;
 use std::collections::{HashMap, HashSet};
@@ -12,36 +13,34 @@ use std::time::{Duration, Instant};
 /// How long a window of the game's must cover the screen and answer before it gets the screen: long enough to tell a
 /// window that is up from one that blinks while the game sets its screen mode.
 const UP_FOR: Duration = Duration::from_millis(500);
-/// The same for a window of a process Lamplit doesn't know as the game's, which must also be in front: a game started
-/// by a launcher outside its folder, say.
-const STRANGER_UP_FOR: Duration = Duration::from_secs(2);
-/// A window that stays this long without covering the screen may need the player.
+/// A window that stays this long, other than the game's over the screen, may need the player.
 const NEEDS_YOU_AFTER: Duration = Duration::from_secs(5);
 /// The game has run this long with only windows of its own that don't cover the screen: the front one gets it.
 const SETTLE: Duration = Duration::from_secs(12);
 /// A window covering this much of the screen covers it: a full-screen or borderless game's does, a splash doesn't.
 const COVERS: f64 = 0.9;
 
-/// A window that opened since Play, as one look at it found it.
+/// A window, as one look at it found it.
 #[derive(Clone, Copy, Debug)]
 pub struct Seen {
     pub id: isize,
-    /// Its process runs from the game's folders.
+    /// One of the processes the watcher counts as the game's runs it.
     pub game: bool,
+    /// Its process runs from the game's folders: the game's, or a helper of the game's such as Xbox's licence
+    /// question.
+    pub own: bool,
     pub covers: bool,
     /// It answered Windows, so its thread reads its messages and draws.
     pub answers: bool,
-    /// It has Windows' foreground.
-    pub front: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Next {
     Wait,
-    /// Point the player at this window: it may need them. `game`: it is the game's.
+    /// Point the player at this window: it may need them. `own`: it is the game's or a helper's of the game's.
     Hint {
         id: isize,
-        game: bool,
+        own: bool,
     },
     /// The screen goes to this window.
     HandOver(isize),
@@ -57,23 +56,17 @@ pub struct Handover {
 }
 
 impl Handover {
-    /// One look at the windows that opened since Play, front first. `game_runs`: the game's processes run.
+    /// One look at the windows, front first. `game_runs`: the game's processes run.
     pub fn poll(&mut self, windows: &[Seen], game_runs: bool, now: Instant) -> Next {
+        // The game's window over the screen, which gets it once it draws.
+        let over = |w: &Seen| w.game && w.covers;
+        let up = |w: &Seen| over(w) && w.answers;
         self.first_seen.retain(|id, _| windows.iter().any(|w| w.id == *id));
-        self.covering_since.retain(|id, _| windows.iter().any(|w| w.id == *id && w.covers && w.answers));
+        self.covering_since.retain(|id, _| windows.iter().any(|w| w.id == *id && up(w)));
         self.running_since = if game_runs { Some(self.running_since.unwrap_or(now)) } else { None };
         for w in windows {
             self.first_seen.entry(w.id).or_insert(now);
-            if !(w.covers && w.answers) {
-                continue;
-            }
-            let since = *self.covering_since.entry(w.id).or_insert(now);
-            let wait = match (w.game || game_runs, w.front) {
-                (true, _) => UP_FOR,
-                (false, true) => STRANGER_UP_FOR,
-                (false, false) => continue,
-            };
-            if now - since >= wait {
+            if up(w) && now - *self.covering_since.entry(w.id).or_insert(now) >= UP_FOR {
                 return Next::HandOver(w.id);
             }
         }
@@ -84,10 +77,10 @@ impl Handover {
         }
         let waiting = windows
             .iter()
-            .find(|w| !w.covers && !self.hinted.contains(&w.id) && now - self.first_seen[&w.id] >= NEEDS_YOU_AFTER);
+            .find(|w| !over(w) && !self.hinted.contains(&w.id) && now - self.first_seen[&w.id] >= NEEDS_YOU_AFTER);
         if let Some(w) = waiting {
             self.hinted.insert(w.id);
-            return Next::Hint { id: w.id, game: w.game };
+            return Next::Hint { id: w.id, own: w.own };
         }
         Next::Wait
     }
@@ -114,7 +107,7 @@ mod tests {
     const STEAM: isize = 3;
 
     fn seen(id: isize, game: bool, covers: bool) -> Seen {
-        Seen { id, game, covers, answers: true, front: false }
+        Seen { id, game, own: game, covers, answers: true }
     }
 
     /// Looks every 250 ms from `from` to `to` seconds with the windows `windows` gives for each moment, as the watcher
@@ -171,7 +164,7 @@ mod tests {
         // A launcher with a Play button, or a licence question, of the game's own.
         let (t0, mut h) = (Instant::now(), Handover::default());
         let found = run(&mut h, t0, (0.0, 14.0), |t| (vec![seen(SPLASH, true, false)], t >= 1.0));
-        assert_eq!(found, [(5.0, Next::Hint { id: SPLASH, game: true }), (13.0, Next::HandOver(SPLASH))]);
+        assert_eq!(found, [(5.0, Next::Hint { id: SPLASH, own: true }), (13.0, Next::HandOver(SPLASH))]);
     }
 
     #[test]
@@ -179,21 +172,23 @@ mod tests {
         // A store app's window that stays: Lamplit points at it, but it gets the screen only when the player asks.
         let (t0, mut h) = (Instant::now(), Handover::default());
         let found = run(&mut h, t0, (0.0, 30.0), |_| (vec![seen(STEAM, false, false)], false));
-        assert_eq!(found, [(5.0, Next::Hint { id: STEAM, game: false })]);
+        assert_eq!(found, [(5.0, Next::Hint { id: STEAM, own: false })]);
     }
 
     #[test]
-    fn another_programs_window_over_the_screen_must_be_in_front() {
+    fn a_store_app_opening_over_the_screen_is_pointed_at_not_handed_the_screen() {
+        // The store app opens maximised while the game shows a small splash; then the game covers the screen.
         let (t0, mut h) = (Instant::now(), Handover::default());
-        let behind = run(&mut h, t0, (0.0, 4.0), |_| (vec![seen(STEAM, false, true)], false));
-        assert!(behind.is_empty(), "{behind:?}");
-        let (t0, mut h) = (Instant::now(), Handover::default());
-        let found = run(&mut h, t0, (0.0, 4.0), |_| (vec![Seen { front: true, ..seen(STEAM, false, true) }], false));
-        assert_eq!(found, [(2.0, Next::HandOver(STEAM))]);
-        // Once the game runs, a window over the screen from any process is taken for its window.
-        let (t0, mut h) = (Instant::now(), Handover::default());
-        let found = run(&mut h, t0, (0.0, 4.0), |_| (vec![seen(STEAM, false, true)], true));
-        assert_eq!(found, [(0.5, Next::HandOver(STEAM))]);
+        let found = run(&mut h, t0, (0.0, 10.0), |t| {
+            let mut windows = vec![seen(STEAM, false, true)];
+            if t < 2.5 {
+                windows.push(seen(SPLASH, true, false));
+            } else if t >= 6.0 {
+                windows.insert(0, seen(GAME, true, true));
+            }
+            (windows, true)
+        });
+        assert_eq!(found, [(5.0, Next::Hint { id: STEAM, own: false }), (6.5, Next::HandOver(GAME))]);
     }
 
     #[test]

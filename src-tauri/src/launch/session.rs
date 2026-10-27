@@ -81,6 +81,19 @@ impl Tracker {
         !self.started
     }
 
+    /// The game's window got the screen, which can come before ANNOUNCE_AFTER: the game counts as started from now,
+    /// so its end is told like any other. True when it hadn't started yet.
+    pub fn announce(&mut self, now: Instant) -> bool {
+        if self.started {
+            return false;
+        }
+        self.started = true;
+        self.ever_started = true;
+        self.first_seen.get_or_insert(now);
+        self.last_seen = now;
+        true
+    }
+
     pub fn poll(&mut self, running: bool, now: Instant) -> Option<Step> {
         if running {
             self.last_seen = now;
@@ -183,6 +196,29 @@ mod tests {
             vec![(3, Step::Started), (9, Step::Restarting), (47, Step::Started), (109, Step::Ended)]
         );
         assert!(!tr.waiting());
+    }
+
+    #[test]
+    fn a_game_whose_window_got_the_screen_early_has_its_end_told() {
+        // Its window covered the screen half a second after it started, and it closed a second later.
+        let t0 = Instant::now();
+        let mut tr = Tracker::new(t0);
+        let at = |s: f64| t0 + Duration::from_secs_f64(s);
+        assert_eq!(tr.poll(true, at(1.0)), None);
+        assert!(tr.announce(at(1.5)));
+        let mut steps = Vec::new();
+        for t in 2..12 {
+            if let Some(s) = tr.poll(t < 2, at(f64::from(t))) {
+                steps.push((t, s));
+            }
+        }
+        assert_eq!(steps, vec![(7, Step::Restarting)]);
+        // The same after a longer run: it has ended.
+        let mut tr = Tracker::new(t0);
+        assert!(tr.announce(at(0.5)));
+        assert_eq!(tr.poll(true, at(30.0)), None);
+        assert!(!tr.announce(at(31.0)), "a game that has started is announced once");
+        assert_eq!(tr.poll(false, at(36.0)), Some(Step::Ended));
     }
 
     #[test]

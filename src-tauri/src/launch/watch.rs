@@ -72,6 +72,23 @@ impl Watch {
         }
     }
 
+    /// The watch of a game Lamplit has just started: `started` is the process that started, when Windows told.
+    fn launched(g: &Game, started: Option<(u32, u64)>) -> Self {
+        let watch = Self::of(g);
+        if let Some((pid, at)) = started {
+            watch.seed(pid, at);
+        }
+        watch
+    }
+
+    /// The process Lamplit started for a game added by hand, by id and start time: it may start the game proper and end
+    /// before the watcher first looks, which then has nothing else to tell the game's processes by.
+    fn seed(&self, pid: u32, started: u64) {
+        if let Some((_, lineage)) = &self.launched {
+            lineage.lock().0.insert((pid, started));
+        }
+    }
+
     /// For a game added by hand: its exe, and what that started, running now.
     fn lineage((exe, lineage): &(String, Arc<Mutex<Lineage>>), procs: &[Proc]) -> HashSet<u32> {
         lineage.lock().update(exe, procs)
@@ -140,9 +157,9 @@ impl Lineage {
 
 /// Watches a launched game until it closes. Runs on the launch's own thread, which keeps the PC awake while
 /// Lamplit waits for the game (or for Steam to update it), and lets it sleep while the game runs. `before`: the windows
-/// open when the player pressed Play, which aren't the game's.
-pub fn watch_game(app: &AppHandle, generation: u64, game: &Game, before: &HashSet<isize>) {
-    let (id, name, watch) = (game.id.as_str(), game.name.as_str(), Watch::of(game));
+/// open when the player pressed Play. `started`: the process Lamplit started, when Windows told (a game's exe).
+pub fn watch_game(app: &AppHandle, generation: u64, game: &Game, before: &HashSet<isize>, started: Option<(u32, u64)>) {
+    let (id, name, watch) = (game.id.as_str(), game.name.as_str(), Watch::launched(game, started));
     let launcher = app.state::<Launcher>();
     // `start` took the wake lock for the launch.
     let mut awake = true;
@@ -209,20 +226,21 @@ pub fn watch_game(app: &AppHandle, generation: u64, game: &Game, before: &HashSe
         let list = procs.list();
         let pids = watch.pids(&list);
         save_play(!pids.is_empty());
-        if !handed && launcher.is_current(generation) && looking.look(&list, &watch, !pids.is_empty()) {
+        if !handed && launcher.is_current(generation) && looking.look(&list, &pids, &watch) {
             stay_awake(false);
             handed = true;
+            // Its window may get the screen before the tracker counts the game as started. From now on it has, so the
+            // page, which now shows it running, hears of its end too.
+            if tracker.announce(Instant::now()) {
+                running(app, id, &pids, &watch);
+            }
         }
         let Some(next) = tracker.poll(!pids.is_empty(), Instant::now()) else { continue };
         // Closed from the dock soon after it started: the game has ended, it isn't a launcher handing over.
         let next =
             if next == Step::Restarting && crate::dock::closed_from_dock(id, opened) { Step::Ended } else { next };
         match next {
-            Step::Started => {
-                log::info!("{name} is running (pids {pids:?})");
-                library::record_start(app, id);
-                launcher.set_running(id, watch.clone());
-            }
+            Step::Started => running(app, id, &pids, &watch),
             // Another game was started meanwhile: this one just closed, don't wait for it over that launch.
             Step::Restarting if !launcher.is_current(generation) => {
                 log::info!("{name} closed; another game is being started");
@@ -253,6 +271,13 @@ pub fn watch_game(app: &AppHandle, generation: u64, game: &Game, before: &HashSe
             }
         }
     }
+}
+
+/// The game runs: Lamplit records when it was played, and knows it as the running game.
+fn running(app: &AppHandle, id: &str, pids: &HashSet<u32>, watch: &Watch) {
+    log::info!("{id} is running (pids {pids:?})");
+    library::record_start(app, id);
+    app.state::<Launcher>().set_running(id, watch.clone());
 }
 
 /// The game has closed: the page hears of it, with the play time it saved, and Lamplit comes forward from behind it.
@@ -290,9 +315,9 @@ struct Looking<'a> {
 impl Looking<'_> {
     /// One look at the windows: true once the game's window has got the screen. A window that may need the player
     /// gets a line on the starting screen, which offers to show it.
-    fn look(&mut self, procs: &[Proc], watch: &Watch, game_runs: bool) -> bool {
+    fn look(&mut self, procs: &[Proc], pids: &HashSet<u32>, watch: &Watch) -> bool {
         let (app, id, name) = (self.app, self.id, self.name);
-        match self.handover.poll(&new_windows(self.before, procs, watch), game_runs, Instant::now()) {
+        match self.handover.poll(&seen_windows(self.before, procs, pids, watch), !pids.is_empty(), Instant::now()) {
             Next::HandOver(to) => {
                 log::info!("{name}: its window is up; it gets the screen");
                 // The starting screen fades to black first, so nothing shows between it and the game.
@@ -302,7 +327,7 @@ impl Looking<'_> {
                 app.state::<Launcher>().started(self.generation);
                 true
             }
-            Next::Hint { id: window, game: own } => {
+            Next::Hint { id: window, own } => {
                 let whose = if own { "the game's" } else { "another program's" };
                 log::info!("{name}: a window opened that may need the player ({whose})");
                 *app.state::<Launcher>().waiting.lock() = Some(window);
@@ -328,25 +353,32 @@ pub fn open_windows() -> HashSet<isize> {
     open
 }
 
-/// The windows that opened since Play (not in `before`), front first, as the handover judges them: visible and drawn
-/// by Windows, big enough to see, and not Lamplit's own.
-fn new_windows(before: &HashSet<isize>, procs: &[Proc], watch: &Watch) -> Vec<Seen> {
-    let (screen, front) = (lamplit_screen(), window::foreground());
+/// Whether the handover looks at a window: one that opened since Play (not in `before`), or one of the game's, which
+/// may have been open before: a game that runs already, which the launch only brings back to the front.
+fn looked_at(id: isize, before: &HashSet<isize>, game: bool) -> bool {
+    game || !before.contains(&id)
+}
+
+/// The windows the handover judges, front first (see `looked_at`): visible and drawn by Windows, big enough to see,
+/// and not Lamplit's own. `pids`: the game's processes.
+fn seen_windows(before: &HashSet<isize>, procs: &[Proc], pids: &HashSet<u32>, watch: &Watch) -> Vec<Seen> {
+    let screen = lamplit_screen();
     let mut seen = Vec::new();
     window::for_each_window(|w| {
-        let id = w.0 as isize;
+        let (id, pid) = (w.0 as isize, window::process_id(w));
+        let game = pids.contains(&pid);
         let rect = window::rect(w).filter(|r| r.right - r.left >= SMALLEST && r.bottom - r.top >= SMALLEST);
-        if let Some(rect) =
-            rect.filter(|_| !before.contains(&id) && window::is_visible(w) && !window::is_cloaked(w) && !is_lamplits(w))
-        {
-            let pid = window::process_id(w);
+        if let Some(rect) = rect.filter(|_| {
+            looked_at(id, before, game) && window::is_visible(w) && !window::is_cloaked(w) && !is_lamplits(w)
+        }) {
             let covers = screen.is_some_and(|screen| handover::covers(rect, screen));
             seen.push(Seen {
                 id,
-                game: procs.iter().any(|p| p.pid == pid && watch.runs_from(p)),
+                game,
+                own: game || procs.iter().any(|p| p.pid == pid && watch.runs_from(p)),
                 covers,
-                answers: covers && window::responds(w, ANSWER_WITHIN),
-                front: w == front,
+                // Only the game's window gets the screen, so only its window is asked.
+                answers: game && covers && window::responds(w, ANSWER_WITHIN),
             });
         }
         ControlFlow::Continue(())
@@ -462,6 +494,27 @@ mod tests {
         // The installer neither keeps the game running nor gets closed with it.
         assert_eq!(watch.pids(&procs), HashSet::from([1, 2, 4]));
         assert_eq!(watch.own_pids(&procs), HashSet::from([1, 2, 4]));
+    }
+
+    #[test]
+    fn a_launcher_that_ends_before_the_first_look_still_leads_to_the_game() {
+        let watch = racer(r"D:\Old Games\Racer\Launcher.exe", r"D:\Old Games\Racer");
+        // The launcher started bin\Racer.exe and ended before the watcher first looked.
+        let game = [proc(2, r"D:\Old Games\Racer\bin\Racer.exe", 101, Some(1))];
+        assert!(watch.pids(&game).is_empty(), "nothing else leads to it");
+        // Windows told the launcher's id and start time when Lamplit started it.
+        watch.seed(1, 100);
+        assert_eq!(watch.pids(&game), HashSet::from([2]));
+    }
+
+    #[test]
+    fn the_handover_looks_at_the_games_window_also_when_it_was_open_before() {
+        let before = HashSet::from([7, 8]);
+        // The game ran already, and the launch brought its window back: it was open at Play.
+        assert!(looked_at(7, &before, true));
+        // Another program's window that was open already isn't looked at; a new one is.
+        assert!(!looked_at(8, &before, false));
+        assert!(looked_at(9, &before, false));
     }
 
     #[test]

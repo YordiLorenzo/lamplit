@@ -7,9 +7,11 @@ use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::Path;
 use std::sync::LazyLock;
 use std::sync::mpsc;
-use windows::Win32::Foundation::{E_HANDLE, HANDLE};
+use windows::Win32::Foundation::{E_HANDLE, FILETIME, HANDLE};
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx};
-use windows::Win32::System::Threading::{GetExitCodeProcess, INFINITE, WaitForSingleObject};
+use windows::Win32::System::Threading::{
+    GetExitCodeProcess, GetProcessId, GetProcessTimes, INFINITE, WaitForSingleObject,
+};
 use windows::Win32::UI::Shell::{SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW, ShellExecuteW};
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::{Error, HSTRING, PCWSTR, Result, w};
@@ -46,6 +48,46 @@ pub fn open(file: &OsStr, args: Option<&str>, dir: Option<&Path>) -> std::result
         unsafe { ShellExecuteW(None, w!("open"), &file, ptr(&args), ptr(&dir), SW_SHOWNORMAL) }.0 as isize
     });
     if code > 32 { Ok(()) } else { Err(code) }
+}
+
+/// Starts `exe` as `open` does, and returns the process it started: its id and its start time in seconds since 1970,
+/// worked out as `Processes` (sysinfo) does, so the two compare. None when Windows doesn't say. Err is ShellExecute's
+/// error code, as for `open`.
+pub fn start(exe: &OsStr, args: Option<&str>, dir: Option<&Path>) -> std::result::Result<Option<(u32, u64)>, isize> {
+    let file = HSTRING::from(exe);
+    let (args, dir) = (args.map(HSTRING::from), dir.map(|d| HSTRING::from(d.as_os_str())));
+    on_shell_thread(move || {
+        let ptr = |s: &Option<HSTRING>| s.as_ref().map_or(PCWSTR::null(), |s| PCWSTR(s.as_ptr()));
+        let mut info = SHELLEXECUTEINFOW {
+            cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+            fMask: SEE_MASK_NOCLOSEPROCESS,
+            lpVerb: w!("open"),
+            lpFile: PCWSTR(file.as_ptr()),
+            lpParameters: ptr(&args),
+            lpDirectory: ptr(&dir),
+            nShow: SW_SHOWNORMAL.0,
+            ..Default::default()
+        };
+        // SAFETY: info is a complete SHELLEXECUTEINFOW of the size it states, and its strings live until the call
+        // returns.
+        if unsafe { ShellExecuteExW(&raw mut info) }.is_err() {
+            return Err(info.hInstApp.0 as isize);
+        }
+        if info.hProcess.is_invalid() {
+            return Ok(None);
+        }
+        // SAFETY: SEE_MASK_NOCLOSEPROCESS hands the new process's handle to the caller, and nothing else owns or
+        // closes it; it closes when `process` drops.
+        let process = unsafe { OwnedHandle::from_raw_handle(info.hProcess.0) };
+        let handle = HANDLE(process.as_raw_handle());
+        let mut times = [FILETIME::default(); 4];
+        let [created, exited, kernel, user] = &mut times;
+        // SAFETY: the handle is open, and each FILETIME is a valid place for an answer.
+        let (pid, read) = unsafe { (GetProcessId(handle), GetProcessTimes(handle, created, exited, kernel, user)) };
+        let ticks = (u64::from(times[0].dwHighDateTime) << 32) | u64::from(times[0].dwLowDateTime);
+        // FILETIME counts 100 ns steps from 1601; 11_644_473_600 s lie between then and 1970.
+        Ok((pid != 0 && read.is_ok()).then(|| (pid, ticks / 10_000_000 - 11_644_473_600)))
+    })
 }
 
 /// A process started through the admin prompt, to wait for.
