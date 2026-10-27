@@ -128,13 +128,18 @@ controller is read into the same buttons, by position (south is Cross or A), so 
 6. `launch/watch.rs` reads the process list once a second. A process counts as the game when its exe is inside the
    game's folder, or has one of the game's exe names:
    - Seen for 1.5 seconds: the game runs, and Lamplit records the time in `games.json`.
-   - Every 250 ms until then, `launch/handover.rs` judges the windows that opened since Play. One that covers the
-     screen and answers Windows for half a second (two seconds, and in front, for a program not in the game's
-     folders until the game runs) is the game's: a `play` event says `running`, the page fades to black, and Lamplit
-     places itself right behind that window and gives it the foreground. It stays there, not minimised, while the
-     game runs. A window that stays 5 seconds without covering the screen gets a `window` line on the starting
-     screen, which `launch_show` brings forward. After the game has run 12 seconds with only such windows of its own,
-     the front one gets the screen.
+   - Every 250 ms until then, `launch/handover.rs` judges the windows that opened since Play, and the game's own
+     windows also when they were open already (a game that runs already, which the launch brings back). A window of
+     the game's processes that covers the screen and answers Windows for half a second is up: a `play` event says
+     `running`, the session counts as started from then on (so its end is told even when it comes within the first
+     1.5 seconds), the page fades to black, and Lamplit places itself right behind that window and gives it the
+     foreground. It stays there, not minimised, while the game runs. Any other window that stays 5 seconds (a store
+     app's, also one that opens maximised, or a small window of the game's) gets a `window` line on the starting
+     screen, which `launch_show` brings forward; only the player gives such a window the screen. After the game has
+     run 12 seconds with only small windows of its own, the front one gets the screen.
+   - For a game added by hand, the game's processes are the exe Lamplit started and every process that came from it.
+     Windows tells the started process's id and start time at launch, so a launcher that starts the game and exits
+     before the first poll still leads to it.
    - While it runs: the time between two polls that both see it counts as play time, at most 5 seconds per poll (a
      longer gap is the PC asleep). It is saved to `games.json` every minute and when the game's processes go.
    - Gone again within 20 seconds of starting: a launcher handing over to the game, or a crash at start. A `play`

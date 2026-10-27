@@ -136,7 +136,7 @@ pub fn start(app: &AppHandle, game: Game) {
         // Store apps can take minutes to start, sign in or update; keep the PC and TV awake meanwhile.
         keep_awake(true);
         match prepare(&app, &game, generation) {
-            Ok(()) => watch::watch_game(&app, generation, &game, &before),
+            Ok(started) => watch::watch_game(&app, generation, &game, &before, started),
             Err(Stop::Cancelled) => log::info!("launch of {} cancelled", game.name),
             Err(Stop::Failed(message)) => {
                 log::warn!("launch of {} stopped: {message}", game.name);
@@ -149,7 +149,8 @@ pub fn start(app: &AppHandle, game: Game) {
     });
 }
 
-fn prepare(app: &AppHandle, game: &Game, generation: u64) -> Result<(), Stop> {
+/// Starts the store apps the game needs and opens the game: the process its exe started, if Windows says.
+fn prepare(app: &AppHandle, game: &Game, generation: u64) -> Result<Option<(u32, u64)>, Stop> {
     for &store in &game.requires {
         ensure_store(app, game, store, generation)?;
     }
@@ -309,18 +310,31 @@ pub fn shell_open(launch: &Launch, args: Option<&str>) -> Result<()> {
         Launch::Exe(p) => (p.as_os_str(), p.parent(), args),
         Launch::ExeArgs(p, own) => (p.as_os_str(), p.parent(), Some(own.as_str())),
     };
-    win::shell::open(file, args, dir).map_err(|code| {
-        let file = file.display();
-        Error::Player(match code {
-            2 | 3 => format!("{file} isn't there any more."),
-            31 => format!("No app is set up to open {file}. Is its store app installed?"),
-            _ => format!("Windows couldn't open {file} (error {code})."),
-        })
+    win::shell::open(file, args, dir).map_err(|code| not_opened(file, code))
+}
+
+/// What the player reads when Windows couldn't open `file`, from ShellExecute's error code.
+fn not_opened(file: &OsStr, code: isize) -> Error {
+    let file = file.display();
+    Error::Player(match code {
+        2 | 3 => format!("{file} isn't there any more."),
+        31 => format!("No app is set up to open {file}. Is its store app installed?"),
+        _ => format!("Windows couldn't open {file} (error {code})."),
     })
 }
 
-fn open_game(game: &Game) -> Result<()> {
-    shell_open(&game.launch, None).map_err(|e| match &game.launch {
+/// Opens the game. For a game started from its exe, returns the process that started (id and start time), which may
+/// start the game proper and end before the watcher first looks.
+fn open_game(game: &Game) -> Result<Option<(u32, u64)>> {
+    let started = match &game.launch {
+        Launch::Uri(_) => shell_open(&game.launch, None).map(|()| None),
+        Launch::Exe(exe) | Launch::ExeArgs(exe, _) => {
+            let args = if let Launch::ExeArgs(_, args) = &game.launch { Some(args.as_str()) } else { None };
+            win::window::allow_any_foreground();
+            win::shell::start(exe.as_os_str(), args, exe.parent()).map_err(|code| not_opened(exe.as_os_str(), code))
+        }
+    };
+    let started = started.map_err(|e| match &game.launch {
         // Moved, or uninstalled outside its store.
         Launch::Exe(exe) if !exe.exists() => Error::Player(format!("{e} Reinstall {} or move it back.", game.name)),
         _ => e,
@@ -330,8 +344,9 @@ fn open_game(game: &Game) -> Result<()> {
         Launch::Exe(p) => p.display().to_string(),
         Launch::ExeArgs(p, args) => format!("{} {args}", p.display()),
     };
-    log::info!("launch {} ({}) via {target}", game.name, game.id);
-    Ok(())
+    let process = started.map_or(String::new(), |(pid, _)| format!(", process {pid}"));
+    log::info!("launch {} ({}) via {target}{process}", game.name, game.id);
+    Ok(started)
 }
 
 #[cfg(test)]
