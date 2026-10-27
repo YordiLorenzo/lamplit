@@ -917,3 +917,5 @@ async function init() {
 }
 
 init();
+// Measurement builds only (src-tauri/src/probe.rs): the frame probe.
+if (/** @type {any} */ (window).__LAMPLIT_PROBE__) import('../probe.js');
