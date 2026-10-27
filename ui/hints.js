@@ -27,9 +27,19 @@ export function showHints() {
     if (s) html += b('ok', `Open ${storeName(s.store) ?? 'the store app'}`);
     if (s?.state === 'block') html += b('triangle', 'Try anyway');
     html += b('back', 'Cancel');
+  } else if (state.mode === 'details' && state.art.open) {
+    html = state.art.editing
+      ? b('ok', 'Select') + b('square', 'Delete') + b('triangle', 'Space') + b('back', 'Cancel')
+      : b('ok', 'Select') + b('square', 'Edit search') + b('back', 'Back');
   } else if (state.mode === 'details') {
-    const choice = detailChoices(g, state.running)[state.detailsIdx];
+    const choice = detailChoices(g, state.running, state.removing)[state.detailsIdx];
     html = b('ok', choice.kind === 'play' ? choice.label : 'Select') + b('back', 'Close');
+  } else if (state.mode === 'add' && state.add.view === 'name') {
+    html = b('ok', 'Select') + b('square', 'Delete') + b('triangle', 'Space') + b('back', 'Back');
+  } else if (state.mode === 'add') {
+    const kind = state.add.rows.filter((r) => r.kind)[state.add.idx]?.kind;
+    if (kind) html += b('ok', kind === 'exe' || kind === 'program' ? 'Choose' : 'Open');
+    html += b('back', 'Back');
   } else if (state.mode === 'settings') {
     const row = state.settings.rows[state.settings.idx];
     if (row?.adjust) html += b('adjust', 'Adjust');
@@ -40,8 +50,9 @@ export function showHints() {
   } else {
     // The row can be empty: no game found yet, every game hidden (the running one too, maybe), or a search that
     // matches nothing.
-    if (g && state.running === g.id) html = b('ok', 'Back to game') + b('menu', 'Details');
-    else if (g) html = b('ok', 'Play') + b('menu', 'Details') + b('triangle', 'Settings');
+    if (g && state.running === g.id) html = b('ok', 'Back to game') + b('menu', 'Game menu');
+    else if (g) html = b('ok', 'Play') + b('menu', 'Game menu') + b('triangle', 'Settings');
+    else if (state.loaded && !state.all.length) html = b('ok', 'Add a game') + b('triangle', 'Settings');
     else html = b('triangle', 'Settings');
     if (state.all.length) html += b('square', 'Find');
     if (narrowed(state.find)) html += b('back', 'All games');

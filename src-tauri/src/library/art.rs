@@ -1,11 +1,12 @@
 // Cover, hero and logo art. Steam's own library cache first, then Steam's public store (no key needed) while the
 // player lets Lamplit find art online. Games from other stores are matched to their Steam page by name
-// (name_match.rs), so their names go to Steam's store search. Downloads and lookups are cached in the data folder
-// (art\<appid>\ and art.json).
+// (name_match.rs), so their names go to Steam's store search. The player can choose another app's art, or none, in
+// Change art. Downloads and lookups are cached in the data folder (art\<appid>\ and art.json).
 
 use super::name_match;
-use super::{Art, Game};
+use super::{Art, ArtChoice, Game};
 use crate::data::{self, data_dir};
+use crate::error::{Error, Result};
 use crate::events::{self, Event};
 use crate::files::{nonempty, write_atomic};
 use crate::prefs;
@@ -127,9 +128,21 @@ fn complete(art: &Art) -> bool {
 pub fn from_disk(games: &mut [Game]) {
     let (db, cache) = (load(), steam_library_cache());
     for g in games {
-        if let Some(appid) = g.steam_appid.or_else(|| db.lookups.get(&g.id).and_then(|l| l.appid)) {
-            g.art = local(cache.as_deref(), appid);
-        }
+        let known = g.steam_appid.or_else(|| db.lookups.get(&g.id).and_then(|l| l.appid));
+        g.art = match shown_appid(g, known) {
+            Some(appid) => local(cache.as_deref(), appid),
+            None => Art::default(),
+        };
+    }
+}
+
+/// The Steam app whose art `g` shows: the one the player chose, none if they chose no art, else `known` (the game's
+/// own, or the one found by name).
+fn shown_appid(g: &Game, known: Option<u32>) -> Option<u32> {
+    match g.art_choice {
+        Some(ArtChoice::Steam(appid)) => Some(appid),
+        Some(ArtChoice::None) => None,
+        None => known,
     }
 }
 
@@ -160,19 +173,22 @@ pub fn fetch_missing(app: &AppHandle, games: &[Game]) {
             art.insert(appid, local(cache.as_deref(), appid));
         }
         let found = &art[&appid];
-        if *found != g.art {
-            app.state::<super::Library>().set_art(&g.id, found);
+        if *found != g.art && app.state::<super::Library>().set_art(g, found) {
             events::emit(app, Event::Art { id: &g.id, art: found });
         }
     }
     save(&db);
 }
 
-/// Each game's Steam appid: its own, else one an earlier scan found by name, else a search now. A name that matched
-/// nothing is searched again after RETRY_SECS.
+/// Each game's Steam appid: the one the player chose, else its own, else one an earlier scan found by name, else a
+/// search now. A name that matched nothing is searched again after RETRY_SECS.
 fn appids_for(games: &[Game], db: &mut Db, store: &mut SteamStore, now: u64) -> Vec<Option<u32>> {
     let mut appids = Vec::with_capacity(games.len());
     for g in games {
+        if g.art_choice.is_some() {
+            appids.push(shown_appid(g, None));
+            continue;
+        }
         let known = db.lookups.get(&g.id).filter(|l| l.appid.is_some() || now.saturating_sub(l.at) < RETRY_SECS);
         let appid = match (g.steam_appid, known) {
             (Some(a), _) => Some(a),
@@ -199,13 +215,18 @@ fn appids_for(games: &[Game], db: &mut Db, store: &mut SteamStore, now: u64) -> 
 /// Downloads the files `have` lacks. False when one may still come: a request failed, the pass stopped going online,
 /// or a file couldn't be saved.
 fn download(store: &mut SteamStore, appid: u32, have: &Art, assets: Option<&Assets>) -> bool {
+    download_files(store, appid, candidate_urls(appid, have, assets))
+}
+
+/// Downloads each file from the first of its URLs the store has, as `download` does.
+fn download_files(store: &mut SteamStore, appid: u32, files: Vec<(&str, Vec<String>)>) -> bool {
     let dir = art_dir(appid);
     if let Err(e) = std::fs::create_dir_all(&dir) {
         log::warn!("art: can't make {}: {e}", dir.display());
         return false;
     }
     let mut settled = true;
-    for (file, urls) in candidate_urls(appid, have, assets) {
+    for (file, urls) in files {
         let mut got = None;
         for url in &urls {
             if !store.online() {
@@ -253,6 +274,77 @@ fn candidate_urls(appid: u32, have: &Art, assets: Option<&Assets>) -> Vec<(&'sta
         out.push(("logo.png", vec![legacy("logo_2x.png"), legacy("logo.png")]));
     }
     out
+}
+
+/// A match on Steam's store the player can choose in Change art: an app, its name, and its cover when it has one.
+#[derive(Serialize)]
+pub struct Candidate {
+    pub appid: u32,
+    pub name: String,
+    pub portrait: Option<String>,
+}
+
+/// What a Change art search finds on Steam's store for `query`, each with its cover, which is downloaded to where the
+/// art of a chosen app goes.
+pub fn candidates(app: &AppHandle, query: &str) -> Result<Vec<Candidate>> {
+    let mut store = SteamStore::new(app);
+    if !store.online() {
+        return Err(offline());
+    }
+    let found = store.store_search(query).map_err(|e| unreached(&mut store, "search", &e))?;
+    log::info!("art: Change art search for {query}: {} found", found.len());
+    let (assets, _) = store.assets(&found.iter().map(|(appid, _)| *appid).collect());
+    let cache = steam_library_cache();
+    let mut out = Vec::with_capacity(found.len());
+    for (appid, name) in found {
+        let have = local(cache.as_deref(), appid);
+        if have.portrait.is_none() && store.online() {
+            let cover =
+                candidate_urls(appid, &have, assets.get(&appid)).into_iter().filter(|(f, _)| *f == "portrait.jpg");
+            download_files(&mut store, appid, cover.collect());
+        }
+        out.push(Candidate { appid, name, portrait: local(cache.as_deref(), appid).portrait });
+    }
+    Ok(out)
+}
+
+/// Downloads the art of `appid` that isn't on the PC yet, for the player who chose it in Change art. Steam may have
+/// no hero or logo for an app; the game then shows what there is.
+pub fn fetch(app: &AppHandle, appid: u32) -> Result<()> {
+    let have = local(steam_library_cache().as_deref(), appid);
+    if complete(&have) {
+        return Ok(());
+    }
+    let mut store = SteamStore::new(app);
+    if !store.online() {
+        return Err(offline());
+    }
+    let (assets, _) = store.assets(&HashSet::from([appid]));
+    download(&mut store, appid, &have, assets.get(&appid));
+    if store.offline {
+        return Err(Error::Player("Steam's store can't be reached, so that art can't be fetched now.".into()));
+    }
+    Ok(())
+}
+
+fn offline() -> Error {
+    Error::Player("Find art online is off. Settings > System switches it on.".into())
+}
+
+/// The error the player reads when a request of Change art failed.
+fn unreached(store: &mut SteamStore, what: &str, e: &ureq::Error) -> Error {
+    store.failed(what, e);
+    Error::Player("Steam's store didn't answer. Try again in a moment.".into())
+}
+
+/// The apps in a store search answer, with their names, in the store's order.
+fn parse_search(body: &serde_json::Value) -> Vec<(u32, String)> {
+    body["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|i| Some((u32::try_from(i["id"].as_u64()?).ok()?, i["name"].as_str()?.to_string())))
+        .collect()
 }
 
 /// A store item's art, as URLs.
@@ -329,26 +421,25 @@ impl SteamStore {
     /// The game's Steam appid, Ok(None) when Steam has no such game.
     fn search(&self, name: &str) -> Result<Option<u32>, ureq::Error> {
         for q in name_match::queries(name) {
-            let body: serde_json::Value = self
-                .agent
-                .get("https://store.steampowered.com/api/storesearch/")
-                .query("term", &q)
-                .query("l", "english")
-                .query("cc", &self.country)
-                .call()?
-                .body_mut()
-                .read_json()?;
-            let items: Vec<(u32, String)> = body["items"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|i| Some((i["id"].as_u64()? as u32, i["name"].as_str()?.to_string())))
-                .collect();
-            if let Some(id) = name_match::best_match(name, &items) {
+            if let Some(id) = name_match::best_match(name, &self.store_search(&q)?) {
                 return Ok(Some(id));
             }
         }
         Ok(None)
+    }
+
+    /// The apps Steam's store search lists for `term`, with their names.
+    fn store_search(&self, term: &str) -> Result<Vec<(u32, String)>, ureq::Error> {
+        let body: serde_json::Value = self
+            .agent
+            .get("https://store.steampowered.com/api/storesearch/")
+            .query("term", term)
+            .query("l", "english")
+            .query("cc", &self.country)
+            .call()?
+            .body_mut()
+            .read_json()?;
+        Ok(parse_search(&body))
     }
 
     /// The art URLs of the `appids` Steam answered for, and those appids, from GetItems calls of ITEMS_PER_CALL each.
@@ -421,6 +512,7 @@ fn unreachable(e: &ureq::Error) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::library::Launch;
     use serde_json::json;
 
     #[test]
@@ -434,6 +526,47 @@ mod tests {
         assert!(!unreachable(&ureq::Error::BodyStalled));
         assert!(!unreachable(&ureq::Error::Io(std::io::ErrorKind::ConnectionReset.into())));
         assert!(!unreachable(&ureq::Error::StatusCode(503)));
+    }
+
+    #[test]
+    fn a_choice_wins_over_the_games_own_art() {
+        let mut g = Game::new("epic:x".into(), "X".into(), None, PathBuf::new(), Launch::Uri(String::new()));
+        assert_eq!(shown_appid(&g, Some(70)), Some(70));
+        g.art_choice = Some(ArtChoice::Steam(1_091_500));
+        assert_eq!(shown_appid(&g, Some(70)), Some(1_091_500));
+        g.art_choice = Some(ArtChoice::None);
+        assert_eq!(shown_appid(&g, Some(70)), None);
+        // No art: nothing on disk is looked at, whatever the game's own appid.
+        g.art = Art { portrait: Some("old.jpg".into()), hero: None, logo: None };
+        from_disk(std::slice::from_mut(&mut g));
+        assert_eq!(g.art, Art::default());
+    }
+
+    #[test]
+    fn search_answers_list_apps_in_order() {
+        let body = json!({ "total": 3, "items": [
+            { "type": "app", "name": "Cyberpunk 2077", "id": 1_091_500, "tiny_image": "x" },
+            { "type": "app", "name": "No id" },
+            { "type": "app", "name": "Cyberpunk 2077: Phantom Liberty", "id": 2_138_330 },
+        ] });
+        assert_eq!(
+            parse_search(&body),
+            vec![(1_091_500, "Cyberpunk 2077".into()), (2_138_330, "Cyberpunk 2077: Phantom Liberty".into())]
+        );
+        assert!(parse_search(&json!({ "total": 0 })).is_empty());
+    }
+
+    #[test]
+    fn candidates_reach_the_page_as_in_their_fixture() {
+        let found = [
+            Candidate {
+                appid: 1_091_500,
+                name: "Cyberpunk 2077".into(),
+                portrait: Some(r"C:\Users\player\AppData\Local\lamplit\art\1091500\portrait.jpg".into()),
+            },
+            Candidate { appid: 2_138_330, name: "Cyberpunk 2077: Phantom Liberty".into(), portrait: None },
+        ];
+        assert_eq!(serde_json::to_value(found).unwrap(), ipc_fixture!("art-candidates"));
     }
 
     #[test]

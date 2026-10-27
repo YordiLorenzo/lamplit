@@ -1,0 +1,8 @@
+{
+  "path": "D:\\Games",
+  "parent": "D:\\",
+  "entries": [
+    { "name": "Racer", "path": "D:\\Games\\Racer", "kind": "folder", "title": null },
+    { "name": "tetris.exe", "path": "D:\\Games\\tetris.exe", "kind": "exe", "title": "Tetris" }
+  ]
+}

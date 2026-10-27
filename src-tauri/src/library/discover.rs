@@ -1,5 +1,5 @@
-// Finds every installed game: each store's first, then games outside any store. Games are keyed by install folder,
-// so a game found twice appears once (store entries win).
+// Finds every installed game: each store's first, then the games the player added by hand, then games outside any
+// store. Games are keyed by install folder, so a game found twice appears once (store entries win).
 
 use super::Game;
 use crate::files::folder_key;
@@ -7,7 +7,8 @@ use crate::stores::{self, Installed};
 use std::path::PathBuf;
 use std::time::Instant;
 
-pub fn discover_all() -> Vec<Game> {
+/// Every game, with the `manual` ones the player added by hand.
+pub fn discover_all(manual: Vec<Game>) -> Vec<Game> {
     let installed = &Installed::read();
     log::info!(
         "discovery: {} installed programs, {} exes in Windows' game list",
@@ -28,7 +29,9 @@ pub fn discover_all() -> Vec<Game> {
         handles.into_iter().filter_map(|h| h.join().ok()).collect()
     });
     let mut games = Vec::new();
-    for g in found.into_iter().flatten() {
+    // A game added by hand that a store has installed since is the store's; one in a folder Lamplit also finds
+    // outside any store keeps the name and exe the player gave it.
+    for g in found.into_iter().flatten().chain(manual) {
         add(&mut games, g);
     }
     let roots: Vec<PathBuf> = installed.drives.iter().map(|d| d.join("Games")).collect();

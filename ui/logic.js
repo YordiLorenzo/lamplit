@@ -104,17 +104,71 @@ export function byPlayed(a, b) {
 }
 
 /**
- * The choices under a game's details, in order.
+ * The choices in a game's menu, in order. A game added by hand can be removed again; ✕ once asks (`removing`), ✕
+ * again removes it.
  * @param {Game} g
  * @param {string | null} running  the id of the game that runs
- * @returns {{ kind: 'play' | 'favourite' | 'hide', label: string }[]}
+ * @param {boolean} [removing]
+ * @returns {{ kind: 'play' | 'favourite' | 'art' | 'hide' | 'remove', label: string }[]}
  */
-export function detailChoices(g, running) {
+export function detailChoices(g, running, removing = false) {
   return [
     { kind: 'play', label: running === g.id ? 'Back to game' : 'Play' },
     { kind: 'favourite', label: g.favourite ? 'Remove from favourites' : 'Add to favourites' },
+    { kind: 'art', label: 'Change art' },
     { kind: 'hide', label: 'Hide this game' },
+    ...(g.manual ? [{ kind: /** @type {const} */ ('remove'), label: removing ? 'Press again to remove' : 'Remove from Lamplit' }] : []),
   ];
+}
+
+// ---------- the lifted game menu ----------
+
+/**
+ * A damped spring from 0 to 1 (mass 1), as a CSS linear() easing and the time it takes to come to rest. Below
+ * critical damping (2 × √stiffness) it overshoots and settles back, as a card lifted by hand would.
+ * @param {number} stiffness
+ * @param {number} damping
+ */
+export function spring(stiffness, damping) {
+  const dt = 1 / 1000;
+  let x = 0, v = 0, t = 0;
+  /** @type {number[]} position every millisecond */
+  const path = [0];
+  // At rest: within 0.1% of the end and barely moving. Semi-implicit Euler is stable at this step for these springs.
+  while (t < 3 && (Math.abs(1 - x) > 0.001 || Math.abs(v) > 0.01)) {
+    v += (stiffness * (1 - x) - damping * v) * dt;
+    x += v * dt;
+    t += dt;
+    path.push(x);
+  }
+  path[path.length - 1] = 1;
+  const stops = 40;
+  const points = Array.from({ length: stops + 1 }, (_, i) => +path[Math.round((i / stops) * (path.length - 1))].toFixed(4));
+  return { easing: `linear(${points.join(', ')})`, ms: Math.round(t * 1000) };
+}
+
+/**
+ * Where a lifted cover and its menu go. The cover grows from its place in the row (`from`) to `height` and rises to
+ * the middle of the screen, staying over its column inside the safe area (5% at each edge). The menu, `menuWidth`
+ * wide, opens beside it on the side that has room for it, else on the roomier side, narrowed to fit. `side` is 1 for
+ * the right and -1 for the left.
+ * @param {Box} from
+ * @param {{ width: number, height: number }} screen
+ * @param {number} menuWidth
+ */
+export function liftLayout(from, screen, menuWidth) {
+  const safeX = screen.width * 0.05, gap = screen.height * 0.035;
+  const height = screen.height * 0.56;
+  const width = (height * from.width) / from.height;
+  const x = Math.max(safeX, Math.min(screen.width - safeX - width, from.x + from.width / 2 - width / 2));
+  const card = { x, y: screen.height * 0.46 - height / 2, width, height };
+  const right = screen.width - safeX - (x + width + gap);
+  const left = x - gap - safeX;
+  const side = right >= menuWidth || right >= left ? 1 : -1;
+  const room = side > 0 ? right : left;
+  const menu = { width: Math.min(menuWidth, room), x: 0, room };
+  menu.x = side > 0 ? x + width + gap : x - gap - menu.width;
+  return { card, menu, side };
 }
 
 /**
@@ -146,7 +200,7 @@ export function storeWarning(g, stores) {
 export const STORE_ORDER = /** @type {const} */ (['steam', 'epic', 'ea', 'ubisoft', 'rockstar', 'gog', 'xbox', 'pc']);
 
 /** The longest search the field shows. */
-const MAX_QUERY = 30;
+export const MAX_QUERY = 30;
 
 /**
  * A name or a search as words to match: lower case, accents dropped, apostrophes left out ("Assassin's" is
@@ -230,14 +284,42 @@ export function storeChoices(games, chosen) {
 
 /**
  * The search after a key: a letter or digit, 'space' or 'delete'. A space only goes between words, and the search
- * stops growing at the field's length.
+ * stops growing at the field's length, `max`.
  * @param {string} query
  * @param {string} key
+ * @param {number} [max]
  */
-export function typed(query, key) {
+export function typed(query, key, max = MAX_QUERY) {
   if (key === 'delete') return [...query].slice(0, -1).join('');
-  if (key === 'space') return !query || query.endsWith(' ') || query.length >= MAX_QUERY ? query : `${query} `;
-  return query.length < MAX_QUERY ? query + key : query;
+  if (key === 'space') return !query || query.endsWith(' ') || query.length >= max ? query : `${query} `;
+  return query.length < max ? query + key : query;
+}
+
+/**
+ * A name typed on the names keyboard, and whether its next letter is a capital: at the start of the name and of each
+ * word, as game names are written, unless Shift turned that off. Shift turns it on for the next letter anywhere else.
+ * @typedef {{ text: string, caps: boolean }} Name
+ */
+
+/**
+ * The name after a key: a letter, digit or sign, 'space', 'delete', 'clear' or 'shift'.
+ * @param {Name} name
+ * @param {string} key
+ * @param {number} max
+ * @returns {Name}
+ */
+export function nameAfter({ text, caps }, key, max) {
+  const wordStart = (/** @type {string} */ t) => !t || t.endsWith(' ');
+  if (key === 'shift') return { text, caps: !caps };
+  if (key === 'clear') return { text: '', caps: true };
+  if (key === 'delete' || key === 'space') {
+    const next = typed(text, key, max);
+    return { text: next, caps: wordStart(next) };
+  }
+  if (text.length >= max) return { text, caps };
+  const letter = key.toLowerCase() !== key.toUpperCase();
+  if (!letter) return { text: text + key, caps };
+  return { text: text + (caps ? key.toUpperCase() : key), caps: false };
 }
 
 /** @typedef {{ x: number, y: number, width: number, height: number }} Box */
@@ -276,6 +358,7 @@ export const SECTIONS = [
   { key: 'popups', title: 'Overlay and pop-ups' },
   { key: 'stores', title: 'Stores' },
   { key: 'system', title: 'System' },
+  { key: 'add', title: 'Add a game' },
   { key: 'hidden', title: 'Hidden games' },
   { key: 'power', title: 'Power' },
 ];
@@ -389,6 +472,7 @@ export function sectionSummary(key, state) {
     return [n === 1 ? '1 game' : `${n} games`];
   }
   if (key === 'power') return ['Sleep, restart, shut down'];
+  if (key === 'add') return ['A program or an exe on this PC'];
   return state.setup?.needed ? ['Setup needed', 'warn'] : [state.display ?? ''];
 }
 

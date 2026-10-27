@@ -9,7 +9,7 @@ use crate::devices::pad::{self, Controllers};
 use crate::devices::{accessories, audio};
 use crate::error::{Error, Result};
 use crate::launch::{self, Launcher};
-use crate::library::{self, Game, Library};
+use crate::library::{self, ArtChoice, Game, Library};
 use crate::prefs::{self, Prefs};
 use crate::stores::steam::devtools;
 use crate::stores::{self, Store};
@@ -42,6 +42,42 @@ pub async fn library_set_favourite(app: AppHandle, id: String, on: bool) -> Resu
 #[tauri::command]
 pub async fn library_set_hidden(app: AppHandle, id: String, on: bool) -> Result<Vec<Game>> {
     blocking(move || library::set_hidden(&app, &id, on)).await?
+}
+
+/// What Steam's store has for `query`, for Change art. Goes online.
+#[tauri::command]
+pub async fn library_art_search(app: AppHandle, query: String) -> Result<Vec<library::Candidate>> {
+    blocking(move || library::art_candidates(&app, &query)).await?
+}
+
+/// The art the player chose for a game; None for Lamplit's own match. Returns every game, with the change.
+#[tauri::command]
+pub async fn library_set_art(app: AppHandle, id: String, choice: Option<ArtChoice>) -> Result<Vec<Game>> {
+    blocking(move || library::set_art(&app, &id, choice)).await?
+}
+
+/// The installed programs that aren't in the library, for Add a game.
+#[tauri::command]
+pub async fn library_programs(app: AppHandle) -> Result<Vec<library::Program>> {
+    blocking(move || library::programs(&app)).await
+}
+
+/// A folder's subfolders and exes, or the drives with no path, for Add a game.
+#[tauri::command]
+pub async fn library_browse(path: Option<String>) -> Result<library::Folder> {
+    blocking(move || library::browse(path.as_deref())).await?
+}
+
+/// Adds the game an exe starts, with the name the player gave it. Returns its id and every game.
+#[tauri::command]
+pub async fn library_add_game(app: AppHandle, exe: String, name: String) -> Result<library::Added> {
+    blocking(move || library::add_game(&app, &exe, &name)).await?
+}
+
+/// Takes a game added by hand out of the library. Returns every game.
+#[tauri::command]
+pub async fn library_remove_game(app: AppHandle, id: String) -> Result<Vec<Game>> {
+    blocking(move || library::remove_game(&app, &id)).await?
 }
 
 /// Starts the launch checks; the page follows them through `launch-step` and `play` events.

@@ -1,8 +1,10 @@
 // @ts-check
-// The home screen: the cover row, and the hero art, logo and details of the focused game.
+// The home screen: the cover row, the hero art, logo and details of the focused game, and its menu, which lifts its
+// cover (lift.js).
 
-import { assetUrl, librarySetFavourite, librarySetHidden } from './api.js';
+import { assetUrl, libraryRemoveGame, librarySetFavourite, librarySetHidden } from './api.js';
 import { showHints, toast } from './hints.js';
+import { face, lift, lower, settle, showSheet } from './lift.js';
 import { detailChoices, narrowed, playTimeText, playedText, readable, rowOf, storeWarning, words } from './logic.js';
 import { sfx } from './sounds.js';
 import { byId, els, focused, icon, state, storeName, withStoreLogo } from './state.js';
@@ -137,57 +139,90 @@ export function showInfo() {
   showHints();
 }
 
+/** The focused game's menu: its cover lifts, with the details and the choices beside it. */
 export function openDetails() {
   const g = focused();
   els.dName.textContent = g.name;
-  els.dStore.replaceChildren(...withStoreLogo(g.store, storeName(g.store) ?? 'Not from a store'));
+  els.dStore.replaceChildren(...withStoreLogo(g.store, g.manual ? 'Added by hand' : storeName(g.store) ?? 'Not from a store'));
   els.dPlayed.textContent = playedText(g.last_played).replace(/^Played /, '') || 'Not yet';
   // Lamplit counts from 0.2.0 on, so a game played before has no count of its own.
   els.dTime.textContent = playTimeText(g.play_minutes, true) || 'Not counted yet';
   els.dDir.textContent = g.dir;
   state.detailsIdx = 0;
+  state.removing = false;
   renderChoices();
   state.mode = 'details';
-  els.details.classList.add('on');
+  showSheet('menu');
+  lift(g.id, restingCover(), coverLook(g.name, g.art.portrait));
+  layout();
   sfx.open();
   showHints();
 }
 
-export function closeDetails() {
+/**
+ * Lowers the menu's cover back into the row, or, `away`, lets it drop out of sight: its game is leaving the row.
+ * Change art, over the menu, closes with it.
+ * @param {boolean} [away]
+ */
+export function closeDetails(away = false) {
   state.mode = 'browse';
-  els.details.classList.remove('on');
+  state.art.open = false;
+  state.typing = null;
+  lower(away);
   sfx.back();
   showHints();
 }
 
-/** The choices under the details, the focused one marked. */
+/** The menu again, as it was before Change art: its choices, and the cover with the game's own art. */
+export function backToMenu() {
+  const g = focused();
+  state.art.open = false;
+  state.typing = null;
+  showSheet('menu');
+  face(coverLook(g.name, g.art.portrait));
+  renderChoices();
+  showHints();
+}
+
+/** The choices in the menu, the focused one marked. */
 function renderChoices() {
-  const rows = detailChoices(focused(), state.running).map((c, i) => {
+  const rows = detailChoices(focused(), state.running, state.removing).map((c, i) => {
     const row = document.createElement('div');
-    row.className = 'row' + (i === state.detailsIdx ? ' focus' : '');
+    row.className = 'row' + (i === state.detailsIdx ? ' focus' : '') + (c.kind === 'remove' && state.removing ? ' warn' : '');
     row.textContent = c.label;
     return row;
   });
   els.dChoices.replaceChildren(...rows);
 }
 
-/** The choice ✕ picks in Details. */
-export const detailChoice = () => detailChoices(focused(), state.running)[state.detailsIdx];
+/** The choice ✕ picks in the menu. */
+export const detailChoice = () => detailChoices(focused(), state.running, state.removing)[state.detailsIdx];
 
 /** @param {number} delta */
 export function moveDetails(delta) {
   const next = Math.max(0, Math.min(detailChoices(focused(), state.running).length - 1, state.detailsIdx + delta));
   if (next === state.detailsIdx) return sfx.edge();
   state.detailsIdx = next;
+  // Remove asks again once focus has left it.
+  state.removing = false;
   sfx.move();
   renderChoices();
   showHints();
 }
 
-/** Details' choices other than Play: the focused game in or out of the favourites, or hidden. */
+/**
+ * The menu's choices other than Play and Change art: the focused game in or out of the favourites, hidden, or, for a
+ * game added by hand, removed (✕ once asks, ✕ again removes).
+ */
 export async function markGame() {
   const g = focused();
   const { kind } = detailChoice();
+  if (kind === 'remove' && !state.removing) {
+    state.removing = true;
+    sfx.open();
+    renderChoices();
+    return showHints();
+  }
   try {
     if (kind === 'favourite') {
       sfx.open();
@@ -196,8 +231,8 @@ export async function markGame() {
       renderChoices();
     } else {
       const at = state.idx;
-      closeDetails();
-      const list = await librarySetHidden(g.id, true);
+      closeDetails(true);
+      const list = await (kind === 'hide' ? librarySetHidden(g.id, true) : libraryRemoveGame(g.id));
       // The row stays live while Rust saves: a player who moved on keeps the game they moved to (setGames).
       const stayed = focused()?.id === g.id;
       setGames(list);
@@ -206,7 +241,7 @@ export async function markGame() {
         state.idx = Math.max(0, Math.min(at, state.games.length - 1));
         render();
       }
-      toast(`${g.name} is hidden. Settings > Hidden games shows it again.`);
+      toast(kind === 'hide' ? `${g.name} is hidden. Settings > Hidden games shows it again.` : `${g.name} is no longer in Lamplit.`);
     }
   } catch (e) {
     toast(e.message);
@@ -236,30 +271,54 @@ function newCover(name) {
   return el;
 }
 
+/**
+ * A cover's look: its portrait, or the game's name on colours of its own. The row and the lifted card both draw it.
+ * @param {string} name @param {string | null} portrait
+ * @returns {import('./lift.js').Look}
+ */
+export function coverLook(name, portrait) {
+  const url = fileUrl(portrait);
+  return { image: url ? `url("${url}")` : coverFallback(name), art: !!url, name };
+}
+
 /** @param {Shown} g */
 export function paintCover(g) {
-  const url = fileUrl(g.art.portrait);
-  g.el.style.backgroundImage = url ? `url("${url}")` : coverFallback(g.name);
-  g.el.classList.toggle('has-art', !!url);
+  const look = coverLook(g.name, g.art.portrait);
+  g.el.style.backgroundImage = look.image;
+  g.el.classList.toggle('has-art', look.art);
   g.el.classList.toggle('playing', state.running === g.id);
 }
 
-/** A cover's width in px, measured from the stylesheet (--cover-h) again whenever the window's height changes. */
-let cover = { forHeight: 0, width: 0 };
+/** A cover's size in px, measured from the stylesheet (--cover-h) again whenever the window's height changes. */
+let cover = { forHeight: 0, width: 0, height: 0 };
+/** How much the focused cover grows. */
+const GROW = 1.14;
 
-/** Covers sit side by side; the focused one grows and the row slides so it stays in the first slot. */
+/**
+ * Covers sit side by side; the focused one grows and the row slides so it stays in the first slot. A lifted cover
+ * hides in the row while its card stands in for it (lift.js).
+ */
 export function layout() {
   if (cover.forHeight !== innerHeight && state.games.length) {
-    cover = { forHeight: innerHeight, width: parseFloat(getComputedStyle(state.games[0].el).width) };
+    const look = getComputedStyle(state.games[0].el);
+    cover = { forHeight: innerHeight, width: parseFloat(look.width), height: parseFloat(look.height) };
   }
-  const w = cover.width, gap = innerHeight * 0.02, grow = 1.14;
+  const w = cover.width, gap = innerHeight * 0.02;
   const i = state.idx;
   state.games.forEach((g, k) => {
-    const x = k * (w + gap) + (k > i ? w * (grow - 1) : 0);
-    g.el.style.transform = `translate3d(${x}px, 0, 0) scale(${k === i ? grow : 1})`;
+    const x = k * (w + gap) + (k > i ? w * (GROW - 1) : 0);
+    g.el.style.transform = `translate3d(${x}px, 0, 0) scale(${k === i ? GROW : 1})`;
     g.el.classList.toggle('focus', k === i);
+    g.el.classList.toggle('lifted', g.id === state.lifted);
   });
   els.track.style.transform = `translate3d(${-i * (w + gap)}px, 0, 0)`;
+  if (state.lifted && state.lifted !== focused()?.id) settle();
+}
+
+/** Where the focused cover rests once the row has slid: the first slot, grown, on the row's bottom edge. */
+function restingCover() {
+  const width = cover.width * GROW, height = cover.height * GROW;
+  return { x: parseFloat(getComputedStyle(els.track).left), y: els.row.getBoundingClientRect().bottom - height, width, height };
 }
 
 export function render() {
@@ -270,6 +329,7 @@ export function render() {
 /** @param {Game[]} list */
 export function setGames(list) {
   const keep = focused()?.id;
+  state.loaded = true;
   state.all = list.map((g) => ({ ...g, el: newCover(g.name) }));
   state.all.forEach(paintCover);
   showRow(keep);
@@ -287,9 +347,9 @@ export function showRow(keep = null) {
   state.games = rowOf(state.all, state.find);
   const k = state.games.findIndex((g) => g.id === keep);
   state.idx = Math.max(0, k);
-  // Details still names the game that is gone, and ✕ there would start whatever is focused now. They close before the
-  // row is drawn, which would show their hints for a game that isn't there.
-  if (k < 0 && state.mode === 'details') closeDetails();
+  // The menu still names the game that is gone, and ✕ there would start whatever is focused now. It closes before the
+  // row is drawn, which would show its hints for a game that isn't there.
+  if (k < 0 && state.mode === 'details') closeDetails(true);
   const shown = shownCount();
   els.empty.hidden = shown > 0;
   els.empty.textContent = state.all.length ? 'Every game is hidden. Settings > Hidden games shows them again.' : 'No games found';
@@ -364,5 +424,8 @@ export function onArt({ id, art }) {
   if (!g) return;
   g.art = art;
   paintCover(g);
-  if (focused() === g) showInfo();
+  if (focused() !== g) return;
+  showInfo();
+  // Change art previews on the card what it would show, and puts the game's own art back when it closes.
+  if (state.lifted === id && !state.art.open) face(coverLook(g.name, art.portrait));
 }
