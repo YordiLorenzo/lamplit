@@ -399,8 +399,30 @@ function placeRing() {
 /** @template T @param {Promise<T>} call @returns {Promise<T | undefined>} */
 const orKeep = (call) => call.catch(() => undefined);
 
-/** Asked so far; only the newest answers are shown, since two refreshes can answer in either order. */
-let refreshes = 0;
+/**
+ * Readings asked so far, by the part of what the dock knows that they read. Readings of one part can answer in either
+ * order, so only the newest one asked is kept; the parts are read on their own (the game every 2 s, the sound and the
+ * accessories when they change), and one part's newer reading mustn't throw away another's answer.
+ */
+const asked = { game: 0, sound: 0, accessories: 0, quiet: 0, overlays: 0 };
+
+/**
+ * Reads the parts named in `reads` together, keeps each answer that is still the newest asked for its part, and
+ * draws the dock. A part whose reading failed stays as it was.
+ * @param {{ [P in keyof typeof asked]?: () => Promise<any> }} reads
+ */
+async function read(reads) {
+  const parts = /** @type {(keyof typeof asked)[]} */ (Object.keys(reads));
+  const asks = parts.map((part) => ++asked[part]);
+  const answers = await Promise.all(parts.map((part) => orKeep(reads[part]())));
+  parts.forEach((part, i) => {
+    const answer = answers[i];
+    if (asks[i] !== asked[part] || answer === undefined) return;
+    if (part === 'game') setGame(answer);
+    else state.data[part] = answer ?? state.data[part];
+  });
+  render();
+}
 
 /**
  * The game as Rust reads it now. Cross held on Close game was for the game and the offer the player saw: when the
@@ -415,23 +437,14 @@ function setGame(game) {
 }
 
 /** Everything the dock shows, read again each time it opens. */
-async function refresh() {
-  const asked = ++refreshes;
-  const [game, sound, accessories, quiet, overlays] = await Promise.all([
-    orKeep(api.dockState()),
-    orKeep(api.soundState()),
-    orKeep(api.accessoriesState()),
-    orKeep(api.quietState()),
-    orKeep(api.overlayState()),
-  ]);
-  if (asked !== refreshes) return;
-  const d = state.data;
-  if (game !== undefined) setGame(game);
-  d.sound = sound ?? d.sound;
-  d.accessories = accessories ?? d.accessories;
-  d.quiet = quiet ?? d.quiet;
-  d.overlays = overlays ?? d.overlays;
-  render();
+function refresh() {
+  return read({
+    game: api.dockState,
+    sound: api.soundState,
+    accessories: api.accessoriesState,
+    quiet: api.quietState,
+    overlays: api.overlayState,
+  });
 }
 
 /** A reading of the game still on its way: a hung game takes Rust a second per window to tell. */
@@ -442,24 +455,16 @@ async function rereadGame() {
   if (readingGame || state.mode !== 'open') return;
   readingGame = true;
   try {
-    const game = await orKeep(api.dockState());
-    if (game === undefined || state.mode !== 'open') return;
-    setGame(game);
-    render();
+    await read({ game: api.dockState });
   } finally {
     readingGame = false;
   }
 }
 
 /** The headset, a controller or the sound device changed. */
-async function refreshAccessories() {
+function refreshAccessories() {
   if (state.mode !== 'open') return;
-  const asked = ++refreshes;
-  const [accessories, sound] = await Promise.all([orKeep(api.accessoriesState()), orKeep(api.soundState())]);
-  if (asked !== refreshes) return;
-  state.data.accessories = accessories ?? state.data.accessories;
-  state.data.sound = sound ?? state.data.sound;
-  render();
+  return read({ accessories: api.accessoriesState, sound: api.soundState });
 }
 
 // ---------- acting ----------

@@ -453,6 +453,29 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
+  // D15. News of the accessories while the dock's first reading is on its way: the sound and the accessories are read
+  // again, and the rest of the first reading, quiet mode and NVIDIA's stats, still shows when it comes.
+  {
+    const page = await open({ games: [], file: 'dock.html', screen: SCREEN }, OPEN);
+    await answers(page, { game, sound, accessories: ipc('accessories'), quiet: ipc('quiet'), overlays: ipc('overlays') });
+    // Quiet mode and the overlays answer when the test says so.
+    await page.evaluate(() => {
+      const s = window.__settings;
+      window.__answers = [];
+      const later = (value) => () => new Promise((resolve) => window.__answers.push(() => resolve(value)));
+      s.quiet_state = later({ state: 'on', active: true, notes: [] });
+      s.overlay_state = later({ nvidia_overlay: true, nvidia_stats: true });
+    });
+    await emit(page, 'dock', opened);
+    await emit(page, 'accessories', null);
+    await until(page, () => window.__calls.filter(([cmd]) => cmd === 'accessories_state').length >= 2);
+    await page.evaluate(() => window.__answers.splice(0).forEach((a) => a()));
+    await idle(page);
+    const v = await view(page);
+    check('quiet mode and the stats from the first reading show, after news of the accessories', v.values.quiet === 'Quiet|on' && v.values.stats === 'Stats|on', JSON.stringify(v.values));
+    await close(page);
+  }
+
   // D11. A hold of Close game was for the offer and the game the player saw: when an answer from Rust turns it into
   // Force close, or names another game, the hold is let go and nothing closes.
   {
