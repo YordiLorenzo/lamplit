@@ -179,7 +179,10 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   before. A second hold folds the dock. Over exclusive full screen, Windows shows no other window, and one that takes
   the foreground makes the game leave full screen.
 - **Open**, the window covers the game's screen, transparent but for the dock, and takes the foreground, as the home
-  screen does.
+  screen does. The island takes its size at once, clipped to the pill at its bottom centre, and the clip springs open:
+  the folding below in reverse, with nothing laid out per frame. When a game starts the hidden page gets ready (it
+  reads what it shows, draws and decodes the art, and works out the open layout once), and the real glass is made with
+  the window, so the first opening has nothing to do but open.
   A window that left the game the foreground (`WS_EX_NOACTIVATE`) would leave the game reading every press: XInput,
   HID and Steam Input don't say which app a press is for. Games are expected to ignore the controller while another
   window is in front (`XInputEnable` is meant for `WM_ACTIVATEAPP`), and Steam Input switches to its desktop layout,
@@ -199,7 +202,9 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   frames. When another window takes the foreground, the dock folds and leaves it there. Alt+F4 on the dock folds it as
   Circle does: its window refuses to close, since Lamplit keeps its handle for the next hold of PS. After each
   opening, fold and Home the page logs its frames, the longest wait between two and the 95th percentile (`dock: fold
-  62 frames, worst 9 ms, 95% 8 ms`).
+  64 frames, worst 9 ms, 95% 8 ms`); the home page logs its veil the same way (`home: arrive`, `home: leave`).
+  Coming forward, the home page asks for a rescan 0.9 s later, once its veil and the dock's fold have played: reading
+  the drives and the art meanwhile cost them frames.
 - **News** (`dock/news.rs`) shows in a strip around the folded pill at the bottom centre, with `WS_EX_NOACTIVATE`
   and `WS_EX_TRANSPARENT`: the game keeps the foreground and its clicks. Only over a running game, with Lamplit not
   in front and no exclusive full screen.

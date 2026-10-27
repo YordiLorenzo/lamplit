@@ -49,13 +49,14 @@ body.pointer { cursor: default; }
   bottom: calc(var(--u) * 3.4);
   width: calc(var(--u) * 18);
   height: calc(var(--u) * 5.2);
+  /* The corners change at once: the clip rounds them on the way (clip-path), and a rounded box resized or
+     re-rounded is painted again on every frame. */
   border-radius: var(--round);
   translate: -50% 0;
   transform-origin: 50% 100%;
   transition:
     width var(--spring-ms) var(--spring) 70ms,
     height var(--spring-ms) var(--spring) 70ms,
-    border-radius var(--spring-ms) var(--spring) 70ms,
     clip-path var(--spring-ms) var(--spring) 70ms,
     opacity 140ms ease,
     scale 380ms var(--spring),
@@ -87,6 +88,15 @@ body.pointer { cursor: default; }
     translate 200ms var(--glide) calc(var(--spring-ms) * .5);
 }
 #shade[data-mode='gone'] { opacity: 0; transition: opacity 80ms ease-out; }
+/* Opening, the shadow comes once the clip has nearly sprung open around it. */
+#shade:is([data-mode='open'], [data-mode='news']) {
+  transition:
+    width var(--spring-ms) var(--spring) 70ms,
+    height var(--spring-ms) var(--spring) 70ms,
+    opacity 240ms ease 160ms,
+    scale 380ms var(--spring),
+    translate 380ms var(--spring);
+}
 /* Folded out of sight (main.js rest): the pill on the edge, which the island springs open from. */
 :is(#island, #shade)[data-mode='gone'].rested { scale: .6; translate: -50% calc(var(--u) * 2.4); }
 
@@ -134,6 +144,9 @@ body.home #veil { opacity: 1; }
 body.home.lift #veil { opacity: 0; transition: opacity 240ms ease; }
 body.home #island { scale: 1.08; opacity: 0; transition: scale 240ms var(--glide), opacity 200ms ease; }
 body.home #shade { opacity: 0; transition: opacity 160ms ease; }
+
+/* The rehearsal while the window is hidden (main.js prepare): no transitions start. */
+body.rehearsing, body.rehearsing * { transition: none !important; }
 
 /* What the island shows, laid out from its bottom centre at its own size; the island reveals it as it grows. */
 .face {

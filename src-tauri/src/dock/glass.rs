@@ -3,6 +3,7 @@
 // again; without it, the island keeps its glass made of the game's art.
 
 use crate::win::glass::{Fold, Glass, Shape};
+use crate::win::window::HWND;
 use std::cell::RefCell;
 use std::time::Duration;
 use winreg::RegKey;
@@ -44,14 +45,29 @@ pub fn show(island: Option<Shape>) -> bool {
         if shape.is_none() && glass.is_none() {
             return false;
         }
-        // A new dock window (the dock was switched off and on) gets glass of its own.
-        if glass.as_ref().is_none_or(|(made_for, _)| *made_for != dock.0 as isize) {
-            let made = Glass::new(dock).inspect_err(|e| log::warn!("dock: no real glass, so the art's: {e}"));
-            *glass = Some((dock.0 as isize, made));
-        }
-        let Some((_, Ok(glass))) = glass else { return false };
+        let Some(glass) = made(glass, dock) else { return false };
         glass.show(shape).inspect_err(|e| log::warn!("dock: the glass didn't show: {e}")).is_ok() && shape.is_some()
     })
+}
+
+/// Makes the glass while the dock's window is hidden, where Windows draws it: the first opening then has nothing to
+/// make. On the main thread.
+pub fn prepare() {
+    if let Some(dock) = super::window::handle()
+        && real_glass(build(), transparency())
+    {
+        GLASS.with_borrow_mut(|glass| made(glass, dock).is_some());
+    }
+}
+
+/// The glass in `dock`, made there first if it isn't yet; a new dock window (the dock was switched off and on) gets
+/// glass of its own. None when Windows couldn't make it.
+fn made(glass: &mut Option<(isize, windows::core::Result<Glass>)>, dock: HWND) -> Option<&Glass> {
+    if glass.as_ref().is_none_or(|(made_for, _)| *made_for != dock.0 as isize) {
+        let made = Glass::new(dock).inspect_err(|e| log::warn!("dock: no real glass, so the art's: {e}"));
+        *glass = Some((dock.0 as isize, made));
+    }
+    glass.as_ref().and_then(|(_, made)| made.as_ref().ok())
 }
 
 /// Squeezes the glass into the pill with the island as the page folds it, if it shows. On the main thread.

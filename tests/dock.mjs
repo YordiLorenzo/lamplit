@@ -633,6 +633,40 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
+  // D19. A game starting gets the hidden dock ready: it reads what it shows and draws it then. Its first opening then
+  // springs open on a clip at its own size, with nothing laid out frame by frame.
+  {
+    const page = await open({ games: [], file: 'dock.html', screen: SCREEN }, OPEN);
+    const playing = { ...game, started: Math.floor(Date.now() / 1000) - 72 * 60 };
+    await answers(page, { game: playing, sound, accessories: ipc('accessories'), quiet: ipc('quiet'), overlays: ipc('overlays') });
+    await emit(page, 'play', like(ipc('play').find((p) => p.state === 'running'), { id: game.id }));
+    await idle(page);
+    let v = await view(page);
+    const ready = ['dock_state', 'sound_state', 'accessories_state', 'quiet_state', 'overlay_state'].every((c) => v.calls.some(([cmd]) => cmd === c));
+    check('a game starting gets the hidden dock ready: it reads what it shows', ready && v.mode === 'gone' && v.game === 'Half-Life', `${ready} ${v.mode} ${v.game}`);
+    const from = v.calls.length;
+    const frames = page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const island = document.getElementById('island');
+          const seen = [];
+          const start = performance.now();
+          const step = () => {
+            if (island.dataset.mode === 'open') seen.push(`${island.offsetWidth}x${island.offsetHeight}|${getComputedStyle(island).clipPath}`);
+            if (performance.now() - start < 500) requestAnimationFrame(step);
+            else resolve(seen);
+          };
+          requestAnimationFrame(step);
+        })
+    );
+    await emit(page, 'dock', opened);
+    const seen = await frames;
+    const sizes = new Set(seen.map((f) => f.split('|')[0]));
+    const clips = new Set(seen.map((f) => f.split('|')[1]));
+    check('the first opening springs open on a clip at its own size', sizes.size === 1 && clips.size > 5, `${[...sizes]} ${clips.size}`);
+    await close(page);
+  }
+
   // D8. The dock draws the controller's buttons with index.html's own symbols.
   {
     const symbols = (file) => pageFile(file).match(/<symbol id="btn-[\s\S]*?<\/symbol>/g) ?? [];

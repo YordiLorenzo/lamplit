@@ -5,6 +5,7 @@
 import * as api from './api.js';
 import { closeAdd } from './add.js';
 import { closeFind } from './find.js';
+import { meter } from './frames.js';
 import { showHints, toast } from './hints.js';
 import { closeDetails, focusGame, paintCover, render, showRow } from './library.js';
 import { buttonFace } from './logic.js';
@@ -125,6 +126,7 @@ export function backToGame() {
   stopLeaving();
   document.body.classList.remove('arriving', 'arrived');
   document.body.classList.add('leaving');
+  meter('home: leave', LEAVE_MS);
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   leaving.timer = setTimeout(
     () => {

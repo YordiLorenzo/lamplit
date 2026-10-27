@@ -3,6 +3,7 @@
 
 import * as api from './api.js';
 import { setPadKind, toast } from './hints.js';
+import { meter } from './frames.js';
 import { act } from './input.js';
 import { onPlay, onStep, onSummoned } from './launch.js';
 import { layout, onArt, setGames } from './library.js';
@@ -14,10 +15,20 @@ function tickClock() {
   els.clock.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
-// Coming forward (after a game, or summoned) is when new installs should show up.
-window.addEventListener('focus', () => api.libraryRescan());
+/**
+ * Coming forward (after a game, or summoned) is when new installs should show up. The rescan waits until the way in
+ * has played, the home screen's veil and the dock folding behind it: reading the drives and the art meanwhile costs
+ * them frames.
+ */
+const RESCAN_AFTER_MS = 900;
+let rescanTimer = 0;
+function rescanSoon() {
+  clearTimeout(rescanTimer);
+  rescanTimer = setTimeout(() => api.libraryRescan(), RESCAN_AFTER_MS);
+}
+window.addEventListener('focus', rescanSoon);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) api.libraryRescan();
+  if (!document.hidden) rescanSoon();
 });
 window.addEventListener('resize', layout);
 
@@ -30,6 +41,7 @@ function arrive() {
   clearTimeout(arrivedTimer);
   document.body.classList.remove('arrived');
   document.body.classList.add('arriving');
+  meter('home: arrive', 600);
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
       document.body.classList.replace('arriving', 'arrived');

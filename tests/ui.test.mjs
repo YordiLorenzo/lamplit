@@ -747,7 +747,10 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   check('an empty list closes Details too', !s.details && s.errors.length === 0, JSON.stringify(s.errors));
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   s = await state(page);
-  check('coming forward looks for new installs', s.lastCall?.[0] === 'library_rescan', JSON.stringify(s.lastCall));
+  const atOnce = s.lastCall?.[0] === 'library_rescan';
+  await page.waitForTimeout(1000);
+  s = await state(page);
+  check('coming forward looks for new installs, once the way in has played', !atOnce && s.lastCall?.[0] === 'library_rescan', `${atOnce} ${JSON.stringify(s.lastCall)}`);
   await close(page);
 }
 
@@ -2260,7 +2263,8 @@ await dockTests({ open, close, check, shots });
   await page.waitForTimeout(800);
   let s = await state(page);
   let seen = await page.evaluate(() => window.__arrival.splice(0));
-  check("back from a game, a veil shows first, then lifts as the screen settles in, on the game's card", JSON.stringify(seen) === '["arriving","arrived","none"]' && s.focusName === 'Game 001', `${JSON.stringify(seen)} ${s.focusName}`);
+  const logged = await page.evaluate(() => window.__logs.filter((l) => l.startsWith('info home: arrive')));
+  check("back from a game, a veil shows first, then lifts as the screen settles in, on the game's card, and the log says how it ran", JSON.stringify(seen) === '["arriving","arrived","none"]' && s.focusName === 'Game 001' && /frames, worst \d+ ms, 95% \d+ ms$/.test(logged[0] ?? ''), `${JSON.stringify(seen)} ${s.focusName} ${logged}`);
   await emit(page, 'play', play('ended', 'pc:1'));
   await emit(page, 'summoned', null);
   await page.waitForTimeout(100);
