@@ -561,7 +561,7 @@ export async function dockTests({ open, close, check, shots }) {
     const page = await openDock();
     await page.evaluate(() => (window.__settings.dock_glass = ({ island }) => island !== null));
     const glass = () => page.evaluate(() => document.getElementById('island').classList.contains('glass'));
-    const asks = async (from) => (await since(page, from)).filter((c) => c.startsWith('dock_glass')).map((c) => (c.endsWith('null}') ? 'none' : 'island'));
+    const asks = async (from) => (await since(page, from)).filter((c) => c.startsWith('dock_glass {')).map((c) => (c.endsWith('null}') ? 'none' : 'island'));
     let from = (await view(page)).calls.length;
     await emit(page, 'dock', closed);
     await emit(page, 'dock', opened);
@@ -581,15 +581,23 @@ export async function dockTests({ open, close, check, shots }) {
     from = (await view(page)).calls.length;
     await emit(page, 'dock', closed);
     await page.waitForTimeout(150);
-    const fading = await glass();
-    await page.waitForTimeout(400);
-    check('folding, the island fades on the real glass, which Rust fades with it, and is on its own glass once out of sight', fading && !(await glass()) && (await asks(from)).length === 0, `${fading} ${await glass()} ${await asks(from)}`);
+    const folding = await glass();
+    const pill = await page.evaluate(() => {
+      const u = screen.height / 100;
+      const b = document.getElementById('island').getBoundingClientRect();
+      return JSON.stringify({ x: b.x + (b.width - 18 * u) / 2, y: b.y + (b.height - 5.2 * u), width: 18 * u, height: 5.2 * u, radius: 2.6 * u });
+    });
+    const squeezed = (await since(page, from)).find((c) => c.startsWith('dock_glass_fold'));
+    const to = squeezed ? JSON.parse(squeezed.slice('dock_glass_fold '.length)).fold.to : {};
+    const same = Object.entries(JSON.parse(pill)).every(([k, v]) => Math.abs(to[k] - v) < 0.01);
+    await page.waitForTimeout(600);
+    check('folding, the island is squeezed on the real glass, which Rust squeezes into the same pill, and is on its own glass once out of sight', folding && !(await glass()) && same && (await asks(from)).length === 0, `${folding} ${await glass()} ${JSON.stringify(to)} ${pill}`);
     await close(page);
   }
 
-  // D18. Folding moves nothing the page must lay out or paint again: the island keeps its size and only fades and
-  // shrinks a little, frame by frame, on the compositor. Out of sight it is the pill again, and the log has a line
-  // with the fold's frames.
+  // D18. Folding moves nothing the page must lay out or paint again: the island keeps its size, frame by frame, and a
+  // clip squeezes it into the pill, on the compositor. Out of sight it is the pill again, and the log has a line with
+  // the fold's frames.
   {
     const page = await openDock();
     await page.waitForTimeout(800);
@@ -600,9 +608,9 @@ export async function dockTests({ open, close, check, shots }) {
           const seen = [];
           const step = () => {
             const s = getComputedStyle(island);
-            seen.push(`${island.offsetWidth}x${island.offsetHeight}|${s.scale}|${Number(s.opacity) > 0 ? 'shows' : 'gone'}`);
+            seen.push(`${island.offsetWidth}x${island.offsetHeight}|${s.clipPath}|${Number(s.opacity) > 0 ? 'shows' : 'gone'}`);
             // Until the window hides (dock/mod.rs FOLD), before the island is the pill again.
-            if (performance.now() - start < 320) requestAnimationFrame(step);
+            if (performance.now() - start < 540) requestAnimationFrame(step);
             else resolve(seen);
           };
           const start = performance.now();
@@ -613,14 +621,15 @@ export async function dockTests({ open, close, check, shots }) {
     await emit(page, 'dock', closed);
     const seen = await frames;
     const sizes = new Set(seen.map((f) => f.split('|')[0]));
+    const clips = new Set(seen.map((f) => f.split('|')[1]));
     const moves = await page.evaluate(() => getComputedStyle(document.getElementById('island')).transitionProperty);
-    check('folding keeps the island its size, frame by frame, and moves only its scale and opacity', sizes.size === 1 && sizes.has(before) && seen.some((f) => f.endsWith('gone')) && moves === 'scale, opacity', `${[...sizes]} ${moves} ${seen.at(-1)}`);
-    await page.waitForTimeout(500);
+    check('folding keeps the island its size, frame by frame, and squeezes it with a clip, a drop and a fade', sizes.size === 1 && sizes.has(before) && clips.size > 5 && seen.some((f) => f.endsWith('gone')) && moves === 'clip-path, opacity, translate', `${[...sizes]} ${clips.size} ${moves} ${seen.at(-1)}`);
+    await page.waitForTimeout(300);
     const rested = await page.evaluate(() => {
       const island = document.getElementById('island');
       return { pill: island.style.width === '' && island.classList.contains('rested'), logs: window.__logs.filter((l) => l.includes('dock: fold')) };
     });
-    check('out of sight it is the pill again, and the log says how the fold ran', rested.pill && rested.logs.length === 1 && /^info dock: fold \d+ frames, worst \d+ ms$/.test(rested.logs[0]), JSON.stringify(rested));
+    check('out of sight it is the pill again, and the log says how the fold ran', rested.pill && rested.logs.length === 1 && /^info dock: fold \d+ frames, worst \d+ ms, 95% \d+ ms$/.test(rested.logs[0]), JSON.stringify(rested));
     await close(page);
   }
 

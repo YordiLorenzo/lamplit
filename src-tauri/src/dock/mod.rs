@@ -19,7 +19,7 @@ mod news;
 mod window;
 
 pub use game::{GameState, close_game, closed_from_dock, game_state};
-pub use glass::show as show_glass;
+pub use glass::{fold as fold_glass, show as show_glass};
 pub use news::News;
 pub use window::{LABEL, on_close_request};
 
@@ -65,9 +65,9 @@ static SHOWN: Mutex<Shown> = Mutex::new(Shown::Hidden);
 /// Counts every showing and folding, so the timed hide of an earlier one does nothing.
 static SHOWING: AtomicU64 = AtomicU64::new(0);
 
-/// How long the page takes to fold the dock away: the island fades and shrinks a little, on the compositor alone
-/// (dock.css #island[data-mode='gone']).
-const FOLD: Duration = Duration::from_millis(300);
+/// How long the page takes to fold the dock away: a clip squeezes the island into the pill, which drops onto the edge
+/// and goes (dock.css #island[data-mode='gone'], main.js FOLD_MS).
+const FOLD: Duration = Duration::from_millis(520);
 /// How long the page takes to veil the game for Home (dock.css #veil), and how long the home window then has to draw
 /// itself behind the veil before it lifts.
 const VEIL: Duration = Duration::from_millis(220);
@@ -199,8 +199,6 @@ pub fn fold(app: &AppHandle, give_back: bool) {
         let Shown::Open { game } = std::mem::replace(&mut *SHOWN.lock(), Shown::Folding) else { return };
         let showing = SHOWING.fetch_add(1, Ordering::SeqCst) + 1;
         events::emit(&folded, Event::Dock(Show::Closed));
-        // The glass goes with the island, as dock.css folds it.
-        glass::fade(0.92, ms(260), ms(200), ms(40));
         // The game gets the foreground once the fold has played: a game coming back to full speed, and window calls,
         // cost the fold frames.
         hide_later(folded, showing, FOLD, give_back.then_some(game));

@@ -42,41 +42,53 @@ body.pointer { cursor: default; }
 
 /* Folded, it is a pill on the bottom edge; main.js gives it the size of the face it shows, and it springs there.
    Opening, the pill rises from the edge first and springs open a moment later. */
-#island {
+#island, #shade {
+  --round: calc(var(--u) * 2.6);
   position: fixed;
   left: 50%;
   bottom: calc(var(--u) * 3.4);
   width: calc(var(--u) * 18);
   height: calc(var(--u) * 5.2);
-  border-radius: calc(var(--u) * 2.6);
-  overflow: hidden;
-  isolation: isolate;
-  box-shadow:
-    0 calc(var(--u) * 2.4) calc(var(--u) * 7) rgb(0 0 0 / .6),
-    0 0 0 calc(var(--u) * .1) rgb(0 0 0 / .35);
+  border-radius: var(--round);
   translate: -50% 0;
   transform-origin: 50% 100%;
   transition:
     width var(--spring-ms) var(--spring) 70ms,
     height var(--spring-ms) var(--spring) 70ms,
     border-radius var(--spring-ms) var(--spring) 70ms,
+    clip-path var(--spring-ms) var(--spring) 70ms,
     opacity 140ms ease,
     scale 380ms var(--spring),
     translate 380ms var(--spring);
 }
-#island[data-mode='news'] { height: calc(var(--u) * 6.6); border-radius: calc(var(--u) * 3.3); }
-#island[data-mode='open'] { border-radius: calc(var(--u) * 4.8); }
-/* Folding: it shrinks a little towards the edge and fades, keeping its size (main.js shape), so the compositor does it
-   alone: nothing is laid out or painted again on the full-screen window. Rust fades the real glass under it the same
-   way (dock/mod.rs fold) and hides the window 300 ms in (FOLD). */
-#island[data-mode='gone'] {
-  opacity: 0;
-  scale: .92;
-  pointer-events: none;
-  transition: scale 260ms var(--glide), opacity 200ms ease 40ms;
+#island {
+  overflow: hidden;
+  isolation: isolate;
+  clip-path: inset(0 round var(--round));
 }
+#shade {
+  pointer-events: none;
+  box-shadow: 0 calc(var(--u) * 2.4) calc(var(--u) * 7) rgb(0 0 0 / .6);
+}
+:is(#island, #shade)[data-mode='news'] { --round: calc(var(--u) * 3.3); height: calc(var(--u) * 6.6); }
+:is(#island, #shade)[data-mode='open'] { --round: calc(var(--u) * 4.8); }
+/* Folding: the island keeps its size (main.js shape) and a clip squeezes it into the pill on the opening's spring,
+   which then drops onto the edge and goes. Clip, scale, translate and opacity only: nothing on the full-screen window is
+   laid out again, and Rust squeezes the real glass under it the same way (dock_glass_fold). Its shadow fades at once;
+   Rust hides the window when it is done (dock/mod.rs FOLD). */
+#island[data-mode='gone'] {
+  clip-path: inset(var(--fold-y, 0px) var(--fold-x, 0px) 0 round calc(var(--u) * 2.6));
+  opacity: 0;
+  translate: -50% calc(var(--u) * 2.4);
+  pointer-events: none;
+  transition:
+    clip-path var(--spring-ms) var(--spring),
+    opacity 200ms ease calc(var(--spring-ms) * .5),
+    translate 200ms var(--glide) calc(var(--spring-ms) * .5);
+}
+#shade[data-mode='gone'] { opacity: 0; transition: opacity 80ms ease-out; }
 /* Folded out of sight (main.js rest): the pill on the edge, which the island springs open from. */
-#island[data-mode='gone'].rested { scale: .6; translate: -50% calc(var(--u) * 2.4); }
+:is(#island, #shade)[data-mode='gone'].rested { scale: .6; translate: -50% calc(var(--u) * 2.4); }
 
 /* The island's own glass: dark, then the game's art over it, blurred into its colours (main.js draws it small and
    blurred, and it is scaled up here, which costs nothing while the island moves); then a tint that keeps text readable
@@ -104,7 +116,8 @@ body.pointer { cursor: default; }
   border-radius: inherit;
   box-shadow:
     inset 0 calc(var(--u) * .14) 0 rgb(255 255 255 / .2),
-    inset 0 0 0 calc(var(--u) * .1) rgb(255 255 255 / .1);
+    inset 0 0 0 calc(var(--u) * .1) rgb(255 255 255 / .1),
+    inset 0 0 0 calc(var(--u) * .2) rgb(0 0 0 / .3);
 }
 
 /* Home (main.js goHome): a veil in the game's colours dims the game, and the island grows into it and fades. The
@@ -120,6 +133,7 @@ body.pointer { cursor: default; }
 body.home #veil { opacity: 1; }
 body.home.lift #veil { opacity: 0; transition: opacity 240ms ease; }
 body.home #island { scale: 1.08; opacity: 0; transition: scale 240ms var(--glide), opacity 200ms ease; }
+body.home #shade { opacity: 0; transition: opacity 160ms ease; }
 
 /* What the island shows, laid out from its bottom centre at its own size; the island reveals it as it grows. */
 .face {
@@ -129,10 +143,13 @@ body.home #island { scale: 1.08; opacity: 0; transition: scale 240ms var(--glide
   bottom: 0;
   width: max-content;
   translate: -50% 0;
+  transform-origin: 50% 100%;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 110ms ease;
+  transition: opacity 110ms ease, scale 120ms var(--glide);
 }
+/* Folding, what the island shows goes first. */
+#island[data-mode='gone'] .face { scale: .94; }
 #island[data-mode='news'] #news,
 #island[data-mode='open'] #dock {
   opacity: 1;
@@ -495,7 +512,7 @@ body.home #island { scale: 1.08; opacity: 0; transition: scale 240ms var(--glide
 #hint b.xbox-b { color: #ff7a7a; }
 
 @media (prefers-reduced-motion: reduce) {
-  #island, #island[data-mode='gone'], .face, #ring, #island[data-mode='open'] :is(#top, .tile, #hint) {
+  #island, #shade, :is(#island, #shade)[data-mode='gone'], .face, #ring, #island[data-mode='open'] :is(#top, .tile, #hint) {
     transition-duration: 1ms;
     transition-delay: 0s;
   }

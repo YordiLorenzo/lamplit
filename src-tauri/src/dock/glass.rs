@@ -2,7 +2,7 @@
 // transparency effects on. The page asks for it once the island rests open and lets go of it before the island moves
 // again; without it, the island keeps its glass made of the game's art.
 
-use crate::win::glass::{Glass, Shape};
+use crate::win::glass::{Fold, Glass, Shape};
 use std::cell::RefCell;
 use std::time::Duration;
 use winreg::RegKey;
@@ -52,6 +52,17 @@ pub fn show(island: Option<Shape>) -> bool {
         let Some((_, Ok(glass))) = glass else { return false };
         glass.show(shape).inspect_err(|e| log::warn!("dock: the glass didn't show: {e}")).is_ok() && shape.is_some()
     })
+}
+
+/// Squeezes the glass into the pill with the island as the page folds it, if it shows. On the main thread.
+pub fn fold(fold: &Fold) {
+    GLASS.with_borrow(|glass| {
+        if let Some((_, Ok(glass))) = glass
+            && let Err(e) = glass.fold(fold)
+        {
+            log::warn!("dock: the glass didn't fold: {e}");
+        }
+    });
 }
 
 /// Fades the glass out with the island as it goes, if it shows: scaled to `scale` over `scale_for`, and out over

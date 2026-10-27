@@ -150,6 +150,7 @@ pub fn run() {
             commands::dock_resume,
             commands::dock_home,
             commands::dock_glass,
+            commands::dock_glass_fold,
             commands::dock_close_game,
         ])
         .setup(|app| {
