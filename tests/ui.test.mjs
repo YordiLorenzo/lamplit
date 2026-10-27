@@ -2115,6 +2115,35 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
     marks[id] = await page.evaluate(() => Number(document.querySelector('.saver-mark').style.opacity));
   }
   check("the game's logo drifts over Ink but not over Gallery or Drift", marks.ink > 0.2 && marks.gallery === 0 && marks.drift === 0, JSON.stringify(marks));
+  if (webgl2) {
+    // A show that ends frees its buffers a second later, but keeps the art's textures: the next one uploads none.
+    await page.goto(`${pageOrigin}/ui/screensaver/preview.html?scene=drift&hud=0`);
+    await page.waitForFunction(() => window.preview?.saver.art.heroes.length > 1, null, { timeout: 30000 });
+    await page.waitForTimeout(500);
+    const again = await page.evaluate(async () => {
+      const { saver } = window.preview;
+      const scene = saver.current.scene;
+      let uploads = 0;
+      const upload = WebGL2RenderingContext.prototype.texImage2D;
+      // The art's uploads are the ones from an image (six arguments); the palettes' gradients come as bytes.
+      WebGL2RenderingContext.prototype.texImage2D = function (...args) {
+        if (args.length === 6) uploads++;
+        return upload.apply(this, args);
+      };
+      const art = saver.renderer.images.size;
+      saver.stop();
+      await new Promise((resolve) => setTimeout(resolve, 1300));
+      const freed = saver.renderer.targets.every((t) => !t);
+      saver.start(scene);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      return { scene: saver.current.scene.id, art, freed, uploads };
+    });
+    check(
+      'a show that ends frees its buffers, and the next one uploads no art again',
+      again.scene === 'drift' && again.art >= 2 && again.freed && again.uploads === 0,
+      JSON.stringify(again)
+    );
+  }
   await page.close();
 }
 
@@ -2427,6 +2456,34 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await page.waitForTimeout(2200);
   s = await seen();
   check("a game that doesn't take the screen leaves the home screen as it was", JSON.stringify(s) === '["bare"]', JSON.stringify(s));
+  await close(page);
+}
+
+// 38. The screensaver's colours and art are read ahead, while nobody uses Lamplit for a moment, and kept: a second show
+// reads no art file again.
+{
+  const page = await open({ games: [game(1), game(2)], clock: true });
+  /** The art files the screensaver reads (the home screen's own images load as images, not with fetch). */
+  const read = [];
+  page.on('request', (r) => r.resourceType() === 'fetch' && r.url().startsWith(assetOrigin) && read.push(decodeURIComponent(r.url())));
+  const files = [game(1), game(2)].flatMap((g) => [g.art.hero, g.art.portrait]).filter(Boolean);
+  await page.clock.fastForward('00:03');
+  for (let i = 0; i < 50 && !files.every((f) => read.some((u) => u.endsWith(f))); i++) await page.waitForTimeout(100);
+  let shown = await saverView(page);
+  check(
+    "two seconds without input, the next show's art and colours are read ahead, before it shows",
+    !shown.on && files.every((f) => read.some((u) => u.endsWith(f))),
+    JSON.stringify({ files, read: read.map((u) => u.split('/').slice(-2).join('/')) })
+  );
+  const before = read.length;
+  await page.clock.fastForward('05:05');
+  await saverOn(page);
+  await page.keyboard.press('ArrowRight');
+  await until(page, () => !document.querySelector('#saver.on'));
+  await page.clock.fastForward('05:05');
+  await saverOn(page);
+  shown = await saverView(page);
+  check('a second show reads no art again', shown.on && read.length === before, `${read.length - before} files read again`);
   await close(page);
 }
 

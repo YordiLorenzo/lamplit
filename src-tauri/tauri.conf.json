@@ -24,7 +24,7 @@
         "default-src": "'self'",
         "img-src": "'self' asset: http://asset.localhost",
         "style-src": "'self'",
-        "connect-src": "ipc: http://ipc.localhost"
+        "connect-src": "ipc: http://ipc.localhost asset: http://asset.localhost"
       },
       "assetProtocol": { "enable": true, "scope": [] }
     }

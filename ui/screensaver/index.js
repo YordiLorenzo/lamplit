@@ -7,7 +7,7 @@ import * as api from '../api.js';
 import { SAVER_DEFAULT, rowOf } from '../logic.js';
 import { state } from '../state.js';
 import { medianCut, scenePalette } from './palette.js';
-import { Saver, pixelsOf } from './saver.js';
+import { Saver, artOf, pixelsOf, scaledArt } from './saver.js';
 
 /**
  * @typedef {import('./saver.js').Look} Look
@@ -32,6 +32,11 @@ const POINTER_PX = 8;
 const SETTLE_MS = 1000;
 /** The games whose art colours the show: favourites first, then the most recently played. */
 const GAMES = 8;
+/**
+ * After this long without input the next show's colours, art and renderer are made ahead, in idle time, so a show
+ * starts without that work.
+ */
+const WARM_MS = 2000;
 
 /** @type {Saver | null} made on the first show */
 let saver = null;
@@ -48,6 +53,8 @@ let pointer = { x: NaN, y: NaN };
 let anchor = { x: NaN, y: NaN };
 /** When the player asked for the show that is on its way or showing (Show it now); -Infinity when it started itself. */
 let askedAt = -Infinity;
+/** The quiet spell and the library the show was last made ready for. */
+let warmed = { input: NaN, games: /** @type {unknown} */ (null) };
 
 /** Lamplit is in front and no game runs. */
 const allowed = () => !state.running && !document.hidden && document.hasFocus();
@@ -136,18 +143,13 @@ function hide() {
 /** @type {Map<string, Promise<Palette | null>>} per art file */
 const palettes = new Map();
 
-/** The art's colours, worked out once per file. @param {string} path */
+/** The art's colours, worked out once per file, from the image scaled down off the main thread. @param {string} path */
 function paletteOf(path) {
   let palette = palettes.get(path);
   if (!palette) {
-    const img = new Image();
-    // Tauri's asset protocol sends the CORS header, so the canvas can be read back (as for the accent in library.js).
-    img.crossOrigin = 'anonymous';
-    img.src = api.assetUrl(path);
-    palette = img
-      .decode()
-      .then(() => scenePalette(medianCut(pixelsOf(img, 48, 27), 8)))
-      .catch(() => null);
+    palette = scaledArt(api.assetUrl(path), { resizeWidth: 48, resizeHeight: 27 }).then(
+      (img) => img && scenePalette(medianCut(pixelsOf(/** @type {CanvasImageSource} */ (img), 48, 27), 8))
+    );
     palettes.set(path, palette);
   }
   return palette;
@@ -245,6 +247,16 @@ export function startScreensaver() {
   });
   setInterval(() => {
     const m = minutes();
-    if (!showing && m > 0 && allowed() && performance.now() - lastInput >= m * 60_000) show();
+    if (showing || m <= 0 || !allowed()) return;
+    const quiet = performance.now() - lastInput;
+    if (quiet >= m * 60_000) show();
+    else if (quiet >= WARM_MS && (warmed.input !== lastInput || warmed.games !== state.all)) {
+      warmed = { input: lastInput, games: state.all };
+      requestIdleCallback(() => {
+        // The WebGL renderer too, once: it builds a noise volume and starts compiling its passes as it is made.
+        (saver ??= makeSaver()).gl();
+        gameLooks().then(artOf);
+      });
+    }
   }, 1000);
 }
