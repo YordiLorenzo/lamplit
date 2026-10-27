@@ -3,6 +3,7 @@
 // fails to start.
 
 import * as api from './api.js';
+import { closeAdd } from './add.js';
 import { closeFind } from './find.js';
 import { showHints, toast } from './hints.js';
 import { closeDetails, focusGame, paintCover, render, showRow } from './library.js';
@@ -87,6 +88,13 @@ export function backToGame() {
   api.launchResume();
 }
 
+/** A game's news takes the screen: the game menu, Find and Add a game close first. */
+function leavePanels() {
+  if (state.mode === 'details') closeDetails();
+  if (state.mode === 'find') closeFind();
+  if (state.mode === 'add') closeAdd();
+}
+
 /** @param {import('./api.js').Play} play */
 export function onPlay(play) {
   const { id } = play;
@@ -103,8 +111,7 @@ export function onPlay(play) {
     if (state.running === id) state.running = null;
     if (g && mine) {
       // It closed right after starting: a launcher handing over, or a crash. Wait for it in view.
-      if (state.mode === 'details') closeDetails();
-      if (state.mode === 'find') closeFind();
+      leavePanels();
       focusGame(id);
       showStarting(g, `Waiting for the game to come back. ${buttonFace(state.padKind, 'back')[1]} stops waiting.`);
     }
@@ -113,8 +120,7 @@ export function onPlay(play) {
     if (mine) {
       endLaunch();
       // Focus moves to the game that ended; open details would still name the game focused before.
-      if (state.mode === 'details') closeDetails();
-      if (state.mode === 'find') closeFind();
+      leavePanels();
       // Its last-played time changed, so the row is ordered again.
       showRow(id);
       focusGame(id);
@@ -130,8 +136,7 @@ export function onPlay(play) {
 /** A controller brought Lamplit forward while `runningId` runs. @param {string | null} runningId */
 export function onSummoned(runningId) {
   state.running = runningId;
-  if (state.mode === 'details') closeDetails();
-  if (state.mode === 'find') closeFind();
+  leavePanels();
   if (runningId) focusGame(runningId);
   state.all.forEach(paintCover);
   render();

@@ -2030,6 +2030,36 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
 
 await dockTests({ open, close, check, shots });
 
+// 31. A game's news takes the screen from Add a game: a game that closes right after starting (a launcher handing
+// over) shows the starting screen, and the panel goes with it rather than staying over the row, catching clicks.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.evaluate(() => (window.__settings = { library_programs: [] }));
+  const openAdd = async () => {
+    await page.keyboard.press('c');
+    await idle(page);
+    const rows = await page.evaluate(() => [...document.querySelectorAll('#settingsList .row')].map((r) => r.textContent));
+    for (let i = 0; i < rows.findIndex((r) => r.startsWith('Add a game')); i++) await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await idle(page);
+  };
+  const panel = () => page.evaluate(() => document.getElementById('add').classList.contains('on'));
+  await openAdd();
+  const before = await panel();
+  await emit(page, 'play', play('starting', 'pc:2'));
+  let s = await state(page);
+  check('a game coming back while Add a game is open closes the panel for the starting screen', before && !(await panel()) && s.overlay, `${before} ${await panel()} ${s.overlay}`);
+  await emit(page, 'play', play('ended', 'pc:2'));
+  // Focus is on the game that ended, the second.
+  await page.keyboard.press('ArrowLeft');
+  s = await state(page);
+  check('after it, the controller moves the row again', !(await panel()) && !s.overlay && s.focusName === 'Game 001', `${await panel()} ${s.focusName}`);
+  await openAdd();
+  await emit(page, 'summoned', null);
+  check('a controller bringing Lamplit forward closes Add a game too', !(await panel()), String(await panel()));
+  await close(page);
+}
+
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));
 check('every command Rust registers is called by a test', untested.length === 0, untested.join(', '));
