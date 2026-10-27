@@ -114,7 +114,8 @@ controller is read into the same buttons, by position (south is Cross or A), so 
 2. Rust starts a new launch generation, so an older launch's checks stop, and keeps the PC and the screen awake.
    Lamplit holds the screen (`launch/window.rs`): its window is topmost, raised again every 250 ms because Windows
    puts the taskbar back on top whenever another window takes the foreground, and counts as in front for the
-   controller. It doesn't take the foreground back from a window that opens later.
+   controller. It doesn't take the foreground back from a window that opens later, other than a store app's during
+   the checks in step 3: a game may need the foreground to set its screen mode.
 3. For each store app in the game's `requires` list (its own store, then any publisher's launcher), `launch/mod.rs`:
    - stops with an error if the store app isn't installed;
    - starts it if it isn't running, and waits up to 90 seconds for it;
@@ -122,7 +123,9 @@ controller is read into the same buttons, by position (south is Cross or A), so 
    - otherwise shows "Sign in to ..." and waits up to 15 minutes for a sign-in, or for the player to choose
      Try anyway.
 
-   Each of these is a line on the starting screen, sent as a `launch-step` event.
+   Each of these is a line on the starting screen, sent as a `launch-step` event. While it waits, the starting screen
+   takes the keyboard back about once a second from a store app's window that took the foreground, so Enter and
+   Escape reach it, until the player opens that app (Open the store app, Show it) and Lamplit lets go.
 4. For a Steam game, a line says whether an update is needed first.
 5. Lamplit opens the game: the store's link (`steam://rungameid/<appid>` for Steam), the store app told which game
    to start (`Battle.net.exe --exec="launch <code>"`), or the game's exe.
@@ -134,14 +137,14 @@ controller is read into the same buttons, by position (south is Cross or A), so 
      the game's processes that covers the screen and answers Windows for half a second is up: a `play` event says
      `up` and the page fades to black, then Lamplit places itself right behind that window and gives it the
      foreground, and a `play` event says `running`. The session counts as started from then on (so its end is told
-     even when it comes within the first 1.5 seconds). Lamplit stays there, not minimised, while the game runs. A
-     window that goes during the fade (a game that replaces its window) leaves the launch and its starting screen
-     going until the next one is up. Any other window that stays 5 seconds (a store app's, also one that opens
-     maximised, or a small window of the game's) gets a `window` line on the starting screen, which `launch_show`
-     brings forward: the newest such window, and once it goes, the one before it again. With none left, the line says
-     the window has closed, and Cross goes back to a store app that may still need the player. Only the player gives
-     such a window the screen. After the game has run 12 seconds with only small windows of its own, the front one
-     gets the screen.
+     even when it comes within the first 1.5 seconds). Lamplit stays there, not minimised (restored without taking
+     the foreground, if Open the store app minimised it), while the game runs. A window that goes during the fade (a
+     game that replaces its window) leaves the launch and its starting screen going until the next one is up. Any
+     other window that stays 5 seconds (a store app's, also one that opens maximised, or a small window of the
+     game's) gets a `window` line on the starting screen, which `launch_show` brings forward: the newest such window,
+     and once it goes, the one before it again. With none left, the line says the window has closed, and Cross goes
+     back to a store app that may still need the player. Only the player gives such a window the screen. After the
+     game has run 12 seconds with only small windows of its own, the front one gets the screen.
    - For a game added by hand, the game's processes are the exe Lamplit started and every process that came from it,
      wherever it runs from, leaving out Windows' own helpers (a shell, a console host) on the way, and the player's
      own programs it may open, with what they start: a browser, a store or chat app (`NOT_THE_GAME` in `watch.rs`).
