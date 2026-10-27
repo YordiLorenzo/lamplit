@@ -40,6 +40,11 @@ pub fn lamplit_in_front() -> bool {
 /// window that opens later isn't kept from Windows' foreground: a game may need it to set its screen mode.
 pub fn hold(app: &AppHandle, generation: u64) {
     bring_lamplit_forward(app);
+    keep_on_top(generation);
+}
+
+/// Keeps Lamplit's window on top for launch `generation`, without bringing it forward (see `hold`).
+fn keep_on_top(generation: u64) {
     let Some(&lamplit) = LAMPLIT.get() else { return };
     let mut held = HOLD.lock();
     *held = generation;
@@ -82,18 +87,28 @@ pub fn release(app: &AppHandle, generation: Option<u64>) {
     let _ = app.run_on_main_thread(move || window::set_topmost(HWND(lamplit as *mut _), false));
 }
 
-/// Hands the screen over to the window `to`: Lamplit lets go and goes right behind that window rather than minimising,
-/// so the desktop shows neither now nor when the game closes. The window may have Windows' foreground already (a game
-/// takes it as its window opens) while Lamplit still covers it; on the main thread, so the keeper's last raise comes
-/// first.
-pub fn hand_over(app: &AppHandle, generation: u64, to: isize) {
-    let_go(Some(generation));
-    let Some(&lamplit) = LAMPLIT.get() else { return };
+/// Hands the screen over to the window `to`: Lamplit lets go and goes behind that window rather than minimising, so
+/// the desktop shows neither now nor when the game closes. The window may have Windows' foreground already (a game
+/// takes it as its window opens) while Lamplit still covers it. On the main thread, so the keeper's last raise comes
+/// first. False when the window has gone meanwhile (a game replacing its window while the screen faded): Lamplit then
+/// keeps holding the screen.
+pub fn hand_over(app: &AppHandle, generation: u64, to: isize) -> bool {
+    let Some(&lamplit) = LAMPLIT.get() else { return false };
+    let held = let_go(Some(generation));
+    let (placed, answer) = std::sync::mpsc::channel();
     let _ = app.run_on_main_thread(move || {
         let to = HWND(to as *mut _);
-        window::place_behind(HWND(lamplit as *mut _), to);
-        window::force_foreground(to);
+        let behind = window::place_behind(HWND(lamplit as *mut _), to);
+        if behind {
+            window::force_foreground(to);
+        }
+        let _ = placed.send(behind);
     });
+    let behind = answer.recv_timeout(Duration::from_secs(5)).unwrap_or(false);
+    if !behind && held {
+        keep_on_top(generation);
+    }
+    behind
 }
 
 /// The whole of the screen Lamplit is on.

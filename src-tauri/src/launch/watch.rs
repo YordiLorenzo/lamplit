@@ -342,7 +342,11 @@ impl Looking<'_> {
                 // The starting screen fades to black first, so nothing shows between it and the game.
                 events::emit(app, Event::Play(Play::Running { id }));
                 std::thread::sleep(FADE);
-                hand_over(app, self.generation, to);
+                if !hand_over(app, self.generation, to) {
+                    // It has gone meanwhile: a game that replaces its window. The next one up gets the screen.
+                    log::info!("{name}: its window went while the screen faded; looking for the next one");
+                    return false;
+                }
                 app.state::<Launcher>().started(self.generation);
                 true
             }

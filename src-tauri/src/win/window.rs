@@ -100,12 +100,13 @@ pub fn monitor(window: HWND) -> Option<Rect> {
 
 /// Puts `window` behind `front` without activating it, among the windows that aren't topmost: right behind `front`, or,
 /// when `front` is topmost itself, at the top of those windows, since Windows keeps a window put behind a topmost one
-/// topmost too, above every ordinary window the player switches to.
-pub fn place_behind(window: HWND, front: HWND) {
+/// topmost too, above every ordinary window the player switches to. False, and `window` left where it was, when
+/// `front` has closed, as a game may close its window to open another while it sets its screen mode.
+pub fn place_behind(window: HWND, front: HWND) -> bool {
     let after = if is_topmost(front) { HWND_NOTOPMOST } else { front };
     let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
     // SAFETY: changes only the window's place among the others; a stale handle makes the call fail.
-    let _ = unsafe { SetWindowPos(window, Some(after), 0, 0, 0, 0, flags) };
+    unsafe { SetWindowPos(window, Some(after), 0, 0, 0, 0, flags) }.is_ok()
 }
 
 /// The window is above every window that isn't topmost.
@@ -249,12 +250,12 @@ mod tests {
     #[test]
     fn lamplit_behind_a_topmost_game_leaves_the_topmost_windows() {
         let (lamplit, game, other) = (window(true), window(true), window(false));
-        place_behind(lamplit, game);
+        assert!(place_behind(lamplit, game));
         assert!(!is_topmost(lamplit), "it would stay above every ordinary window the player switches to");
         // Behind a game that isn't topmost: right behind it.
         set_topmost(lamplit, true);
         assert!(is_topmost(lamplit));
-        place_behind(lamplit, other);
+        assert!(place_behind(lamplit, other));
         // SAFETY: reads the window after `other` in the z-order.
         let next = unsafe { GetWindow(other, GW_HWNDNEXT) };
         assert!(!is_topmost(lamplit) && next == Ok(lamplit), "{next:?}");
@@ -262,5 +263,17 @@ mod tests {
             // SAFETY: each window is this thread's, made above.
             unsafe { DestroyWindow(w) }.unwrap();
         }
+    }
+
+    #[test]
+    fn lamplit_stays_on_top_when_the_window_it_was_to_go_behind_has_gone() {
+        // The game replaced its window while the screen faded to black.
+        let (lamplit, game) = (window(true), window(false));
+        // SAFETY: the window is this thread's, made above.
+        unsafe { DestroyWindow(game) }.unwrap();
+        assert!(!place_behind(lamplit, game), "the handover would count as done, and Lamplit stay on top");
+        assert!(is_topmost(lamplit), "it keeps holding the screen");
+        // SAFETY: the window is this thread's, made above.
+        unsafe { DestroyWindow(lamplit) }.unwrap();
     }
 }
