@@ -1,26 +1,29 @@
 // @ts-check
-// The in-game dock's page (dock.html). Rust shows its window over the running game and says when the dock opens,
-// folds away or has news (src-tauri/src/dock/); this page draws the island, takes the controller's presses while the
-// dock is in front, and calls the commands its tiles stand for.
+// The in-game dock's page (dock.html). Rust shows its window over the running game and says when the dock opens, folds
+// away or has news (src-tauri/src/dock/); this page draws the island, takes the controller's presses while the dock
+// is open, and calls the commands its tiles stand for.
 
 import * as api from '../api.js';
-import { buttonFace } from '../logic.js';
+import { buttonFace, readable } from '../logic.js';
 import { sfx } from '../sounds.js';
-import { chips, counts, hints, outputIcon, spring, tiles, volumeText } from './logic.js';
+import { HOLD_MS, chips, counts, hints, outputIcon, sessionText, spring, tiles, volumeText } from './logic.js';
 
 /** @typedef {import('./logic.js').TileKey} TileKey */
-/** @typedef {import('../api.js').Action} Action */
+/** @typedef {import('../api.js').Action | import('../api.js').DockRelease} Step */
 
 /** @param {string} id */
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 
 const els = {
   island: $('island'),
+  backdrop: /** @type {HTMLCanvasElement} */ ($('backdrop')),
   news: $('news'),
   newsIcon: $('newsIcon'),
   newsText: $('newsText'),
   dock: $('dock'),
+  cover: /** @type {HTMLImageElement} */ ($('cover')),
   game: $('game'),
+  session: $('session'),
   chips: $('chips'),
   clock: $('clock'),
   volume: $('volume'),
@@ -32,6 +35,7 @@ const els = {
   outputList: $('outputList'),
   message: $('message'),
   hint: $('hint'),
+  ring: $('ring'),
 };
 
 /** How long news stays before it folds; Rust hides the window a little later (dock/mod.rs NEWS_FOR). */
@@ -43,6 +47,8 @@ const MESSAGE_MS = 6000;
  * still runs 10 s after it was asked to close (dock/game.rs).
  */
 const GAME_EVERY_MS = 2000;
+/** Lamplit's lamp amber, the island's colour for a game without art. */
+const LAMP = [252, 165, 69];
 
 const state = {
   /** @type {'gone' | 'news' | 'open'} */
@@ -60,11 +66,12 @@ const state = {
     accessories: null,
     quiet: null,
     overlays: { nvidia_overlay: false, nvidia_stats: null },
-    confirm: false,
   },
   /** @type {import('../api.js').PadKind} */
   padKind: 'dualsense',
   seen: { lastPad: -Infinity, lastKey: { action: '', at: 0 } },
+  /** The art the island shows now: its game and files. */
+  artFor: '',
 };
 
 // ---------- the island ----------
@@ -91,8 +98,11 @@ function open() {
   measure();
   state.row = 'tiles';
   state.tile = 'resume';
-  state.data.confirm = false;
+  cancelHold();
   say('');
+  // The ring appears on Resume rather than springing there from where it was last time.
+  els.ring.classList.add('instant');
+  els.ring.classList.remove('on');
   render();
   shape('open');
   sfx.open();
@@ -104,6 +114,7 @@ function open() {
 function fold() {
   clearTimeout(newsTimer);
   clearInterval(gameTimer);
+  cancelHold();
   if (state.mode !== 'gone') shape('gone');
 }
 
@@ -124,6 +135,76 @@ function onDock(show) {
   if (show.mode === 'open') open();
   else if (show.mode === 'closed') fold();
   else showNews(show);
+}
+
+// ---------- the game's art ----------
+
+/**
+ * The game's art in the island: its cover beside its name, and its background behind everything, blurred into its
+ * colours, which also tint the island.
+ * @param {import('../api.js').DockGame | null} game
+ */
+function showArt(game) {
+  const key = game ? `${game.id}|${game.art.portrait}|${game.art.hero}` : '';
+  if (key === state.artFor) return;
+  state.artFor = key;
+  const cover = game?.art.portrait;
+  els.cover.hidden = !cover;
+  if (cover) els.cover.src = api.assetUrl(cover);
+  const wide = game?.art.hero ?? cover;
+  if (!wide) return paintBackdrop(null);
+  const img = new Image();
+  // Read back for its colour, which needs the CORS header Tauri's asset protocol sends.
+  img.crossOrigin = 'anonymous';
+  img.onload = () => state.artFor === key && paintBackdrop(img);
+  img.onerror = () => state.artFor === key && paintBackdrop(null);
+  img.src = api.assetUrl(wide);
+}
+
+/**
+ * Draws the art small and blurred into the backdrop, which the page scales up to the island: a blur that costs nothing
+ * while the island springs open, where a CSS blur would be worked out again on every frame.
+ * @param {HTMLImageElement | null} img
+ */
+function paintBackdrop(img) {
+  const canvas = els.backdrop;
+  const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d', { willReadFrequently: true }));
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  els.island.classList.toggle('art', !!img);
+  if (!img) return tint(LAMP);
+  // A little larger than the canvas, so the blur doesn't darken its edges.
+  const scale = Math.max(canvas.width / img.width, canvas.height / img.height) * 1.15;
+  const [w, h] = [img.width * scale, img.height * scale];
+  ctx.filter = 'blur(5px)';
+  ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+  ctx.filter = 'none';
+  tint(colourOf(ctx, canvas.width, canvas.height));
+}
+
+/**
+ * The art's colour, as the home screen picks a game's accent: vivid, mid-bright pixels count most.
+ * @param {CanvasRenderingContext2D} ctx @param {number} width @param {number} height
+ */
+function colourOf(ctx, width, height) {
+  const d = ctx.getImageData(0, 0, width, height).data;
+  let r = 0, g = 0, b = 0, w = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    const max = Math.max(d[i], d[i + 1], d[i + 2]);
+    const min = Math.min(d[i], d[i + 1], d[i + 2]);
+    const sat = max ? (max - min) / max : 0;
+    const lum = max / 255;
+    const wt = sat * sat * (lum > 0.2 && lum < 0.95 ? 1 : 0.15) + 0.002;
+    r += d[i] * wt;
+    g += d[i + 1] * wt;
+    b += d[i + 2] * wt;
+    w += wt;
+  }
+  return readable([r / w, g / w, b / w]);
+}
+
+/** @param {number[]} rgb */
+function tint(rgb) {
+  document.documentElement.style.setProperty('--game', rgb.map(Math.round).join(' '));
 }
 
 // ---------- drawing ----------
@@ -160,34 +241,64 @@ function span(cls, text) {
   return s;
 }
 
-/** The drawn PlayStation symbols, as in hints.js; Xbox letters stay text. @type {Record<string, string>} */
-const SHAPES = { '✕': 'btn-cross', '○': 'btn-circle', '↔': 'btn-adjust' };
+/** The ring that fills around Close game's icon while Cross is held. */
+function holdRing() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.classList.add('hold');
+  svg.setAttribute('viewBox', '0 0 40 40');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const cls of ['track', 'fill']) {
+    const c = document.createElementNS(ns, 'circle');
+    c.classList.add(cls);
+    for (const [k, v] of [['cx', '20'], ['cy', '20'], ['r', '18'], ['pathLength', '100']]) c.setAttribute(k, v);
+    svg.append(c);
+  }
+  return svg;
+}
+
+/** The drawn PlayStation symbols and d-pad arrows; Xbox letters stay text. @type {Record<string, string>} */
+const SHAPES = { '✕': 'btn-cross', '○': 'btn-circle', '↔': 'btn-adjust', '↑': 'btn-up', '↓': 'btn-down' };
+
+/** @param {import('./logic.js').DockButton} button @returns {[string, string]} */
+const face = (button) =>
+  button === 'up' ? ['options', '↑'] : button === 'down' ? ['options', '↓'] : buttonFace(state.padKind, button);
 
 function renderHints() {
   els.hint.innerHTML = hints(state.row, state.tile, state.data)
     .map(([button, label]) => {
-      const [cls, glyph] = buttonFace(state.padKind, button);
-      const face = SHAPES[glyph] ? `<svg aria-hidden="true"><use href="#${SHAPES[glyph]}"/></svg><i>${glyph}</i>` : glyph;
-      return `<span><b class="${cls}">${face}</b>${label}</span>`;
+      const [cls, glyph] = face(button);
+      const drawn = SHAPES[glyph] ? `<svg aria-hidden="true"><use href="#${SHAPES[glyph]}"/></svg><i>${glyph}</i>` : glyph;
+      return `<span><b class="${cls}">${drawn}</b>${label}</span>`;
     })
     .join('');
 }
 
-function tickClock() {
+/** The time, and how long the game has been played, which move on while the dock is open. */
+function tick() {
   els.clock.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  const game = state.data.game;
+  els.session.textContent = sessionText(game, Date.now() / 1000);
+  els.session.classList.toggle('warn', !!game && !game.responding);
 }
+
+/** The tile with `key`, if the row has it. @param {TileKey} key */
+const tileEl = (key) => /** @type {HTMLElement | null} */ (els.tiles.querySelector(`[data-key="${key}"]`));
 
 function render() {
   const d = state.data;
   els.game.textContent = d.game?.name ?? '';
+  showArt(d.game);
+  tick();
   els.chips.replaceChildren(
     ...chips(d.accessories).map((c) => {
       const chip = span(`chip ${c.tone}`, '');
-      chip.append(icon(`i-${c.icon}`), c.text);
+      const battery = span('battery', '');
+      battery.style.setProperty('--level', String(c.level / 100));
+      chip.append(icon(`i-${c.icon}`), battery, c.text);
       return chip;
     })
   );
-  tickClock();
 
   const muted = !!d.sound?.muted;
   els.volumeIcon.setAttribute('href', muted ? '#i-muted' : '#i-volume');
@@ -199,35 +310,88 @@ function render() {
   const row = tiles(d);
   // The focused tile may have gone (the game closed): back to Resume.
   if (!row.some((t) => t.key === state.tile)) state.tile = 'resume';
-  // Tiles are kept by key, so the focus ring moves between them rather than being drawn anew.
+  // Tiles are kept by key, and stay in the page while the row is the same: taking one out would cut short its
+  // transitions, such as a hold's ring filling up.
   const kept = new Map([...els.tiles.children].map((el) => [/** @type {HTMLElement} */ (el).dataset.key, el]));
-  els.tiles.replaceChildren(
-    ...row.map((t) => {
-      const el = /** @type {HTMLElement} */ (kept.get(t.key) ?? Object.assign(document.createElement('div'), { className: 'tile slot' }));
+  const wanted = row.map((t, i) => {
+    let el = /** @type {HTMLElement | undefined} */ (kept.get(t.key));
+    if (!el) {
+      el = document.createElement('div');
       el.dataset.key = t.key;
-      el.replaceChildren(icon(`i-${t.icon}`), span('label', t.label), span(`value ${t.tone}`, t.value));
-      el.classList.toggle('focus', state.row === 'tiles' && state.tile === t.key);
-      return el;
-    })
-  );
+      const glyph = span('glyph', '');
+      if (t.key === 'close') glyph.append(holdRing());
+      glyph.append(icon(''));
+      el.append(glyph, span('label', ''));
+    }
+    el.classList.add('tile', 'slot');
+    el.classList.toggle('primary', t.key === 'resume');
+    el.classList.toggle('on', t.on);
+    el.classList.toggle('warn', t.tone === 'warn');
+    el.classList.toggle('focus', state.row === 'tiles' && state.tile === t.key);
+    el.classList.toggle('holding', t.key === 'close' && holding !== 0);
+    el.style.setProperty('--i', String(i + 1));
+    /** @type {SVGUseElement} */ (el.querySelector('.icon use')).setAttribute('href', `#i-${t.icon}`);
+    /** @type {HTMLElement} */ (el.querySelector('.label')).textContent = t.label;
+    return el;
+  });
+  if (wanted.some((el, i) => els.tiles.children[i] !== el) || els.tiles.children.length !== wanted.length) {
+    els.tiles.replaceChildren(...wanted);
+  }
+  els.hint.style.setProperty('--i', String(row.length + 1));
 
   const choosing = state.row === 'outputs';
   els.outputs.hidden = !choosing;
-  els.volume.hidden = choosing;
-  els.tiles.hidden = choosing;
+  els.tiles.classList.toggle('away', choosing);
   if (choosing) {
     els.outputList.replaceChildren(
       ...(d.sound?.outputs ?? []).map((o, i) => {
         const el = document.createElement('div');
         el.className = 'output slot' + (i === state.output ? ' focus' : '');
         if (i === state.output) requestAnimationFrame(() => el.scrollIntoView({ block: 'nearest' }));
-        el.append(icon(`i-${outputIcon(o.kind)}`), span('', o.name), span('value good', o.default ? 'In use' : ''));
+        el.append(icon(`i-${outputIcon(o.kind)}`), span('', o.name), span('value', o.default ? 'In use' : ''));
         return el;
       })
     );
   }
   renderHints();
   if (state.mode === 'open') shape('open');
+  placeRing();
+}
+
+/** What has the focus now: the volume, a tile, or an output. */
+function focused() {
+  if (state.row === 'volume') return els.volume;
+  if (state.row === 'outputs') return /** @type {HTMLElement | null} */ (els.outputList.querySelector('.output.focus'));
+  return tileEl(state.tile);
+}
+
+/**
+ * Moves the focus ring onto what has the focus, from where it was: it springs there. Laid out from the dock's own
+ * boxes, so a tile still coming in, or the island still opening, doesn't throw it off. The volume draws its own
+ * ring, since it changes size as it opens.
+ */
+function placeRing() {
+  const el = focused();
+  els.ring.classList.toggle('on', !!el && state.row !== 'volume');
+  if (!el || state.mode !== 'open' || state.row === 'volume') return;
+  // After this frame's layout: a list of outputs that just opened has no boxes yet.
+  requestAnimationFrame(() => {
+    let [x, y, n] = [0, 0, /** @type {HTMLElement | null} */ (el)];
+    while (n && n !== els.dock) {
+      x += n.offsetLeft;
+      y += n.offsetTop;
+      n = /** @type {HTMLElement | null} */ (n.offsetParent);
+    }
+    if (els.outputList.contains(el)) y -= els.outputList.scrollTop;
+    const r = els.ring.style;
+    r.setProperty('--x', `${x}px`);
+    r.setProperty('--y', `${y}px`);
+    r.setProperty('--w', `${el.offsetWidth}px`);
+    r.setProperty('--h', `${el.offsetHeight}px`);
+    r.setProperty('--r', getComputedStyle(el).borderRadius);
+    els.ring.classList.add('on');
+    requestAnimationFrame(() => els.ring.classList.remove('instant'));
+  });
 }
 
 // ---------- what the dock knows ----------
@@ -237,6 +401,17 @@ const orKeep = (call) => call.catch(() => undefined);
 
 /** Asked so far; only the newest answers are shown, since two refreshes can answer in either order. */
 let refreshes = 0;
+
+/**
+ * The game as Rust reads it now. Cross held on Close game was for the game and the offer the player saw: when the
+ * offer turned into Force close, or another game runs now, the hold is let go and has to start again.
+ * @param {import('../api.js').DockGame | null} game
+ */
+function setGame(game) {
+  const was = state.data.game;
+  if (game?.id !== was?.id || game?.force_close !== was?.force_close) cancelHold();
+  state.data.game = game;
+}
 
 /** Everything the dock shows, read again each time it opens. */
 async function refresh() {
@@ -250,7 +425,7 @@ async function refresh() {
   ]);
   if (asked !== refreshes) return;
   const d = state.data;
-  if (game !== undefined) d.game = game;
+  if (game !== undefined) setGame(game);
   d.sound = sound ?? d.sound;
   d.accessories = accessories ?? d.accessories;
   d.quiet = quiet ?? d.quiet;
@@ -268,9 +443,7 @@ async function rereadGame() {
   try {
     const game = await orKeep(api.dockState());
     if (game === undefined || state.mode !== 'open') return;
-    // Close game turned into Force close: a press already asked for was for the other one.
-    if (game?.force_close !== state.data.game?.force_close) state.data.confirm = false;
-    state.data.game = game;
+    setGame(game);
     render();
   } finally {
     readingGame = false;
@@ -337,8 +510,6 @@ function moveTile(dir) {
   const next = row[at + dir];
   if (!next) return sfx.edge();
   state.tile = next.key;
-  // Close game asks again once the focus has left it.
-  state.data.confirm = false;
   sfx.move();
   render();
 }
@@ -346,9 +517,43 @@ function moveTile(dir) {
 /** @param {'tiles' | 'volume'} row */
 function focusRow(row) {
   state.row = row;
-  state.data.confirm = false;
   sfx.move();
   render();
+}
+
+/** Cross is held on Close game: the game closes once it has been held HOLD_MS. */
+let holding = 0;
+
+function startHold() {
+  const el = tileEl('close');
+  if (!el || !state.data.game) return;
+  el.style.setProperty('--hold-ms', `${HOLD_MS}ms`);
+  el.classList.add('holding');
+  sfx.move();
+  holding = setTimeout(closeGame, HOLD_MS);
+}
+
+/** Let go before the ring was full, or the offer changed underneath: nothing closes. */
+function cancelHold() {
+  if (!holding) return;
+  clearTimeout(holding);
+  holding = 0;
+  tileEl('close')?.classList.remove('holding');
+}
+
+function closeGame() {
+  holding = 0;
+  const el = tileEl('close');
+  el?.classList.remove('holding');
+  el?.classList.add('closing');
+  setTimeout(() => el?.classList.remove('closing'), 450);
+  const d = state.data;
+  if (!d.game) return;
+  sfx.launch();
+  run(async () => {
+    await api.dockCloseGame(d.game.force_close);
+    setGame(await api.dockState());
+  });
 }
 
 function select() {
@@ -389,21 +594,11 @@ function select() {
       sfx.open();
       return api.dockHome();
     case 'close':
-      if (!d.game) return;
-      sfx.open();
-      if (!d.confirm) {
-        d.confirm = true;
-        return render();
-      }
-      d.confirm = false;
-      return run(async () => {
-        await api.dockCloseGame(d.game.force_close);
-        d.game = await api.dockState();
-      });
+      return startHold();
   }
 }
 
-/** @param {Action} action */
+/** @param {Step} action */
 function actOnOutputs(action) {
   const outputs = state.data.sound?.outputs ?? [];
   if (action === 'back') {
@@ -427,9 +622,12 @@ function actOnOutputs(action) {
   });
 }
 
-/** @param {Action} action @param {'pad' | 'key' | 'mouse'} source */
+/** @param {Step} action @param {'pad' | 'key' | 'mouse'} source */
 function act(action, source) {
   if (!counts(state.seen, action, source, performance.now()) || state.mode !== 'open') return;
+  // Letting go of Cross only matters to a hold; any other press ends one too.
+  if (action === 'ok-up') return cancelHold();
+  cancelHold();
   if (state.row === 'outputs') return actOnOutputs(action);
   if (action === 'back') return resume();
   if (state.row === 'volume') {
@@ -447,32 +645,44 @@ function act(action, source) {
 
 // ---------- keyboard and mouse ----------
 
-/** @type {Record<string, Action>} */
+/** @type {Record<string, Step>} */
 const KEYS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', Enter: 'ok', Escape: 'back', Backspace: 'back' };
 
 window.addEventListener('keydown', (e) => {
   const action = KEYS[e.key];
   if (!action) return;
   e.preventDefault();
-  // Only the arrows repeat, as on the controller: a held Enter mustn't also answer "Press again".
+  // Only the arrows repeat, as on the controller: a held Enter is one hold, not a run of presses.
   if (e.repeat && (action === 'ok' || action === 'back')) return;
   act(action, 'key');
 });
+window.addEventListener('keyup', (e) => {
+  if (e.key === 'Enter') act('ok-up', 'key');
+});
 
+// A tile takes a click, as Cross; Close game takes the mouse button held down.
+els.tiles.addEventListener('pointerdown', (e) => {
+  const tile = /** @type {HTMLElement | null} */ (/** @type {Element} */ (e.target).closest('.tile'));
+  if (tile?.dataset.key !== 'close' || state.mode !== 'open') return;
+  state.row = 'tiles';
+  state.tile = 'close';
+  render();
+  act('ok', 'mouse');
+});
 els.tiles.addEventListener('click', (e) => {
   const tile = /** @type {HTMLElement | null} */ (/** @type {Element} */ (e.target).closest('.tile'));
-  if (!tile || state.mode !== 'open') return;
-  if (state.row !== 'tiles' || state.tile !== tile.dataset.key) state.data.confirm = false;
+  if (!tile || state.mode !== 'open' || tile.dataset.key === 'close') return;
   state.row = 'tiles';
   state.tile = /** @type {TileKey} */ (tile.dataset.key);
   act('ok', 'mouse');
 });
+for (const ended of ['pointerup', 'pointercancel', 'pointerleave']) els.tiles.addEventListener(ended, () => act('ok-up', 'mouse'));
 
 // A click on the bar sets the volume there.
 els.volume.addEventListener('click', (e) => {
   if (state.mode !== 'open') return;
   state.row = 'volume';
-  const bar = els.volume.querySelector('.bar').getBoundingClientRect();
+  const bar = /** @type {HTMLElement} */ (els.volume.querySelector('.bar')).getBoundingClientRect();
   const at = Math.round(((e.clientX - bar.left) / bar.width) * 20) * 5;
   const volume = state.data.sound?.volume;
   if (at >= 0 && at <= 100 && volume != null && at !== volume) nudgeVolume(at - volume);
@@ -507,11 +717,12 @@ window.addEventListener('unhandledrejection', (e) => api.log.error(`dock: unhand
 
 async function init() {
   measure();
-  // A spring that overshoots a little and settles: the island's way of opening.
-  const { easing, ms } = spring(0.46, 0.7);
-  document.documentElement.style.setProperty('--spring', easing);
-  document.documentElement.style.setProperty('--spring-ms', `${ms}ms`);
-  setInterval(() => state.mode === 'open' && tickClock(), 10_000);
+  // The island opens on a spring that overshoots a little and settles; the focus ring moves on a quicker one.
+  for (const [name, { easing, ms }] of Object.entries({ spring: spring(0.46, 0.7), snap: spring(0.3, 0.78) })) {
+    document.documentElement.style.setProperty(`--${name}`, easing);
+    document.documentElement.style.setProperty(`--${name}-ms`, `${ms}ms`);
+  }
+  setInterval(() => state.mode === 'open' && tick(), 10_000);
   let heardKind = false;
   await Promise.all([
     api.onDock(onDock),

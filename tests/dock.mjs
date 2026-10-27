@@ -1,6 +1,6 @@
 // The in-game dock's page (ui/dock.html) in Chromium with the fake Tauri, run by ui.test.mjs: opening and folding,
-// every tile, the controller, keyboard and mouse, news, and its size in the window Rust gives it. And the switch in
-// Settings that turns the dock off.
+// every tile, holding Cross to close a game, the controller, keyboard and mouse, the game's art and play time, news,
+// and its size in the window Rust gives it. And the switch in Settings that turns the dock off.
 import path from 'node:path';
 import { pageFile } from './contract.mjs';
 import { ipc, known, like } from './fixtures.mjs';
@@ -9,9 +9,14 @@ import { emit, idle, settled, until } from './page.mjs';
 /** The dock's window while open: the bottom 60% of a 1080p screen (src-tauri/src/dock/window.rs). */
 const OPEN = { width: 1920, height: 648 };
 const SCREEN = { width: 1920, height: 1080 };
+/** Longer than Close game's hold (ui/dock/logic.js HOLD_MS), and well shorter. */
+const HELD_MS = 1150;
+const TAPPED_MS = 300;
 
 const [opened, closed, status] = ipc('dock');
-const game = like(ipc('dock-game'), { responding: true, force_close: false });
+/** Started 72 minutes ago, and answering. */
+const game = like(ipc('dock-game'), { responding: true, force_close: false, started: Math.floor(Date.now() / 1000) - 72 * 60 });
+const hung = like(ipc('dock-game'), { started: game.started });
 const headsetOut = like(ipc('sound').outputs[0], {
   id: '{0.0.0.00000000}.{headset}',
   windows_name: 'Speakers (PRO X 2 LIGHTSPEED)',
@@ -43,18 +48,22 @@ async function answers(page, data) {
   }, data);
 }
 
+/** A tile as the test reads it: its label, then on, warn and holding when they apply. */
 const view = (page) =>
   page.evaluate(() => {
     const $ = (id) => document.getElementById(id);
     const tiles = [...document.querySelectorAll('.tile')];
     const focus = document.querySelector('.slot.focus');
+    const flags = (t) => ['on', 'warn', 'holding'].filter((f) => t.classList.contains(f)).map((f) => `|${f}`).join('');
     return {
       mode: $('island').dataset.mode,
       tiles: tiles.map((t) => t.dataset.key),
-      values: Object.fromEntries(tiles.map((t) => [t.dataset.key, `${t.querySelector('.label').textContent}|${t.querySelector('.value').textContent}`])),
+      values: Object.fromEntries(tiles.map((t) => [t.dataset.key, `${t.querySelector('.label').textContent}${flags(t)}`])),
       focus: focus ? focus.dataset.key || focus.id || focus.textContent : null,
       outputs: $('outputs').hidden ? null : [...document.querySelectorAll('.output')].map((o) => o.textContent),
       game: $('game').textContent,
+      session: `${$('session').textContent}${$('session').classList.contains('warn') ? '|warn' : ''}`,
+      cover: /** @type {HTMLImageElement} */ ($('cover')).hidden ? '' : $('cover').getAttribute('src'),
       chips: $('chips').textContent,
       volume: $('volumeText').textContent,
       hint: $('hint').textContent,
@@ -66,6 +75,39 @@ const view = (page) =>
 
 /** The commands sent since `from` calls. */
 const since = async (page, from) => (await view(page)).calls.slice(from).map(([cmd, args]) => (args ? `${cmd} ${JSON.stringify(args)}` : cmd));
+const closes = async (page, from) => (await since(page, from)).filter((c) => c.startsWith('dock_close_game'));
+
+/** Cross held on the focused tile for `ms`, then let go. */
+async function hold(page, ms) {
+  await emit(page, 'dock-pad', 'ok');
+  await page.waitForTimeout(ms);
+  await emit(page, 'dock-pad', known('dock_release', 'ok-up'));
+  await idle(page);
+}
+
+/** Where the focus ring is, and where the focused tile is, both inside the dock, in whole pixels. */
+const ringOn = (page) =>
+  page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        // After the ring's own frame of layout, and its spring.
+        setTimeout(() => {
+          const ring = document.getElementById('ring');
+          const dock = document.getElementById('dock');
+          const tile = document.querySelector('.tile.focus');
+          const box = (el) => {
+            let [x, y, n] = [0, 0, el];
+            while (n && n !== dock) [x, y, n] = [x + n.offsetLeft, y + n.offsetTop, n.offsetParent];
+            return [x, y, el.offsetWidth, el.offsetHeight].map(Math.round).join();
+          };
+          const s = getComputedStyle(ring);
+          const at = [s.getPropertyValue('--x'), s.getPropertyValue('--y'), s.getPropertyValue('--w'), s.getPropertyValue('--h')]
+            .map((v) => Math.round(parseFloat(v)))
+            .join();
+          resolve({ ring: at, tile: tile ? box(tile) : null, on: ring.classList.contains('on') });
+        }, 450)
+      )
+  );
 
 /**
  * @param {object} t
@@ -84,15 +126,20 @@ export async function dockTests({ open, close, check, shots }) {
     return page;
   };
 
-  // D1. The dock springs open on Resume with a tile for everything it does, names the game and every battery, and
-  // fits in its window; Circle goes back to the game, and Rust's word folds it.
+  // D1. The dock springs open on Resume with a tile for everything it does, shows the game with its cover and how long
+  // it has been played, every battery and the volume, and fits in its window; Circle goes back to the game, and
+  // Rust's word folds it.
   {
     const page = await openDock();
     let v = await view(page);
     check('the dock opens on Resume', v.mode === 'open' && v.focus === 'resume' && v.hint.includes('Resume'), `${v.mode} ${v.focus} ${v.hint}`);
     check('the dock has Resume, output, quiet mode, stats, Home and Close game', JSON.stringify(v.tiles) === '["resume","output","quiet","stats","home","close"]', JSON.stringify(v.tiles));
     check('the dock reads what it shows when it opens', ['dock_state', 'sound_state', 'accessories_state', 'quiet_state', 'overlay_state'].every((c) => v.calls.some(([cmd]) => cmd === c)), JSON.stringify(v.calls));
-    check('the top line names the game and every battery', v.game === 'Half-Life' && v.chips === '60%Medium80%' && v.volume === '45%', `${v.game} ${v.chips} ${v.volume}`);
+    check('the top line names the game, how long it has been played, every battery and the volume', v.game === 'Half-Life' && v.session === 'Playing for 1 h 12 min' && v.chips === '60%Medium80%' && v.volume === '45%', `${v.game} ${v.session} ${v.chips} ${v.volume}`);
+    check("the top line shows the game's cover", v.cover.includes(encodeURIComponent(game.art.portrait)), v.cover);
+    check('a tile shows its state by its icon and has one label', v.values.output === 'TV' && v.values.quiet === 'Partly quiet|on|warn' && v.values.stats === 'Stats', JSON.stringify(v.values));
+    const ring = await ringOn(page);
+    check('the focus ring sits on Resume', ring.on && ring.ring === ring.tile, JSON.stringify(ring));
     const fit = await page.evaluate(() => {
       const island = document.getElementById('island').getBoundingClientRect();
       const dock = document.getElementById('dock').getBoundingClientRect();
@@ -116,24 +163,31 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
-  // D2. The controller around the dock: the tiles left and right, the volume above them, the outputs in a list.
+  // D2. The controller around the dock: the tiles left and right with the ring following, the volume above them,
+  // the outputs in a list.
   {
     const page = await openDock();
     await emit(page, 'dock-pad', 'left');
     let v = await view(page);
     check('left of Resume is the edge', v.focus === 'resume', v.focus);
     await emit(page, 'dock-pad', 'right');
+    await emit(page, 'dock-pad', 'right');
+    const ring = await ringOn(page);
+    check('the focus ring moves to the tile that has the focus', ring.on && ring.ring === ring.tile, JSON.stringify(ring));
+    await emit(page, 'dock-pad', 'left');
     await emit(page, 'dock-pad', 'ok');
-    v = await view(page);
     await settled(page);
+    v = await view(page);
     await page.screenshot({ path: path.join(shots, 'dock-output.png'), omitBackground: true });
     check('Cross on the output lists the outputs, on the one in use', v.focus?.startsWith('TV') && JSON.stringify(v.outputs) === '["TVIn use","PRO X 2 headset"]', `${v.focus} ${JSON.stringify(v.outputs)}`);
+    const island = await page.evaluate(() => document.getElementById('island').offsetWidth);
     let from = v.calls.length;
     await emit(page, 'dock-pad', 'down');
     await emit(page, 'dock-pad', 'ok');
     await idle(page);
     v = await view(page);
-    check('Cross on another output makes it the default, and the list closes', (await since(page, from)).includes(`sound_set_default {"id":"${headsetOut.id}"}`) && v.outputs === null && v.values.output === 'Output|PRO X 2 headset', `${await since(page, from)} ${v.values.output}`);
+    check('Cross on another output makes it the default, and the list closes', (await since(page, from)).includes(`sound_set_default {"id":"${headsetOut.id}"}`) && v.outputs === null && v.values.output === 'Headset', `${await since(page, from)} ${v.values.output}`);
+    check('the island keeps its width while the list shows', island === (await page.evaluate(() => document.getElementById('island').offsetWidth)), String(island));
     await emit(page, 'dock-pad', 'up');
     from = v.calls.length;
     await emit(page, 'dock-pad', 'right');
@@ -155,11 +209,13 @@ export async function dockTests({ open, close, check, shots }) {
   {
     const page = await openDock({ quiet: like(ipc('quiet'), { state: known('quiet_state', 'off'), active: false, notes: [] }) });
     for (let i = 0; i < 2; i++) await emit(page, 'dock-pad', 'right');
-    let from = (await view(page)).calls.length;
+    let v = await view(page);
+    check('quiet mode off: its icon is dark', v.values.quiet === 'Quiet', v.values.quiet);
+    let from = v.calls.length;
     await emit(page, 'dock-pad', 'ok');
     await idle(page);
-    let v = await view(page);
-    check('Cross on quiet mode switches it, and says what had to wait', (await since(page, from)).includes('quiet_set {"on":true}') && v.values.quiet === 'Quiet mode|On' && v.message.includes('Ubisoft'), `${v.values.quiet} ${v.message}`);
+    v = await view(page);
+    check('Cross on quiet mode switches it, lights its icon, and says what had to wait', (await since(page, from)).includes('quiet_set {"on":true}') && v.values.quiet === 'Quiet|on' && v.message.includes('Ubisoft'), `${v.values.quiet} ${v.message}`);
     await emit(page, 'dock-pad', 'right');
     from = v.calls.length;
     await emit(page, 'dock-pad', 'ok');
@@ -167,7 +223,7 @@ export async function dockTests({ open, close, check, shots }) {
     await idle(page);
     v = await view(page);
     const toggles = (await since(page, from)).filter((c) => c === 'overlay_toggle_stats').length;
-    check('the stats switch once, however often Cross is pressed while NVIDIA answers', toggles === 1 && v.values.stats === 'Stats|On', `${toggles} ${v.values.stats}`);
+    check('the stats switch once, however often Cross is pressed while NVIDIA answers', toggles === 1 && v.values.stats === 'Stats|on', `${toggles} ${v.values.stats}`);
     await emit(page, 'dock-pad', 'right');
     from = v.calls.length;
     await emit(page, 'dock-pad', 'ok');
@@ -175,47 +231,49 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
-  // D4. Closing the game asks once; leaving the tile asks again; a game that hangs is force closed.
+  // D4. Closing the game takes Cross held until the ring around its icon is full: let go early, or move on, and
+  // nothing closes. A game that hangs is force closed the same way.
   {
     const page = await openDock();
     for (let i = 0; i < 5; i++) await emit(page, 'dock-pad', 'right');
-    let from = (await view(page)).calls.length;
-    await emit(page, 'dock-pad', 'ok');
     let v = await view(page);
-    check('Cross on Close game asks again first', v.focus === 'close' && v.values.close === 'Close game|Press again' && !(await since(page, from)).some((c) => c.startsWith('dock_close_game')), `${v.values.close}`);
-    await emit(page, 'dock-pad', 'left');
-    await emit(page, 'dock-pad', 'right');
+    check('Close game says to hold Cross', v.focus === 'close' && v.hint.includes('Hold to close game'), v.hint);
+    let from = v.calls.length;
+    await emit(page, 'dock-pad', 'ok');
     v = await view(page);
-    check('leaving Close game takes the question back', v.values.close === 'Close game|', v.values.close);
+    check('holding Cross fills the ring, and closes nothing yet', v.values.close === 'Close game|holding' && (await closes(page, from)).length === 0, v.values.close);
+    await page.waitForTimeout(TAPPED_MS);
+    await emit(page, 'dock-pad', known('dock_release', 'ok-up'));
+    await page.waitForTimeout(HELD_MS);
+    v = await view(page);
+    check('let go early, the ring drains and the game stays', v.values.close === 'Close game' && (await closes(page, from)).length === 0, `${v.values.close} ${await closes(page, from)}`);
     await emit(page, 'dock-pad', 'ok');
-    await emit(page, 'dock-pad', 'ok');
-    await idle(page);
-    check('Cross twice asks the game to close', (await since(page, from)).includes('dock_close_game {"force":false}'), JSON.stringify(await since(page, from)));
-    await page.evaluate((hung) => (window.__settings.game = hung), ipc('dock-game'));
+    await emit(page, 'dock-pad', 'left');
+    await page.waitForTimeout(HELD_MS);
+    check('moving on lets go too', (await closes(page, from)).length === 0, JSON.stringify(await closes(page, from)));
+    await emit(page, 'dock-pad', 'right');
+    await hold(page, HELD_MS);
+    check('held until the ring is full, the game is asked to close', JSON.stringify(await closes(page, from)) === '["dock_close_game {\\"force\\":false}"]', JSON.stringify(await closes(page, from)));
+    await page.evaluate((g) => (window.__settings.game = g), hung);
     await emit(page, 'dock', closed);
     await emit(page, 'dock', opened);
     await idle(page);
     for (let i = 0; i < 5; i++) await emit(page, 'dock-pad', 'right');
     v = await view(page);
-    check('a game that isn\'t responding offers a forced close', v.values.close === 'Force close|Not responding', v.values.close);
+    check('a game that isn\'t responding offers Force close, and says so under its name', v.values.close === 'Force close|warn' && v.session === 'Not responding|warn' && v.hint.includes('Hold to force close'), `${v.values.close} ${v.session}`);
     from = v.calls.length;
-    await emit(page, 'dock-pad', 'ok');
-    await emit(page, 'dock-pad', 'ok');
-    await idle(page);
-    check('Cross twice ends it', (await since(page, from)).includes('dock_close_game {"force":true}'), JSON.stringify(await since(page, from)));
+    await page.screenshot({ path: path.join(shots, 'dock-force-close.png'), omitBackground: true });
+    await hold(page, HELD_MS);
+    check('held, it ends the game', (await closes(page, from)).includes('dock_close_game {"force":true}'), JSON.stringify(await closes(page, from)));
     // Rust refuses (a game run as administrator): the dock says so.
     await page.evaluate((error) => {
       window.__settings.dock_close_game = () => {
         throw error;
       };
     }, like(ipc('error'), { message: "Windows didn't let Lamplit end Half-Life." }));
-    await emit(page, 'dock-pad', 'ok');
-    await emit(page, 'dock-pad', 'ok');
-    await idle(page);
+    await hold(page, HELD_MS);
     v = await view(page);
     check('a refused close says so under the tiles', v.message.includes("didn't let Lamplit end"), v.message);
-    await settled(page);
-    await page.screenshot({ path: path.join(shots, 'dock-force-close.png'), omitBackground: true });
     // Once the game has gone, its tile goes, and the focus with it.
     await page.evaluate(() => (window.__settings.game = null));
     await emit(page, 'dock', closed);
@@ -273,6 +331,35 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
+  // D12. Holding Close game with Enter, and with the mouse button.
+  {
+    const page = await openDock();
+    for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
+    let from = (await view(page)).calls.length;
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(HELD_MS);
+    check('a tap of Enter closes nothing', (await closes(page, from)).length === 0, JSON.stringify(await closes(page, from)));
+    await page.keyboard.down('Enter');
+    await page.waitForTimeout(HELD_MS);
+    await page.keyboard.up('Enter');
+    await idle(page);
+    check('Enter held closes the game', (await closes(page, from)).length === 1, JSON.stringify(await closes(page, from)));
+    const box = await page.locator('.tile[data-key="close"]').boundingBox();
+    from = (await view(page)).calls.length;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(TAPPED_MS);
+    await page.mouse.up();
+    await page.waitForTimeout(HELD_MS);
+    check('a click on Close game closes nothing', (await closes(page, from)).length === 0, JSON.stringify(await closes(page, from)));
+    await page.mouse.down();
+    await page.waitForTimeout(HELD_MS);
+    await page.mouse.up();
+    await idle(page);
+    check('the mouse button held on Close game closes the game', (await closes(page, from)).length === 1, JSON.stringify(await closes(page, from)));
+    await close(page);
+  }
+
   // D7. On a 4K TV the dock keeps its proportions in its window.
   {
     const page = await openDock({}, { width: 3840, height: 1296 }, { width: 3840, height: 2160 });
@@ -280,27 +367,24 @@ export async function dockTests({ open, close, check, shots }) {
       const r = document.getElementById('island').getBoundingClientRect();
       return { width: r.width / innerWidth, top: r.top / innerHeight, bottom: r.bottom / innerHeight, scroll: document.documentElement.scrollWidth - innerWidth };
     });
-    check('4K: the dock is as big a share of the screen as at 1080p', fit.width > 0.4 && fit.width < 0.6 && fit.top > 0.1 && fit.bottom < 0.95 && fit.scroll === 0, JSON.stringify(fit));
+    check('4K: the dock is as big a share of the screen as at 1080p', fit.width > 0.5 && fit.width < 0.7 && fit.top > 0.1 && fit.bottom < 0.95 && fit.scroll === 0, JSON.stringify(fit));
     await close(page);
   }
 
   // D10. The open dock reads the game again: a game that stops responding turns Close game into Force close without
-  // the dock opening again, a press already asked for starts over, and the folded dock stops asking.
+  // the dock opening again, and the folded dock stops asking.
   {
     const page = await openDock();
     for (let i = 0; i < 5; i++) await emit(page, 'dock-pad', 'right');
-    await emit(page, 'dock-pad', 'ok');
     let v = await view(page);
-    check('Close game waits for a second press', v.values.close === 'Close game|Press again', v.values.close);
-    await page.evaluate((hung) => (window.__settings.game = hung), ipc('dock-game'));
+    check('Close game, for a game that answers', v.values.close === 'Close game', v.values.close);
+    await page.evaluate((g) => (window.__settings.game = g), hung);
     await until(page, () => document.querySelector('.tile[data-key="close"] .label')?.textContent === 'Force close');
     v = await view(page);
-    check('the open dock offers Force close once the game stops responding, and asks first', v.values.close === 'Force close|Not responding', v.values.close);
+    check('the open dock offers Force close once the game stops responding', v.values.close === 'Force close|warn', v.values.close);
     const from = v.calls.length;
-    await emit(page, 'dock-pad', 'ok');
-    await emit(page, 'dock-pad', 'ok');
-    await idle(page);
-    check('Cross twice then ends the game', (await since(page, from)).includes('dock_close_game {"force":true}'), JSON.stringify(await since(page, from)));
+    await hold(page, HELD_MS);
+    check('held, it then ends the game', (await closes(page, from)).includes('dock_close_game {"force":true}'), JSON.stringify(await closes(page, from)));
     await emit(page, 'dock', closed);
     const reads = async () => (await view(page)).calls.filter(([cmd]) => cmd === 'dock_state').length;
     const folded = await reads();
@@ -309,10 +393,46 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
+  // D11. A hold of Close game was for the offer and the game the player saw: when an answer from Rust turns it into
+  // Force close, or names another game, the hold is let go and nothing closes.
+  {
+    const page = await openDock();
+    await emit(page, 'dock', closed);
+    // Rust answers when the test says so.
+    const later = (g) =>
+      page.evaluate((answer) => {
+        window.__answers = [];
+        window.__settings.dock_state = () => new Promise((resolve) => window.__answers.push(() => resolve(answer)));
+      }, g);
+    const answer = () => page.evaluate(() => window.__answers.splice(0).forEach((a) => a()));
+    await later(hung);
+    await emit(page, 'dock', opened);
+    for (let i = 0; i < 5; i++) await emit(page, 'dock-pad', 'right');
+    let from = (await view(page)).calls.length;
+    await emit(page, 'dock-pad', 'ok');
+    let v = await view(page);
+    check('before Rust answers, the dock holds for the game it knew', v.values.close === 'Close game|holding', v.values.close);
+    await answer();
+    await page.waitForTimeout(HELD_MS);
+    v = await view(page);
+    check('an answer that turns Close game into Force close lets go of the hold', v.values.close === 'Force close|warn' && (await closes(page, from)).length === 0, `${v.values.close} ${await closes(page, from)}`);
+    // Another game with the same offer: the next reading names it while Cross is held.
+    await later(like(hung, { id: 'steam:90', name: 'Third game' }));
+    await page.waitForTimeout(2200);
+    from = (await view(page)).calls.length;
+    await emit(page, 'dock-pad', 'ok');
+    await answer();
+    await page.waitForTimeout(HELD_MS);
+    v = await view(page);
+    check('a hold for one game is no hold for the next', v.game === 'Third game' && v.values.close === 'Force close|warn' && (await closes(page, from)).length === 0, `${v.game} ${v.values.close} ${await closes(page, from)}`);
+    await close(page);
+  }
+
   // D8. The dock draws the controller's buttons with index.html's own symbols.
   {
     const symbols = (file) => pageFile(file).match(/<symbol id="btn-[\s\S]*?<\/symbol>/g) ?? [];
-    const dock = symbols('dock.html');
+    // Up and Down are the dock's own: the home screen's hints don't name the d-pad.
+    const dock = symbols('dock.html').filter((s) => !/id="btn-(up|down)"/.test(s));
     const missing = dock.filter((s) => !symbols('index.html').includes(s));
     check("the dock's button symbols are the home screen's", dock.length === 3 && missing.length === 0, missing.join('\n'));
   }

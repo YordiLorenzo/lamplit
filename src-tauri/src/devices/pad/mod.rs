@@ -347,6 +347,12 @@ fn act(app: &AppHandle, kind: Kind, action: Action) {
                 events::emit(app, Event::DockPad(nav));
             }
         }
+        // Only the dock asks for a button to be held.
+        Action::Release(step) => {
+            if dock::is_open() {
+                events::emit(app, Event::DockPad(step));
+            }
+        }
         Action::Summon => dock::summon(app),
     }
 }
