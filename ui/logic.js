@@ -457,29 +457,20 @@ const ACCOUNT = {
 const onOff = (v) => (v ? 'On' : 'Off');
 
 /** The screensaver's settings until Rust's prefs are in, as prefs.rs has them. */
-export const SAVER_DEFAULT = /** @type {const} */ ({ minutes: 5, style: 'mix' });
+export const SAVER_DEFAULT = /** @type {const} */ ({ minutes: 5 });
 /** The delays Settings > Screensaver offers, in minutes; 0 is never. */
 const SAVER_MINUTES = [0, 2, 5, 10, 20];
-/** @type {import('./api.js').ScreensaverStyle[]} */
-const SAVER_STYLES = ['mix', '2d', '3d'];
-const SAVER_STYLE_NAME = { mix: '2D and 3D', '2d': '2D', '3d': '3D' };
 /** @param {number} minutes */
 const saverAfter = (minutes) => (minutes ? `${minutes} min` : 'Off');
 
 /**
- * The next delay or style in the direction pressed, stopping at either end. A delay Rust holds that isn't in the list
- * steps to the nearest listed one on that side.
- * @param {'minutes' | 'style'} what
- * @param {number | string} now
+ * The next delay in the direction pressed, stopping at either end. A delay Rust holds that isn't in the list steps to
+ * the nearest listed one on that side.
+ * @param {number} minutes
  * @param {number} dir -1 or 1
  */
-export function stepSaver(what, now, dir) {
-  if (what === 'minutes') {
-    const m = Number(now);
-    return (dir > 0 ? SAVER_MINUTES.find((x) => x > m) : SAVER_MINUTES.findLast((x) => x < m)) ?? m;
-  }
-  const at = SAVER_STYLES.indexOf(/** @type {import('./api.js').ScreensaverStyle} */ (now));
-  return SAVER_STYLES[Math.max(0, Math.min(SAVER_STYLES.length - 1, at + dir))];
+export function stepSaverMinutes(minutes, dir) {
+  return (dir > 0 ? SAVER_MINUTES.find((x) => x > minutes) : SAVER_MINUTES.findLast((x) => x < minutes)) ?? minutes;
 }
 
 /**
@@ -575,8 +566,7 @@ export function sectionSummary(key, state) {
   if (key === 'power') return ['Sleep, restart, shut down'];
   if (key === 'screensaver') {
     const minutes = state.prefs?.screensaver_minutes ?? SAVER_DEFAULT.minutes;
-    const style = state.prefs?.screensaver_style ?? SAVER_DEFAULT.style;
-    return [minutes ? `After ${minutes} min · ${SAVER_STYLE_NAME[style]}` : 'Off'];
+    return [minutes ? `After ${minutes} min` : 'Off'];
   }
   if (key === 'add') return ['A program or an exe on this PC'];
   return state.setup?.needed ? ['Setup needed', 'warn'] : [state.display ?? ''];
@@ -658,7 +648,6 @@ export function sectionRows(key, state) {
     }
   } else if (key === 'screensaver') {
     rows.push({ kind: 'saverafter', adjust: true, label: 'Starts after', value: saverAfter(prefs?.screensaver_minutes ?? SAVER_DEFAULT.minutes) });
-    rows.push({ kind: 'saverstyle', adjust: true, label: 'Scenes', value: SAVER_STYLE_NAME[prefs?.screensaver_style ?? SAVER_DEFAULT.style] });
     rows.push({ kind: 'savernow', label: 'Show it now', value: '' });
     rows.push({ label: 'Starts while Lamplit is in front and no game runs. Any button ends it.', value: '' });
   } else if (key === 'system') {

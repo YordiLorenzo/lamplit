@@ -6,7 +6,7 @@ import { openAdd } from './add.js';
 import * as api from './api.js';
 import { showHints, toast } from './hints.js';
 import { setGames, showInfo } from './library.js';
-import { SAVER_DEFAULT, SECTIONS, focusIndex, rowKey, sectionRows, sectionSummary, stepAutoOff, stepSaver, visibleSections } from './logic.js';
+import { SAVER_DEFAULT, SECTIONS, focusIndex, rowKey, sectionRows, sectionSummary, stepAutoOff, stepSaverMinutes, visibleSections } from './logic.js';
 import { showScreensaver } from './screensaver/index.js';
 import { sfx } from './sounds.js';
 import { els, state, withStoreLogo } from './state.js';
@@ -182,7 +182,7 @@ export async function adjustSetting(dir) {
       const volume = await api.soundChangeVolume(dir * 5);
       // Into the sound shown now: a refresh may have replaced it while Windows answered.
       state.sound.volume = volume;
-    } else if (row.kind === 'saverafter' || row.kind === 'saverstyle') await adjustScreensaver(row.kind, dir);
+    } else if (row.kind === 'saverafter') await adjustScreensaver(dir);
     else await adjustHeadset(row.kind, dir);
   } catch (e) {
     toast(e.message);
@@ -209,26 +209,22 @@ async function adjustHeadset(kind, dir) {
 /** A held ← or → repeats; presses wait for Rust's answer, so each steps from the value saved before it. */
 let saverBusy = false;
 
-/** Settings > Screensaver: the delay, or which scenes. @param {string} kind saverafter or saverstyle @param {number} dir */
-async function adjustScreensaver(kind, dir) {
+/** Settings > Screensaver: the minutes without input before it starts. @param {number} dir */
+async function adjustScreensaver(dir) {
   if (saverBusy) return;
   const minutes = state.prefs?.screensaver_minutes ?? SAVER_DEFAULT.minutes;
-  const style = state.prefs?.screensaver_style ?? SAVER_DEFAULT.style;
-  const next = stepSaver(kind === 'saverafter' ? 'minutes' : 'style', kind === 'saverafter' ? minutes : style, dir);
-  if (next === (kind === 'saverafter' ? minutes : style)) return;
+  const next = stepSaverMinutes(minutes, dir);
+  if (next === minutes) return;
   saverBusy = true;
   try {
-    state.prefs =
-      kind === 'saverafter'
-        ? await api.prefsSetScreensaverMinutes(/** @type {number} */ (next))
-        : await api.prefsSetScreensaverStyle(/** @type {import('./api.js').ScreensaverStyle} */ (next));
+    state.prefs = await api.prefsSetScreensaverMinutes(next);
   } finally {
     saverBusy = false;
   }
 }
 
 /** The rows that switch one of the player's prefs. */
-const PREF_ROWS = ['follows', 'touchmouse', 'steamport', 'onlineart', 'dock', 'saverafter', 'saverstyle'];
+const PREF_ROWS = ['follows', 'touchmouse', 'steamport', 'onlineart', 'dock', 'saverafter'];
 /** What each row of Settings > Power calls. */
 const POWER = { sleep: api.powerSleep, restart: api.powerRestart, shutdown: api.powerShutDown };
 

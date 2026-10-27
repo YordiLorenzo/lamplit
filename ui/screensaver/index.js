@@ -110,7 +110,6 @@ async function show(asked = performance.now()) {
   showing = true;
   if (askedAt === -Infinity) anchor = pointer;
   saver ??= makeSaver();
-  saver.setStyle(state.prefs?.screensaver_style ?? SAVER_DEFAULT.style);
   saver.setLooks(looks);
   saver.start();
   const why = saver.reason ? ` (${saver.reason})` : '';

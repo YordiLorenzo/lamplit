@@ -1,9 +1,8 @@
 // @ts-check
 // Draws the screensaver's scenes with WebGL2, in four steps:
 //   1. Each scene renders into its own buffer at part of the screen's resolution: linear light, and in alpha how far
-//      out of focus each pixel is (3D scenes only). Some scenes also draw particles: tens of thousands of small quads,
-//      placed by a vertex shader, over the scene or into a trail that fades a little every frame; Flow keeps where
-//      its particles are in a texture that a pass moves on every frame.
+//      out of focus each pixel is (3D scenes only). Drift also draws particles over its picture: fourteen thousand
+//      small quads, placed by a vertex shader.
 //   2. A mix pass holds each scene's average brightness down, blurs what is out of focus (from the buffer's
 //      mipmaps), and hands one scene over to the next in one of a few ways.
 //   3. A bloom: the bright parts, halved in size four times and added back up, so highlights glow softly.
@@ -12,7 +11,7 @@
 //      hides the banding that slow dark gradients show on an 8-bit screen.
 
 import { forMood, gradient, toLinear } from './palette.js';
-import { fragmentSource, particleSources, stateSource } from './scenes.js';
+import { fragmentSource, particleSources } from './scenes.js';
 
 /**
  * @typedef {import('./scenes.js').Scene} Scene
@@ -119,10 +118,6 @@ void main() {
   fragColor = vec4(c / 12., 1.);
 }`;
 
-/** A trail fades by multiplying it with the blend constant: this pass only has to cover the target. */
-const FADE = `${HEAD}
-void main() { fragColor = vec4(0., 0., 0., 1.); }`;
-
 /**
  * Step 4. AgX after Troy Sobotka, in the polynomial fit by Benjamin Wrensch (2023), with a slightly punchier look.
  * The result is display-encoded; PEAK keeps the brightest pixel short of full white.
@@ -176,9 +171,9 @@ const BLOOM_LEVELS = 4;
 /** The ways one scene hands over to the next (MIX): crossfade, darks first, flowing noise, push in. */
 export const WAYS = 4;
 /** Texture units, the same in every scene's program. */
-const UNIT = { grad: 0, noise: 1, art: 2, art2: 3, trail: 4, state: 5 };
-const SAMPLERS = { uGrad: UNIT.grad, uNoise: UNIT.noise, uArt: UNIT.art, uArt2: UNIT.art2, uTrail: UNIT.trail, uState: UNIT.state };
-const SCENE_UNIFORMS = ['uRes', 'uTime', 'uSeed', 'uDt', 'uInit', 'uPal', 'uArtInfo', ...Object.keys(SAMPLERS)];
+const UNIT = { grad: 0, noise: 1, art: 2, art2: 3 };
+const SAMPLERS = { uGrad: UNIT.grad, uNoise: UNIT.noise, uArt: UNIT.art, uArt2: UNIT.art2 };
+const SCENE_UNIFORMS = ['uRes', 'uTime', 'uSeed', 'uPal', 'uArtInfo', ...Object.keys(SAMPLERS)];
 
 /**
  * @typedef {object} Target  a buffer to render into
@@ -198,14 +193,8 @@ const SCENE_UNIFORMS = ['uRes', 'uTime', 'uSeed', 'uDt', 'uInit', 'uPal', 'uArtI
  */
 
 /**
- * A scene's programs: its picture, and its particles and their moving on when it has them.
- * @typedef {{ main: Program, particles: Program | null, state: Program | null }} ScenePrograms
- */
-
-/**
- * What a scene with particles that move on keeps between frames: where they are (two textures, read one and write
- * the other), and its trail.
- * @typedef {{ state: Target[], trail: Target | null, last: number, fresh: boolean }} Sim
+ * A scene's programs: its picture, and its particles when it has them.
+ * @typedef {{ main: Program, particles: Program | null }} ScenePrograms
  */
 
 /**
@@ -275,9 +264,8 @@ export class Renderer {
     this.canvas = canvas;
     this.gl = gl;
     // Half floats keep the dark gradients smooth and the highlights above 1 for the bloom; without them the sRGB
-    // format still spends its bits where the eye looks. Flow keeps its particles in floats, so it needs them.
-    this.float = !!gl.getExtension('EXT_color_buffer_float');
-    this.format = this.float ? gl.RGBA16F : gl.SRGB8_ALPHA8;
+    // format still spends its bits where the eye looks.
+    this.format = gl.getExtension('EXT_color_buffer_float') ? gl.RGBA16F : gl.SRGB8_ALPHA8;
     // Lets the driver compile on its own threads, so a raymarched scene doesn't hold up a frame (Windows compiles
     // shaders through Direct3D, which takes a while for long loops).
     this.parallel = gl.getExtension('KHR_parallel_shader_compile');
@@ -291,8 +279,6 @@ export class Renderer {
     this.moods = new WeakMap();
     /** @type {Map<object, { tex: WebGLTexture, aspect: number }>} art uploaded, per image or atlas */
     this.images = new Map();
-    /** @type {Map<string, Sim>} */
-    this.sims = new Map();
     /** @type {(Target | null)[]} the two scenes' buffers */
     this.targets = [null, null];
     /** @type {Target | null} */
@@ -306,7 +292,6 @@ export class Renderer {
       bright: [BRIGHT, ['uSrc', 'uTexel']],
       down: [DOWN, ['uSrc', 'uTexel']],
       up: [UP, ['uSrc', 'uTexel', 'uRes']],
-      fade: [FADE, []],
       final: [FINAL, ['uMixed', 'uBloom', 'uTime', 'uRes']],
     };
     /** @type {Record<keyof passes, Program>} */
@@ -364,11 +349,9 @@ export class Renderer {
     let p = this.programs.get(scene.id);
     if (!p) {
       const parts = particleSources(scene);
-      const update = stateSource(scene);
       p = {
         main: this.compile(VERTEX, fragmentSource(scene), SCENE_UNIFORMS),
         particles: parts ? this.compile(parts.vertex, parts.fragment, SCENE_UNIFORMS) : null,
-        state: update ? this.compile(VERTEX, update, SCENE_UNIFORMS) : null,
       };
       this.programs.set(scene.id, p);
     }
@@ -378,7 +361,7 @@ export class Renderer {
   /** Whether a scene, and the passes after it, can draw now. @param {Scene} scene */
   canDraw(scene) {
     const p = this.prepare(scene);
-    return Object.values(this.pass).every((x) => this.ready(x)) && this.ready(p.main) && this.ready(p.particles) && this.ready(p.state);
+    return Object.values(this.pass).every((x) => this.ready(x)) && this.ready(p.main) && this.ready(p.particles);
   }
 
   /** The palette as a scene of that mood shows it (palette.js forMood), worked out once. @param {Palette} palette @param {Mood} mood */
@@ -463,19 +446,18 @@ export class Renderer {
   }
 
   /**
-   * A buffer, with mipmaps when asked, in the scene format or in 32-bit floats (Flow's particles).
-   * @param {number} width @param {number} height @param {boolean} mipmaps @param {number} [format]
+   * A buffer in the scene format, with mipmaps when asked.
+   * @param {number} width @param {number} height @param {boolean} mipmaps
    * @returns {Target}
    */
-  target(width, height, mipmaps, format = this.format) {
+  target(width, height, mipmaps) {
     const { gl } = this;
     const tex = /** @type {WebGLTexture} */ (gl.createTexture());
     gl.bindTexture(gl.TEXTURE_2D, tex);
     const levels = mipmaps ? Math.floor(Math.log2(Math.max(width, height))) + 1 : 1;
-    gl.texStorage2D(gl.TEXTURE_2D, levels, format, width, height);
-    const filter = format === gl.RGBA32F ? gl.NEAREST : gl.LINEAR;
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mipmaps ? gl.LINEAR_MIPMAP_LINEAR : filter);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texStorage2D(gl.TEXTURE_2D, levels, this.format, width, height);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mipmaps ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     const fbo = /** @type {WebGLFramebuffer} */ (gl.createFramebuffer());
@@ -513,7 +495,6 @@ export class Renderer {
     this.targets = [null, null];
     this.mixed = null;
     this.bloom = [];
-    for (const id of [...this.sims.keys()]) this.forget(id);
   }
 
   /** Frees the buffers and the art while the screensaver is away; the compiled scenes stay. */
@@ -522,14 +503,6 @@ export class Renderer {
     for (const { tex } of this.images.values()) this.gl.deleteTexture(tex);
     this.images.clear();
     Object.assign(this.canvas, { width: 1, height: 1 });
-  }
-
-  /** Drops what a scene with moving particles kept, once it has handed over. @param {string} id */
-  forget(id) {
-    const sim = this.sims.get(id);
-    if (!sim) return;
-    [...sim.state, sim.trail].forEach((t) => this.dropTarget(t));
-    this.sims.delete(id);
   }
 
   /** Swaps the two scenes' buffers, when the scene handing over has gone. */
@@ -603,48 +576,10 @@ export class Renderer {
       gl.uniform4fv(prog.at.uArtInfo, info);
     };
 
-    const sim = scene.state ? this.simFor(scene, target) : null;
-    if (sim && p.state && p.particles) {
-      // The particles move on: read where they are, write where they go.
-      const dt = sim.fresh ? 0 : Math.min(0.1, Math.max(0, time - sim.last));
-      const [from, to] = sim.state;
-      this.use(p.state, to);
-      uniforms(p.state);
-      gl.uniform1f(p.state.at.uDt, dt);
-      gl.uniform1i(p.state.at.uInit, sim.fresh ? 1 : 0);
-      this.bind(UNIT.state, from.tex);
-      this.draw();
-      sim.state.reverse();
-      sim.last = time;
-      // The trail fades a little, then takes the particles where they are now.
-      const trail = /** @type {Target} */ (sim.trail);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, trail.fbo);
-      gl.viewport(0, 0, trail.width, trail.height);
-      if (sim.fresh) {
-        gl.clearColor(0, 0, 0, 1);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-      }
-      sim.fresh = false;
-      gl.enable(gl.BLEND);
-      gl.blendColor(0, 0, 0, /** @type {number} */ (scene.state.decay));
-      gl.blendFunc(gl.ZERO, gl.CONSTANT_ALPHA);
-      gl.useProgram(this.pass.fade.program);
-      this.draw();
-      gl.blendFunc(gl.ONE, gl.ONE);
-      gl.useProgram(p.particles.program);
-      uniforms(p.particles);
-      this.bind(UNIT.state, sim.state[0].tex);
-      gl.bindVertexArray(this.vao);
-      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, scene.particles?.count ?? 0);
-      gl.disable(gl.BLEND);
-      this.bind(UNIT.trail, trail.tex);
-    } else this.bind(UNIT.trail, this.blank);
-    this.bind(UNIT.state, sim ? sim.state[0].tex : this.blank);
-
     this.use(p.main, target);
     uniforms(p.main);
     this.draw();
-    if (p.particles && !scene.state) {
+    if (p.particles) {
       // Particles over the picture, each a soft dot with its colour premultiplied by how much it covers.
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -656,22 +591,6 @@ export class Renderer {
     }
     this.bind(UNIT.grad, target.tex);
     gl.generateMipmap(gl.TEXTURE_2D);
-  }
-
-  /** The particles and trail of a scene that keeps them, made when it starts. @param {Scene} scene @param {Target} target */
-  simFor(scene, target) {
-    let sim = this.sims.get(scene.id);
-    const size = /** @type {NonNullable<Scene['state']>} */ (scene.state).size;
-    if (!sim) {
-      sim = {
-        state: [this.target(size, size, false, this.gl.RGBA32F), this.target(size, size, false, this.gl.RGBA32F)],
-        trail: this.target(target.width, target.height, false),
-        last: 0,
-        fresh: true,
-      };
-      this.sims.set(scene.id, sim);
-    }
-    return sim;
   }
 
   /**

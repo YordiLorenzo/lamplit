@@ -151,5 +151,5 @@ setInterval(() => {
   const speed = saver.speed > 1 ? ` · ${saver.speed}× speed` : '';
   const paused = saver.paused ? ' · paused' : '';
   const gl = i.mode === 'webgl' ? `${i.size} (${Math.round((i.scale ?? 0) * 100)}%)` : 'CSS gradient, no WebGL2';
-  now.textContent = `${scene + 1}. ${i.scene} (${i.kind.toUpperCase()}) · ${i.look} · ${i.fps} fps · ${gl} · next comes in ${WAYS[way]}${speed}${paused}`;
+  now.textContent = `${scene + 1}. ${i.scene} · ${i.look} · ${i.fps} fps · ${gl} · next comes in ${WAYS[way]}${speed}${paused}`;
 }, 250);

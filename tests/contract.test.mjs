@@ -41,7 +41,6 @@ test("the page's types allow exactly the values Rust sends", () => {
     pad_kind: 'PadKind',
     connection: 'Controller.connection',
     battery_level: 'BatteryLevel',
-    screensaver_style: 'ScreensaverStyle',
     entry_kind: 'FolderEntry.kind',
     dock_icon: 'DockIcon',
     dock_release: 'DockRelease',
