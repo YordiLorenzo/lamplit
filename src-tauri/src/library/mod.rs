@@ -19,6 +19,7 @@ use crate::events::{self, Event};
 use crate::{prefs, stores};
 use parking_lot::Mutex;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -34,6 +35,7 @@ pub struct Library {
     games: Mutex<Option<Vec<Game>>>,
     scans: Scans,
     last_scan: Mutex<Option<Instant>>,
+    art_asks: ArtAsks,
 }
 
 impl Library {
@@ -80,6 +82,34 @@ impl Scans {
     fn end(&self) -> bool {
         self.running.store(false, Ordering::SeqCst);
         self.again.swap(false, Ordering::SeqCst)
+    }
+}
+
+/// The art choices asked for, numbered per game. A Steam app's art is downloaded before the choice is saved, which
+/// can take seconds, and the page lets the player go back and choose again meanwhile: a choice that finishes after a
+/// newer one was asked for is dropped, so the older download can't overwrite the newer choice.
+#[derive(Default)]
+struct ArtAsks(Mutex<HashMap<String, u64>>);
+
+impl ArtAsks {
+    /// A new choice for game `id`: its number.
+    fn ask(&self, id: &str) -> u64 {
+        let mut asks = self.0.lock();
+        let n = asks.entry(id.to_string()).or_default();
+        *n += 1;
+        *n
+    }
+
+    /// Runs `save` if choice `n` is still the newest for `id`, under the lock, so a newer one can't be asked for and
+    /// saved in between. Ok(false) when it was dropped.
+    fn save_if_newest(&self, id: &str, n: u64, save: impl FnOnce() -> Result<()>) -> Result<bool> {
+        let asks = self.0.lock();
+        if asks.get(id) != Some(&n) {
+            return Ok(false);
+        }
+        save()?;
+        drop(asks);
+        Ok(true)
     }
 }
 
@@ -188,10 +218,15 @@ pub fn art_candidates(app: &AppHandle, query: &str) -> Result<Vec<Candidate>> {
 /// Gives a game the art the player chose (after fetching what isn't on the PC yet), or back to Lamplit's own match
 /// with None. Returns every game.
 pub fn set_art(app: &AppHandle, id: &str, choice: Option<ArtChoice>) -> Result<Vec<Game>> {
+    let asks = &app.state::<Library>().art_asks;
+    let n = asks.ask(id);
     if let Some(ArtChoice::Steam(appid)) = choice {
         art::fetch(app, appid)?;
     }
-    change(app, id, |e| e.art = choice)?;
+    if !asks.save_if_newest(id, n, || change(app, id, |e| e.art = choice))? {
+        log::info!("{id}: art choice {choice:?} dropped, the player has chosen again since");
+        return Ok(all(app));
+    }
     log::info!("{id}: art {}", choice.map_or("found by Lamplit".into(), |c| format!("chosen: {c:?}")));
     if choice.is_none() {
         // Lamplit's own match may not be on the PC yet, or not even looked up: a game the player chose art for as
@@ -328,6 +363,28 @@ mod tests {
     fn an_added_game_reaches_the_page_as_in_its_fixture() {
         let added = Added { id: r"manual:d:\old games\racer\racer.exe".into(), games: Vec::new() };
         assert_eq!(serde_json::to_value(added).unwrap(), ipc_fixture!("added"));
+    }
+
+    #[test]
+    fn an_art_choice_that_finishes_after_a_newer_one_is_dropped() {
+        let asks = ArtAsks::default();
+        let saved = &Mutex::new(Vec::new());
+        let save = |what: &'static str| {
+            move || {
+                saved.lock().push(what);
+                Ok(())
+            }
+        };
+        // Art from Steam asked for first, still downloading when the player goes back and chooses no art.
+        let steam = asks.ask("epic:x");
+        let none = asks.ask("epic:x");
+        assert!(asks.save_if_newest("epic:x", none, save("none")).unwrap());
+        assert!(!asks.save_if_newest("epic:x", steam, save("steam")).unwrap());
+        assert_eq!(*saved.lock(), ["none"]);
+        // Another game's choice has numbers of its own.
+        let other = asks.ask("gog:y");
+        assert!(asks.save_if_newest("gog:y", other, save("other")).unwrap());
+        assert_eq!(*saved.lock(), ["none", "other"]);
     }
 
     #[test]
