@@ -14,6 +14,7 @@
 use super::navigation::{Action, Dir, Input, Navigation};
 use super::{Battery, Connection, Controller, Kind, dualsense, xbox};
 use crate::devices::Charge;
+use crate::dock;
 use crate::launch::window;
 use std::collections::HashSet;
 use std::time::Instant;
@@ -131,7 +132,7 @@ impl Others {
 
     /// Reads each controller once while Lamplit is in front: the steps its buttons make by `now`.
     pub fn read(&mut self, now: Instant) -> Vec<(Kind, Action)> {
-        let in_front = window::lamplit_in_front();
+        let in_front = in_front();
         let mut actions = Vec::new();
         for pad in &mut self.pads {
             if !in_front {
@@ -153,6 +154,12 @@ impl Others {
     pub fn reading(&self) -> bool {
         !self.pads.is_empty()
     }
+}
+
+/// Lamplit is the program in front, the one Windows hands controllers' input to: its home window, or the open dock,
+/// which takes the foreground over a game.
+fn in_front() -> bool {
+    window::lamplit_in_front() || dock::is_open()
 }
 
 /// Every controller Windows.Gaming.Input knows, by an id that stays the same while it is connected.
@@ -314,6 +321,14 @@ mod tests {
 
     fn directinput(buttons: &[bool], hat: Option<GameControllerSwitchPosition>, axes: &[f64]) -> Input {
         input(&Layout::DIRECTINPUT, buttons, hat, axes)
+    }
+
+    #[test]
+    fn controllers_are_read_while_the_dock_is_open() {
+        dock::pretend_open(true);
+        let read = in_front();
+        dock::pretend_open(false);
+        assert!(read, "a controller couldn't move through the dock in front of it");
     }
 
     #[test]

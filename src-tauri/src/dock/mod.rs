@@ -160,6 +160,12 @@ pub fn is_open() -> bool {
     matches!(*SHOWN.lock(), Shown::Open { .. })
 }
 
+/// Marks the dock open, or hidden, without its window.
+#[cfg(test)]
+pub fn pretend_open(open: bool) {
+    *SHOWN.lock() = if open { Shown::Open { game: 0 } } else { Shown::Hidden };
+}
+
 fn in_front() -> bool {
     window::handle().is_some_and(|dock| win::window::foreground() == dock)
 }

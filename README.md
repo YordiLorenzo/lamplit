@@ -216,7 +216,7 @@ game's exe directly, which some of those games refuse.
 
 | | DualSense | Xbox and Xbox-style | Other controllers |
 | --- | --- | --- | --- |
-| Buttons, d-pad and left stick | Yes | Yes | Yes, while Lamplit is in front (see below) |
+| Buttons, d-pad and left stick | Yes | Yes | Yes, while Lamplit or its dock is in front (see below) |
 | Open the dock over a running game | Hold PS for 0.6 seconds | Hold View and Menu for 1 second | No |
 | Button hints | Cross, Circle, Triangle | A, B, Y | A, B, Y; PlayStation symbols on a Sony controller |
 | Battery level | Over USB; over Bluetooth usually (see below) | A rough level, when wireless | When Windows reports it |
@@ -237,9 +237,9 @@ medium or full.
 
 **Other controllers** Windows knows, such as a DualShock 4, a Switch Pro Controller or a plain USB pad, are read
 through Windows.Gaming.Input. Windows hands their input only to the window in front, so they move around Lamplit but
-can't bring it over a game: use Alt+Tab or another controller. Windows names the buttons of only some of them; for
-the rest Lamplit takes the order most of them use, the DualShock 4's. If yours confirms with the wrong button, please
-open an issue with its name from Settings > Controllers.
+can't bring it over a game: use Alt+Tab or another controller. Once the dock is open, they move through it too.
+Windows names the buttons of only some of them; for the rest Lamplit takes the order most of them use, the
+DualShock 4's. If yours confirms with the wrong button, please open an issue with its name from Settings > Controllers.
 
 While a Steam game runs, Steam Input adds a virtual Xbox controller for each controller it handles. Lamplit leaves
 those out, since it reads the real one. Tools such as DS4Windows that add virtual controllers of their own can make
