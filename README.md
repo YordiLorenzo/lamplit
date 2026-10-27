@@ -31,7 +31,7 @@ while you play. When the game closes, Lamplit is back on screen.
   </tr>
   <tr>
     <td width="50%"><img src="docs/images/find.jpg" alt="Find a game: an on-screen keyboard with rdr typed, store and sort choices, and the row narrowed to Red Dead Redemption 2"><br><sub>Find a game: "rdr" finds Red Dead Redemption 2.</sub></td>
-    <td width="50%"><img src="docs/images/details.jpg" alt="A game's details: store, last played, play time and folder, with Play, Add to favourites and Hide this game below"><br><sub>Details: play time, favourites, and hiding what isn't a game.</sub></td>
+    <td width="50%"><img src="docs/images/details.jpg" alt="A game's menu: its cover lifted over the blurred home screen, and beside it the store, last played, play time and folder, with Play, Add to favourites, Change art and Hide this game"><br><sub>A game's menu: its cover lifted, its details and choices beside it.</sub></td>
   </tr>
 </table>
 
@@ -43,7 +43,10 @@ while you play. When the game closes, Lamplit is back on screen.
   Connect, the Rockstar Games Launcher and the Xbox app have installed, and finds games outside any store too. There
   is nothing to import, connect or sign in to.
 - **Favourites first, then last played,** then by name, so the game you're in the middle of is near the front.
-- **Favourites and hidden games.** In a game's details (Options), add it to your favourites to keep it at the front,
+- **A game's menu.** Options lifts the focused game's cover toward you and blurs the rest of the screen. Beside the
+  cover are the game's store, when it was last played, its play time and folder, and its choices: Play, favourites,
+  Change art and Hide this game.
+- **Favourites and hidden games.** In a game's menu (Options), add it to your favourites to keep it at the front,
   or hide something Lamplit found that isn't a game. **Settings > Hidden games** shows a hidden game again.
 - **Play time** for each game, on the home screen and in its details. For a Steam game it is Steam's own count, which
   includes play outside Lamplit. For other games it is the time Lamplit has seen the game running, from version
@@ -55,6 +58,14 @@ while you play. When the game closes, Lamplit is back on screen.
 - **Cover, background and logo art.** Lamplit takes it from Steam's own library cache when it can, and otherwise
   from Steam's public store, which it also searches by name for games from other stores. A game with no match shows
   its name instead. You can switch online art off.
+- **Change art** when Steam's match is the wrong game. In a game's menu, Change art shows what Steam's store finds for
+  the game's name as covers to pick from, and the lifted cover shows the one you are on. You can edit the search on
+  the on-screen keyboard, or choose no art, which shows the game's name. **Back to automatic** undoes the choice. Lamplit
+  keeps it through restarts and new scans.
+- **Add a game by hand.** **Settings > Add a game** lists the installed programs Lamplit didn't take for games, and
+  lets you browse the PC's drives and folders for a game's exe, all with a controller. Name the game on the on-screen
+  keyboard, then choose its art. Lamplit starts it from its exe, as it does games outside any store, and its menu has
+  **Remove from Lamplit**. When Lamplit finds no games at all, Cross on the empty home screen adds one.
 - **New installs show up by themselves.** Lamplit looks again every time it comes back to the front.
 - **Steam's install and update state** on the game: "Installing" or "Update pending".
 
@@ -124,7 +135,7 @@ while you play. When the game closes, Lamplit is back on screen.
 | Rockstar Games Launcher | The launcher's list of titles | Starts the launcher, checks for a saved sign-in |
 | GOG (GOG Galaxy or GOG's offline installers) | GOG's list of installed games | Nothing: GOG games start from their own exe |
 | Xbox app, including PC Game Pass | The Xbox games installed for your Windows account | Nothing: Xbox games start without the app |
-| No store | Folders in `<drive>:\Games`, installed programs that look like games, and games Windows' Game Bar has seen | Starts the game's exe |
+| No store | Folders in `<drive>:\Games`, installed programs that look like games, games Windows' Game Bar has seen, and games you add by hand | Starts the game's exe |
 
 Only Steam says live who is signed in. For the other store apps Lamplit checks whether they keep a saved sign-in,
 and if it can't confirm one, it lets you go ahead anyway.
@@ -246,7 +257,7 @@ logon task.
 | Move along the row | D-pad or left stick, left and right | D-pad or left stick, left and right | Left and Right arrows |
 | Jump five games | L1, R1 | LB, RB | Page Up, Page Down |
 | Play the game, or return to it while it runs | Cross | A | Enter |
-| Game details | Options | Menu | I |
+| Game menu | Options | Menu | I |
 | Settings | Triangle | Y | C |
 | Find a game | Square | X | F |
 | Back, close, or cancel a launch | Circle | B | Esc or Backspace |
@@ -259,13 +270,22 @@ Other controllers follow the same layout by position: the bottom face button pla
 one opens Settings and the left one opens Find.
 
 While a game starts, Cross (A) opens the store app that needs you, Triangle (Y) goes ahead without a confirmed
-sign-in, and Circle (B) cancels. In a game's details, Up and Down pick Play, Add to favourites or Hide this game, and
-Cross does it. In Settings, Up and Down move, Cross or Right opens a section, Left and Right change the volume,
-sidetone and auto-off timer, Circle goes back, and Triangle closes Settings. In Find, Cross types the key or picks
-the choice you're on, Square (X) deletes, Triangle (Y) adds a space, and Circle closes Find on the games it found. On
-a keyboard, type the name and press Enter.
+sign-in, and Circle (B) cancels. In Settings, Up and Down move, Cross or Right opens a section, Left and Right change
+the volume, sidetone and auto-off timer, Circle goes back, and Triangle closes Settings. In Find, Cross types the key
+or picks the choice you're on, Square (X) deletes, Triangle (Y) adds a space, and Circle closes Find on the games it
+found. On a keyboard, type the name and press Enter.
 
-With a mouse, click a cover to select it and click it again to play. Settings rows take a click too.
+In a game's menu, Up and Down move and Cross picks; Circle or Options closes it. **Remove from Lamplit** asks first:
+press Cross once more to remove the game. In Change art, the d-pad moves between the covers and the choices below
+them, Cross picks one, Square (X) edits the search, and Circle goes back to the menu.
+
+In Add a game, Up and Down move through the list, and L1 and R1 (LB and RB) jump eight rows. Cross or Right opens a
+drive or folder; Circle or Left goes up a level. Cross on an exe or a program goes on to its name. The keyboard for a
+name or a search works as Find's does, with two more keys: **Shift** switches the next letter between a capital and a
+small letter (each word starts with a capital), and **Done** takes what you typed. Circle goes back without it.
+
+With a mouse, click a cover to select it and click it again to play. Settings rows, the choices in a game's menu,
+Change art's covers and Add a game's rows and keys take a click too. A click beside a game's menu closes it.
 
 ## What Lamplit changes on your PC
 
@@ -278,7 +298,7 @@ With a mouse, click a cover to select it and click it again to play. Settings ro
 | Steam's **Guide Button Focuses Steam** turned off | Whenever Steam's DevTools port is open | Steam > Settings > Controller |
 | Windows' default sound output and microphone | When the headset or controller headphones come and go (on by default) | Switch **Sound follows** off in Settings > Sound |
 | Mouse input from the DualSense touchpad | While **Touchpad as mouse** is on (off by default) | Switch it off in Settings > Controllers |
-| Prefs, favourites, hidden games, play time, logs and art in `%LOCALAPPDATA%\lamplit` | Always | Tick **Delete the application data** when you uninstall |
+| Prefs, favourites, hidden games, play time, the art you chose, the games you added, logs and art in `%LOCALAPPDATA%\lamplit` | Always | Tick **Delete the application data** when you uninstall |
 
 Lamplit goes online only to fetch game art from Steam's store, and you can switch that off. No accounts, no
 telemetry. [What Lamplit changes on your PC, and what it sends](docs/security-and-privacy.md) has every detail,
@@ -290,7 +310,7 @@ including the risk of Steam's DevTools port.
 | --- | --- | --- | --- |
 | Price and source | Free, source on GitHub (noncommercial licence) | Free, closed source | Free, MIT licence |
 | Runs on | Windows | Windows, macOS, Linux, SteamOS | Windows |
-| Games it lists | Installed games from seven stores and outside any store, found by itself | Steam games; others as shortcuts you add by hand | Games from the libraries you connect through its add-ons, and emulated games |
+| Games it lists | Installed games from seven stores and outside any store, found by itself, and games you add by hand | Steam games; others as shortcuts you add by hand | Games from the libraries you connect through its add-ons, and emulated games |
 | Before a game starts | Starts the store apps it needs, waits for sign-in, shows Steam's update progress | Steam updates its own games first | Starts the game through its store or its exe |
 | Controllers | DualSense, Xbox and other controllers Windows knows; keyboard and mouse | Most controllers, through Steam Input | Many controllers, through SDL |
 | Themes, add-ons, emulators | No | No themes or add-ons; emulators as shortcuts you add | Yes, with an add-on browser |
@@ -343,7 +363,8 @@ Uninstall it, or open Task Scheduler as administrator and disable or delete the 
 
 ### A game is missing, or shows up twice.
 
-Please open an issue with the store, the game's install folder, and the `discovery` lines from `lamplit.log`.
+You can add a missing game by hand: **Settings > Add a game**. To help Lamplit find it by itself, please open an issue
+with the store, the game's install folder, and the `discovery` lines from `lamplit.log`.
 
 ### Where are the logs?
 
@@ -353,7 +374,7 @@ In `%LOCALAPPDATA%\lamplit`: `lamplit.log` for the app, `supervisor.log` for the
 ### Does it send anything online?
 
 Only requests for game art to Steam's store, and only while **Find art online** is on: the names of games that
-aren't from Steam, Steam app ids, and your country. Details are in
+aren't from Steam, what you search for in Change art, Steam app ids, and your country. Details are in
 [the privacy section](docs/security-and-privacy.md#network-art-only).
 
 ## Build from source

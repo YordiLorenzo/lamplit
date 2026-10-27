@@ -14,8 +14,8 @@ Steam already keeps on your PC (its library cache) is used without going online.
 
 | Host | What it receives |
 | --- | --- |
-| `store.steampowered.com` (store search) | The name of each game that isn't from Steam and has no art yet, and the country of your Windows region. A game outside any store is named after its folder. A name that matched nothing is asked about again after 7 days. |
-| `api.steampowered.com` (`IStoreBrowseService/GetItems`) | The Steam app ids whose art is missing, and the country of your Windows region. |
+| `store.steampowered.com` (store search) | The name of each game that isn't from Steam and has no art yet, and the country of your Windows region. A game outside any store is named after its folder. A name that matched nothing is asked about again after 7 days. In **Change art**, the game's name, or the words you type instead. |
+| `api.steampowered.com` (`IStoreBrowseService/GetItems`) | The Steam app ids whose art is missing, or that Change art found, and the country of your Windows region. |
 | `shared.steamstatic.com` | Requests for the art files themselves. |
 
 Every request carries the user agent `lamplit/<version>`. Nothing else leaves the PC: no accounts, no telemetry, no

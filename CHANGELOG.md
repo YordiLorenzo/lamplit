@@ -4,6 +4,26 @@ Every release of Lamplit, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- A game's menu (Options, or Menu on an Xbox controller) lifts the game's cover out of the row toward you, blurs the
+  rest of the screen, and opens beside the cover with the game's details and choices.
+- Change art, in a game's menu, for when Lamplit matched the wrong game on Steam's store. It shows what Steam's store
+  finds for the game's name as covers to pick from, and the search can be edited on the on-screen keyboard. "No art,
+  show the name" shows the game's name instead, and "Back to automatic" undoes the choice. The choice is kept in
+  `games.json`, so it lasts through restarts and new scans.
+- Add a game by hand, from Settings > Add a game, or with Cross on the empty home screen when Lamplit found no games:
+  one of the installed programs Lamplit didn't take for games, or an exe found by browsing the PC's drives and
+  folders. Name it on the on-screen keyboard, which has Shift and the signs game names use, then choose its art.
+  Lamplit starts it from its exe, like a game outside any store, and its menu has Remove from Lamplit.
+
+### Changed
+
+- The button hint for a game's details says Game menu.
+- Exes in Windows' cache of installers (`Package Cache`) are no longer taken for games outside any store.
+
 ## 0.2.0 - 2026-10-26
 
 ### Added
