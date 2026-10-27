@@ -45,6 +45,8 @@ pub enum Next {
     },
     /// The screen goes to this window.
     HandOver(isize),
+    /// The window pointed at has gone, and no other may need the player: the starting screen stops pointing at one.
+    Gone,
 }
 
 /// What the looks at the windows have found so far.
@@ -88,7 +90,7 @@ impl Handover {
             return Next::Wait;
         }
         self.offered = newest.map(|w| w.id);
-        newest.map_or(Next::Wait, |w| Next::Hint { id: w.id, own: w.own })
+        newest.map_or(Next::Gone, |w| Next::Hint { id: w.id, own: w.own })
     }
 }
 
@@ -179,6 +181,16 @@ mod tests {
         let (t0, mut h) = (Instant::now(), Handover::default());
         let found = run(&mut h, t0, (0.0, 30.0), |_| (vec![seen(STEAM, false, false)], false));
         assert_eq!(found, [(5.0, Next::Hint { id: STEAM, own: false })]);
+    }
+
+    #[test]
+    fn the_window_offered_goes_and_no_other_may_need_the_player() {
+        // The store app's window the player was pointed at closes.
+        let (t0, mut h) = (Instant::now(), Handover::default());
+        let found = run(&mut h, t0, (0.0, 30.0), |t| {
+            (if t < 12.0 { vec![seen(STEAM, false, false)] } else { Vec::new() }, false)
+        });
+        assert_eq!(found, [(5.0, Next::Hint { id: STEAM, own: false }), (12.0, Next::Gone)]);
     }
 
     #[test]

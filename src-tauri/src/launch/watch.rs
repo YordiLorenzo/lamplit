@@ -388,6 +388,13 @@ impl Looking<'_> {
                 step(app, id, "window", StepState::Warn, &label, None);
                 false
             }
+            Next::Gone => {
+                log::info!("{name}: the window that may have needed the player has closed");
+                *app.state::<Launcher>().waiting.lock() = None;
+                // No longer something to show: ✕ goes back to a store app that may still need the player.
+                step(app, id, "window", StepState::Ok, "That window has closed", None);
+                false
+            }
             Next::Wait => false,
         }
     }

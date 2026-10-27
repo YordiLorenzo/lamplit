@@ -2193,9 +2193,14 @@ await dockTests({ open, close, check, shots });
   v = await look();
   s = await state(page);
   check('a window gone during the fade: the black lifts on the starting screen', v.overlay && v.curtain === '0' && s.overlayTitle === 'Starting Game 002…', JSON.stringify(v) + s.overlayTitle);
+  await emit(page, 'launch-step', step({ id: 'pc:2', key: 'hint', state: 'warn', label: 'Still waiting: Steam may need you', store: 'steam' }));
   await emit(page, 'launch-step', step({ id: 'pc:2', key: 'window', state: 'warn', label: 'A window opened that may need you', store: null }));
   s = await state(page);
   check('... which still offers to show a window that may need the player', s.hint.startsWith('✕Show it'), s.hint);
+  // That window closes: ✕ goes back to the store app, which may still need the player.
+  await emit(page, 'launch-step', step({ id: 'pc:2', key: 'window', state: 'ok', label: 'That window has closed', store: null }));
+  s = await state(page);
+  check('a window that closed is no longer offered, the store app is again', s.hint.startsWith('✕Open the store app'), s.hint);
   await page.keyboard.press('Escape');
   await idle(page);
   s = await state(page);
