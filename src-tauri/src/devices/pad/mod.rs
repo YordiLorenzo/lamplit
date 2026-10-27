@@ -258,7 +258,7 @@ fn read(mut dev: HidDevice, api: &Mutex<HidApi>, path: &CStr, bluetooth: bool, i
                     Ok(dev) => dev,
                     Err(e) => {
                         log::info!("controller: gone ({e})");
-                        return;
+                        break;
                     }
                 };
                 last_data = Instant::now();
@@ -294,12 +294,15 @@ fn read(mut dev: HidDevice, api: &Mutex<HidApi>, path: &CStr, bluetooth: bool, i
             }
             Err(e) => {
                 log::info!("controller: read ended: {e}");
-                return;
+                break;
             }
         }
         for action in navigation.tick(Instant::now()) {
             act(app, Kind::DualSense, action);
         }
+    }
+    for action in navigation.let_go() {
+        act(app, Kind::DualSense, action);
     }
 }
 

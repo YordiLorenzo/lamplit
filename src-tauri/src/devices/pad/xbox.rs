@@ -104,9 +104,13 @@ fn id(slot: u32) -> String {
     format!("xinput:{slot}")
 }
 
-/// Empties a slot whose controller is gone.
+/// Empties a slot whose controller is gone, letting go of the buttons it held.
 fn forget(app: &AppHandle, slot: u32, pad: &mut Option<Pad>) {
-    if pad.take().is_some_and(|p| !p.steam) {
+    let Some(mut gone) = pad.take() else { return };
+    for action in gone.navigation.let_go() {
+        super::act(app, Kind::Xbox, action);
+    }
+    if !gone.steam {
         log::info!("controller: XInput slot {} is empty", slot + 1);
         super::unlist(app, &id(slot));
     }
