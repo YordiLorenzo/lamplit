@@ -17,8 +17,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     ASFW_ANY, AllowSetForegroundWindow, BringWindowToTop, EnumWindows, GW_OWNER, GWL_EXSTYLE, GetForegroundWindow,
     GetWindow, GetWindowLongPtrW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, HWND_NOTOPMOST,
     HWND_TOPMOST, IsIconic, IsWindowVisible, SHOW_WINDOW_CMD, SMTO_ABORTIFHUNG, SMTO_BLOCK, SW_MINIMIZE, SW_RESTORE,
-    SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageTimeoutW, SetForegroundWindow, SetWindowPos,
-    ShowWindow, ShowWindowAsync, WM_NULL, WS_EX_TOPMOST,
+    SW_SHOWNOACTIVATE, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageTimeoutW,
+    SetForegroundWindow, SetWindowPos, ShowWindow, ShowWindowAsync, WM_NULL, WS_EX_TOPMOST,
 };
 use windows::core::BOOL;
 
@@ -163,6 +163,13 @@ pub fn minimize(window: HWND) {
     show(window, SW_MINIMIZE);
 }
 
+/// Restores a minimised window without activating it.
+pub fn unminimize(window: HWND) {
+    if is_minimized(window) {
+        show(window, SW_SHOWNOACTIVATE);
+    }
+}
+
 /// Restores the window and asks Windows to put it in front.
 pub fn restore(window: HWND) {
     show(window, SW_RESTORE);
@@ -237,6 +244,9 @@ pub mod tests {
     };
     use windows::core::w;
 
+    /// The tests that order windows take turns: one test's windows would come between another's.
+    pub static ONE_AT_A_TIME: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
     /// A hidden top-level window of this thread, topmost or not: the system's STATIC class needs no registering.
     pub fn window(topmost: bool) -> HWND {
         let style = if topmost { WS_EX_TOPMOST } else { WINDOW_EX_STYLE(0) };
@@ -261,6 +271,7 @@ pub mod tests {
 
     #[test]
     fn lamplit_behind_a_topmost_game_leaves_the_topmost_windows() {
+        let _turn = ONE_AT_A_TIME.lock();
         let (lamplit, game, other) = (window(true), window(true), window(false));
         assert!(place_behind(lamplit, game));
         assert!(!is_topmost(lamplit), "it would stay above every ordinary window the player switches to");
@@ -279,6 +290,7 @@ pub mod tests {
 
     #[test]
     fn lamplit_stays_on_top_when_the_window_it_was_to_go_behind_has_gone() {
+        let _turn = ONE_AT_A_TIME.lock();
         // The game replaced its window while the screen faded to black.
         let (lamplit, game) = (window(true), window(false));
         // SAFETY: the window is this thread's, made above.

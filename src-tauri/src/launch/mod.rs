@@ -211,13 +211,13 @@ fn ensure_store(app: &AppHandle, game: &Game, store: Store, generation: u64) -> 
         let remembered = st.account == Account::Remembered;
         line(StepState::Busy, &format!("Starting {name}…"));
         start_store(app, store)?;
-        st = wait(&launcher, generation, STORE_START, || Some(status()).filter(|s| s.running))?
+        st = wait(app, generation, STORE_START, || Some(status()).filter(|s| s.running))?
             .ok_or_else(|| Stop::Failed(format!("{name} didn't start.")))?;
         // A saved sign-in takes a moment once the app is up. Without one, the player has to sign in.
         if remembered && st.account == Account::SignedOut {
             line(StepState::Busy, &format!("{name} is signing in…"));
             let signed_in = || Some(status()).filter(|s| s.account == Account::SignedIn);
-            if let Some(s) = wait(&launcher, generation, SIGN_IN_SETTLE, signed_in)? {
+            if let Some(s) = wait(app, generation, SIGN_IN_SETTLE, signed_in)? {
                 st = s;
             }
         }
@@ -230,7 +230,7 @@ fn ensure_store(app: &AppHandle, game: &Game, store: Store, generation: u64) -> 
             line(StepState::Block, &format!("Sign in to {name}"));
             let anyway = || launcher.may_go_anyway(generation);
             let go = || (anyway() || status().account == Account::SignedIn).then_some(());
-            wait(&launcher, generation, SIGN_IN_WAIT, go)?
+            wait(app, generation, SIGN_IN_WAIT, go)?
                 .ok_or_else(|| Stop::Failed(format!("Still not signed in to {name}.")))?;
             if anyway() {
                 line(StepState::Warn, &format!("{name}: going ahead without a confirmed sign-in"));
@@ -245,13 +245,14 @@ fn ensure_store(app: &AppHandle, game: &Game, store: Store, generation: u64) -> 
 }
 
 /// Polls `check` about once a second until it gives a value; None when `limit` runs out. A cancel or a newer launch
-/// stops the wait.
+/// stops the wait. Meanwhile the starting screen keeps the keyboard from a store app's window (`take_keys`).
 fn wait<T>(
-    launcher: &Launcher,
+    app: &AppHandle,
     generation: u64,
     limit: Duration,
     mut check: impl FnMut() -> Option<T>,
 ) -> Result<Option<T>, Stop> {
+    let launcher = app.state::<Launcher>();
     let until = Instant::now() + limit;
     loop {
         if !launcher.is_current(generation) {
@@ -263,6 +264,7 @@ fn wait<T>(
         if Instant::now() >= until {
             return Ok(None);
         }
+        window::take_keys(app, generation);
         std::thread::sleep(Duration::from_secs(1));
     }
 }

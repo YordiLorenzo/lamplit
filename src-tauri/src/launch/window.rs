@@ -75,6 +75,23 @@ fn keep_on_top(generation: u64, current: impl FnOnce() -> bool) {
     });
 }
 
+/// Takes the keyboard back for the starting screen of launch `generation` while it holds the screen. A store app
+/// Lamplit started may take Windows' foreground meanwhile (a sign-in window), and with it the keys the starting screen
+/// offers (Enter, Escape), while the player sees only Lamplit. Not once Lamplit has let go for the player to use that
+/// app (Open store, Show it), nor for another launch.
+pub fn take_keys(app: &AppHandle, generation: u64) {
+    let Some(&lamplit) = LAMPLIT.get() else { return };
+    if keys_back(generation, window::foreground().0 as isize, lamplit) {
+        log::info!("taking the keyboard back for the starting screen");
+        bring_lamplit_forward(app);
+    }
+}
+
+/// Whether the starting screen of launch `generation` takes the keyboard back from the window `front`.
+fn keys_back(generation: u64, front: isize, lamplit: isize) -> bool {
+    front != lamplit && *HOLD.lock() == generation
+}
+
 /// Stops holding the screen for launch `generation`, or for any launch with None. False when it wasn't held for it.
 fn let_go(generation: Option<u64>) -> bool {
     let mut held = HOLD.lock();
@@ -111,7 +128,8 @@ pub fn hand_over(app: &AppHandle, generation: u64, to: isize) -> bool {
 }
 
 /// The main thread's part of `hand_over`: Lamplit goes behind `to`, which gets the foreground, or, when `to` has
-/// gone, holds the screen again if it did (`held`). Nothing moves for a launch that has stopped meanwhile (not
+/// gone, holds the screen again if it did (`held`). Behind `to`, Lamplit is restored if Open store minimised it, so
+/// the desktop doesn't show when the game closes. Nothing moves for a launch that has stopped meanwhile (not
 /// `current`): the player cancelled it during the fade, and may have started another game, whose starting screen now
 /// holds the screen. Cancelling and starting run on the main thread too, so it can't stop between this look and the
 /// moves.
@@ -119,9 +137,10 @@ fn give_way(current: bool, held: bool, generation: u64, lamplit: isize, to: isiz
     if !current {
         return false;
     }
-    let to = HWND(to as *mut _);
-    let behind = window::place_behind(HWND(lamplit as *mut _), to);
+    let (lamplit, to) = (HWND(lamplit as *mut _), HWND(to as *mut _));
+    let behind = window::place_behind(lamplit, to);
     if behind {
+        window::unminimize(lamplit);
         window::force_foreground(to);
     } else if held {
         keep_on_top(generation, || current);
@@ -168,10 +187,11 @@ pub fn summon(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::win::window::tests::{destroy, next, window as hidden};
+    use crate::win::window::tests::{ONE_AT_A_TIME, destroy, next, window as hidden};
 
     #[test]
     fn a_launch_that_has_stopped_doesnt_hold_the_screen() {
+        let _turn = ONE_AT_A_TIME.lock();
         // Cancelled while its store app's sign-in was checked, which then asks for the screen again.
         keep_on_top(7, || false);
         assert_eq!(*HOLD.lock(), 0, "Lamplit would stay above every other window for good");
@@ -180,7 +200,35 @@ mod tests {
     }
 
     #[test]
+    fn the_starting_screen_takes_the_keyboard_back_while_it_holds_the_screen() {
+        let _turn = ONE_AT_A_TIME.lock();
+        let (lamplit, store) = (1, 2);
+        keep_on_top(9, || true);
+        assert!(keys_back(9, store, lamplit), "Enter and Escape would reach the store app's window unseen");
+        assert!(!keys_back(9, lamplit, lamplit));
+        assert!(!keys_back(8, store, lamplit), "an earlier launch's");
+        // Open store: Lamplit lets go, and the player uses the store app.
+        assert!(let_go(Some(9)));
+        assert!(!keys_back(9, store, lamplit));
+    }
+
+    #[test]
+    fn a_home_screen_minimised_for_the_store_app_waits_behind_the_game_unminimised() {
+        let _turn = ONE_AT_A_TIME.lock();
+        // Open store minimised Lamplit; then the game's window came up.
+        let (lamplit, game) = (hidden(false), hidden(false));
+        window::minimize(lamplit);
+        assert!(window::is_minimized(lamplit));
+        assert!(give_way(true, false, 1, lamplit.0 as isize, game.0 as isize));
+        assert!(!window::is_minimized(lamplit), "the desktop would show when the game closes");
+        assert_eq!(next(game), Some(lamplit));
+        destroy(lamplit);
+        destroy(game);
+    }
+
+    #[test]
     fn a_launch_that_stopped_while_the_screen_faded_moves_no_window() {
+        let _turn = ONE_AT_A_TIME.lock();
         // Lamplit holds the screen for the game started next, and the window of the one cancelled during its fade
         // is up.
         let (lamplit, game) = (hidden(true), hidden(false));
