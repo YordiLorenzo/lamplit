@@ -18,6 +18,11 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  */
 
 /**
+ * The art the player chose for a game: a Steam app's, or none (the cover shows the name).
+ * @typedef {{ steam: number } | 'none'} ArtChoice
+ */
+
+/**
  * @typedef {object} Game
  * @property {string} id
  * @property {string} name
@@ -29,7 +34,41 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {boolean} favourite  comes first in the row
  * @property {boolean} hidden  left out of the row; Settings lists it
  * @property {Art} art
+ * @property {ArtChoice | null} art_choice  null: Lamplit's own match
+ * @property {boolean} manual  added by hand, so it can be removed again
  * @property {StoreKey[]} requires  store apps that must run and be signed in for the game
+ */
+
+/**
+ * A match on Steam's store for Change art, with its cover when Steam has one.
+ * @typedef {object} ArtCandidate
+ * @property {number} appid
+ * @property {string} name
+ * @property {string | null} portrait
+ */
+
+/**
+ * An installed program that isn't in the library, for Add a game.
+ * @typedef {object} Program
+ * @property {string} name
+ * @property {string} exe
+ * @property {string} folder
+ */
+
+/**
+ * A folder of the PC, for Add a game. With no path, it lists the drives.
+ * @typedef {object} Folder
+ * @property {string | null} path
+ * @property {string | null} parent  null at a drive's root: back goes to the drives
+ * @property {FolderEntry[]} entries  folders first, then exes
+ */
+
+/**
+ * @typedef {object} FolderEntry
+ * @property {string} name
+ * @property {string} path
+ * @property {'drive' | 'folder' | 'exe'} kind
+ * @property {string | null} title  for an exe, the name its game would get
  */
 
 /**
@@ -197,6 +236,21 @@ export const libraryRescan = () => call('library_rescan');
 export const librarySetFavourite = (id, on) => call('library_set_favourite', { id, on });
 /** @param {string} id @param {boolean} on @returns {Promise<Game[]>} every game, with the change */
 export const librarySetHidden = (id, on) => call('library_set_hidden', { id, on });
+/** What Steam's store has for `query`. @param {string} query @returns {Promise<ArtCandidate[]>} */
+export const libraryArtSearch = (query) => call('library_art_search', { query });
+/**
+ * The art the player chose, null for Lamplit's own match.
+ * @param {string} id @param {ArtChoice | null} choice @returns {Promise<Game[]>} every game, with the change
+ */
+export const librarySetArt = (id, choice) => call('library_set_art', { id, choice });
+/** @returns {Promise<Program[]>} the installed programs that aren't in the library, A to Z */
+export const libraryPrograms = () => call('library_programs');
+/** @param {string | null} path  null for the drives @returns {Promise<Folder>} */
+export const libraryBrowse = (path) => call('library_browse', { path });
+/** @param {string} exe @param {string} name @returns {Promise<{ id: string, games: Game[] }>} its id, and every game */
+export const libraryAddGame = (exe, name) => call('library_add_game', { exe, name });
+/** A game added by hand leaves the library. @param {string} id @returns {Promise<Game[]>} every game */
+export const libraryRemoveGame = (id) => call('library_remove_game', { id });
 /** Starts the launch checks, which report through onLaunchStep and onPlay. @param {string} id @returns {Promise<void>} */
 export const launchStart = (id) => call('launch_start', { id });
 /** @returns {Promise<void>} */

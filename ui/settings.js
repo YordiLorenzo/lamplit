@@ -2,6 +2,7 @@
 // The Settings screen: a list of sections with a one-line summary each, and the rows of the open section. What the
 // rows say comes from logic.js; this file draws them and acts on them.
 
+import { openAdd } from './add.js';
 import * as api from './api.js';
 import { showHints, toast } from './hints.js';
 import { setGames, showInfo } from './library.js';
@@ -118,9 +119,10 @@ export function setStores(list) {
   showInfo();
 }
 
-export function openSettings() {
+/** @param {string | null} [focus]  the row to start on (logic.js rowKey), else the first */
+export function openSettings(focus = null) {
   state.mode = 'settings';
-  state.settings = { section: null, focus: null, idx: 0, rows: [], confirm: null };
+  state.settings = { section: null, focus, idx: 0, rows: [], confirm: null };
   els.settings.classList.add('on');
   sfx.open();
   renderSettings();
@@ -234,6 +236,11 @@ export async function selectSetting() {
   const s = state.settings;
   const row = s.rows[s.idx];
   if (!row?.kind || row.adjust || (row.kind === 'stats' && statsBusy)) return;
+  // Add a game has a panel of its own; Back there comes back here.
+  if (row.kind === 'section' && row.key === 'add') {
+    els.settings.classList.remove('on');
+    return openAdd(() => openSettings(rowKey(row)));
+  }
   sfx.open();
   if (row.kind === 'section') {
     s.section = row.key;

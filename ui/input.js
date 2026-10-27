@@ -2,8 +2,11 @@
 // Controller presses (from Rust), keys and the mouse, turned into one set of actions for whatever is on screen.
 
 import * as api from './api.js';
+import { actAdd, openAdd } from './add.js';
+import { actArt, openArt } from './art.js';
 import { closeFind, moveFind, openFind, pressFind, typeFromKeyboard, typeKey } from './find.js';
-import { toast } from './hints.js';
+import { showHints, toast } from './hints.js';
+import * as keyboard from './keyboard.js';
 import { backToGame, cancelLaunch, play } from './launch.js';
 import { closeDetails, detailChoice, markGame, move, moveDetails, openDetails, showAllGames } from './library.js';
 import { narrowed } from './logic.js';
@@ -85,15 +88,18 @@ export function act(action, source) {
     else if (action === 'ok') selectSetting();
     return;
   }
+  if (state.mode === 'details' && state.art.open) return actArt(action);
   if (state.mode === 'details') {
     if (action === 'back' || action === 'menu') closeDetails();
     else if (action === 'up' || action === 'down') moveDetails(action === 'up' ? -1 : 1);
     else if (action === 'ok' && detailChoice().kind === 'play') {
       closeDetails();
       play();
-    } else if (action === 'ok') markGame();
+    } else if (action === 'ok' && detailChoice().kind === 'art') openArt();
+    else if (action === 'ok') markGame();
     return;
   }
+  if (state.mode === 'add') return actAdd(action);
   if (state.mode === 'find') {
     // □ and △ delete and space, as on a console's own keyboard.
     if (action === 'back') closeFind();
@@ -112,7 +118,11 @@ export function act(action, source) {
     else if (state.running) backToGame();
     return;
   }
-  if (!state.games.length) return;
+  if (!state.games.length) {
+    // No game found at all: ✕ adds one by hand.
+    if (action === 'ok' && state.loaded && !state.all.length) openAdd();
+    return;
+  }
   switch (action) {
     case 'left': return move(-1);
     case 'right': return move(1);
@@ -136,11 +146,21 @@ const KEYS = {
 };
 
 window.addEventListener('keydown', (e) => {
-  // In Find, the keyboard types: characters go into the search and Backspace takes one out, rather than acting.
+  // In Find, and on the names keyboard (a game's name, Change art's search), the keyboard types: characters go in and
+  // Backspace takes one out, rather than acting.
   const typing = (e.key.length === 1 || e.key === 'Backspace') && !e.ctrlKey && !e.altKey && !e.metaKey;
   if (state.mode === 'find' && typing) {
     e.preventDefault();
     if (!padInUse()) typeFromKeyboard(e.key);
+    return;
+  }
+  // Only while its screen is up: a game that closes right after starting brings the starting screen over Add a game.
+  if (state.typing && typing && (state.mode === 'details' || state.mode === 'add')) {
+    e.preventDefault();
+    if (!padInUse()) {
+      keyboard.typeKey(state.typing, e.key);
+      showHints();
+    }
     return;
   }
   const action = KEYS[e.key];
@@ -164,12 +184,15 @@ els.track.addEventListener('click', (e) => {
   else move(k - state.idx);
 });
 
-// A click on a choice in Details picks it.
+// A click on a choice in a game's menu picks it; one on the blurred screen around it closes it.
 els.dChoices.addEventListener('click', (e) => {
   const k = [...els.dChoices.children].indexOf(/** @type {Element} */ (e.target).closest('.row'));
   if (k < 0 || state.mode !== 'details') return;
   state.detailsIdx = k;
   act('ok', 'mouse');
+});
+els.lift.querySelector('.veil').addEventListener('click', () => {
+  if (state.mode === 'details') act('back', 'mouse');
 });
 
 window.addEventListener('contextmenu', (e) => e.preventDefault());

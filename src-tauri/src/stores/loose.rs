@@ -2,17 +2,17 @@
 // has seen run as games.
 
 use super::gog;
-use super::installed::{Program, pick_exe, skip_exe};
+use super::installed::{Installed, Program, pick_exe, skip_exe};
 use super::names::{clean_name, prettify};
 use crate::files::{file_name, folder_key, subdirs};
 use crate::library::{Game, Launch};
 use std::path::{Path, PathBuf};
 
-// Launcher and store folders: their exes are never games.
+// Launcher and store folders, and Windows' cache of installers: their exes are never games.
 const NOT_GAME_DIRS: &[&str] = &[
     r"\steam\", r"\epic games\launcher\", r"\electronic arts\", r"\ubisoft game launcher\",
     r"\rockstar games\launcher\", r"\rockstar games\social club\", r"\battle.net\", r"\windowsapps\",
-    r"\gog galaxy\galaxyclient",
+    r"\gog galaxy\galaxyclient", r"\package cache\",
 ];
 /// Folders that hold other games rather than being one ("D:\Games\GOG Games\<game>").
 const LIBRARY_DIRS: &[&str] = &[
@@ -34,7 +34,7 @@ fn in_launcher_dir(path: &Path) -> bool {
 
 /// A folder that holds programs or games rather than being one: a drive root, Windows, Program Files or a library
 /// folder. Taken for a game, it would launch some exe deep inside and count every program in it as the game.
-fn is_container(dir: &Path) -> bool {
+pub fn is_container(dir: &Path) -> bool {
     let name = file_name(dir).to_lowercase();
     let windows = std::env::var_os("SystemRoot").is_some_and(|w| folder_key(Path::new(&w)) == folder_key(dir));
     dir.parent().is_none()
@@ -71,6 +71,13 @@ fn looks_like_game(dir: &Path) -> bool {
 struct Taken(Vec<String>);
 
 impl Taken {
+    /// The folders of `claimed` games.
+    fn of(claimed: &[Game]) -> Self {
+        Taken(
+            claimed.iter().flat_map(|g| std::iter::once(&g.dir).chain(&g.extra_dirs)).map(|d| folder_key(d)).collect(),
+        )
+    }
+
     /// The folder is a known game's folder or inside one.
     fn covers(&self, p: &Path) -> bool {
         let k = folder_key(p);
@@ -87,9 +94,7 @@ impl Taken {
 /// The games outside the `claimed` ones' folders: folders in `roots` (each drive's Games folder), installed
 /// `programs` that look like games, and the exes Windows has seen run as games (`game_exes`).
 pub fn games(claimed: &[Game], game_exes: &[PathBuf], roots: &[PathBuf], programs: &[Program]) -> Vec<Game> {
-    let mut taken = Taken(
-        claimed.iter().flat_map(|g| std::iter::once(&g.dir).chain(&g.extra_dirs)).map(|d| folder_key(d)).collect(),
-    );
+    let mut taken = Taken::of(claimed);
     let program_for =
         |dir: &Path| programs.iter().find(|p| p.folder.as_deref().is_some_and(|f| folder_key(f) == folder_key(dir)));
     let mut out = Vec::new();
@@ -127,17 +132,7 @@ pub fn games(claimed: &[Game], game_exes: &[PathBuf], roots: &[PathBuf], program
         if taken.covers(exe) || skip_exe(exe) || in_launcher_dir(exe) {
             continue;
         }
-        // Climb out of generic subfolders so the game is named after its own folder, but never into a container.
-        let generic = |dir: &Path| {
-            let name = file_name(dir).to_lowercase();
-            ["bin", "bin64", "x64", "win64", "binaries", "retail", "game", "sp", "mp"].contains(&name.as_str())
-        };
-        let mut dir = exe.parent().map(Path::to_path_buf).unwrap_or_default();
-        while generic(&dir)
-            && let Some(parent) = dir.parent().filter(|p| !is_container(p))
-        {
-            dir = parent.to_path_buf();
-        }
+        let dir = game_folder(exe);
         // An exe right in a container, or a folder that holds a known game, is no game folder of its own.
         if is_container(&dir) || taken.inside(&dir) {
             continue;
@@ -146,6 +141,51 @@ pub fn games(claimed: &[Game], game_exes: &[PathBuf], roots: &[PathBuf], program
         let name = program_for(&dir).map_or_else(|| prettify(&file_name(&dir)), |p| clean_name(&p.name));
         out.push(Game::new(format!("pc:{}", folder_key(&dir)), name, None, dir, Launch::Exe(exe.clone())));
     }
+    out
+}
+
+/// The game folder an exe belongs to: its own folder, or above generic subfolders (bin, x64 and the like) so the game
+/// is named after its own folder, but never a container.
+pub fn game_folder(exe: &Path) -> PathBuf {
+    let generic = |dir: &Path| {
+        let name = file_name(dir).to_lowercase();
+        ["bin", "bin64", "x64", "win64", "binaries", "retail", "game", "sp", "mp"].contains(&name.as_str())
+    };
+    let mut dir = exe.parent().map(Path::to_path_buf).unwrap_or_default();
+    while generic(&dir)
+        && let Some(parent) = dir.parent().filter(|p| !is_container(p))
+    {
+        dir = parent.to_path_buf();
+    }
+    dir
+}
+
+/// What the game `exe` starts is called, as discovery names a game outside any store: after its game folder, or after
+/// the exe itself when that folder is a container.
+pub fn name_for(exe: &Path) -> String {
+    let dir = game_folder(exe);
+    let stem = || exe.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    prettify(&if is_container(&dir) { stem() } else { file_name(&dir) })
+}
+
+/// The installed programs `games` leaves out: mostly apps, and the odd game without the signs `looks_like_game`
+/// knows. Each with its name and the exe that would start it, A to Z, for the player to add one by hand.
+pub fn passed_over(games: &[Game], installed: &Installed) -> Vec<(String, PathBuf)> {
+    let taken = Taken::of(games);
+    let mut out: Vec<(String, PathBuf)> = installed
+        .programs
+        .iter()
+        .filter_map(|p| {
+            let dir = p.folder.as_deref()?;
+            if is_container(dir) || taken.covers(dir) || taken.inside(dir) || in_launcher_dir(dir) {
+                return None;
+            }
+            Some((clean_name(&p.name), pick_exe(dir, &installed.game_exes, p.exe.as_deref())?))
+        })
+        .collect();
+    out.sort_by_cached_key(|(name, _)| name.to_lowercase());
+    // A program listed in both the machine's and the account's list.
+    out.dedup_by(|a, b| folder_key(&a.1) == folder_key(&b.1));
     out
 }
 
@@ -325,6 +365,41 @@ mod tests {
         assert_eq!(found(&list), vec![("Game".into(), "run.exe".into())]);
         assert_eq!(folder_key(&list[0].dir), folder_key(&root.join(r"Games\Game")));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn programs_discovery_passed_over_can_be_added_by_hand() {
+        let root = scratch("passed-over");
+        let tool = root.join(r"Program Files\Some Tool");
+        let tool_exe = file(tool.join("tool.exe"), 100);
+        // An emulator without any sign of a game, whose uninstaller is its icon.
+        let emu = root.join(r"Emulators2\Emu");
+        file(emu.join("unins000.exe"), 9000);
+        let emu_exe = file(emu.join(r"bin\emu.exe"), 100);
+        let claimed_dir = root.join(r"Program Files\Claimed");
+        file(claimed_dir.join("claimed.exe"), 100);
+        let cache = root.join(r"ProgramData\Package Cache\{1}");
+        let cached_exe = file(cache.join("thing.exe"), 100);
+        let programs = vec![
+            Program { name: "Some Tool®".into(), folder: Some(tool), exe: Some(tool_exe.clone()) },
+            Program { name: "emu".into(), folder: Some(emu.clone()), exe: Some(emu.join("unins000.exe")) },
+            Program { name: "Claimed".into(), folder: Some(claimed_dir.clone()), exe: None },
+            Program { name: "Runtime".into(), folder: Some(cache), exe: Some(cached_exe) },
+            Program { name: "Odd entry".into(), folder: Some(PathBuf::from(r"C:\")), exe: None },
+        ];
+        let claimed = [Game::new("pc:c".into(), "C".into(), None, claimed_dir, Launch::Exe(PathBuf::new()))];
+        let installed = Installed { drives: Vec::new(), programs, game_exes: Vec::new() };
+        assert_eq!(passed_over(&claimed, &installed), vec![("emu".into(), emu_exe), ("Some Tool".into(), tool_exe)]);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn exes_are_named_after_their_game_folder() {
+        assert_eq!(game_folder(Path::new(r"D:\Stuff\CoolGame2\bin\x64\cool.exe")), Path::new(r"D:\Stuff\CoolGame2"));
+        assert_eq!(name_for(Path::new(r"D:\Stuff\CoolGame2\bin\x64\cool.exe")), "Cool Game 2");
+        // Right in a library folder: named after the exe.
+        assert_eq!(game_folder(Path::new(r"D:\Games\bin\tetris_classic.exe")), Path::new(r"D:\Games\bin"));
+        assert_eq!(name_for(Path::new(r"D:\Games\SuperTetris.exe")), "Super Tetris");
     }
 
     #[test]

@@ -203,7 +203,7 @@ const browser = await chromium.launch(process.env.CHROME ? { executablePath: pro
   await page.close();
 }
 
-// Details over Titanfall 2: its play time, and the choices under the details.
+// Titanfall 2's menu: its cover lifted, its play time and the choices beside it.
 {
   const page = await open(browser, uiDir, { games, now });
   await emit(page, 'stores', stores);

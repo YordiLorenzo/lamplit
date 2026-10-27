@@ -40,10 +40,14 @@ export const els = {
   empty: $('empty'),
   noMatch: $('noMatch'),
   filters: $('filters'),
+  row: $('row'),
   track: $('track'),
   overlay: $('overlay'),
   overlayTitle: $('overlayTitle'),
   overlaySub: $('overlaySub'),
+  lift: $('lift'),
+  card: $('card'),
+  face: $('face'),
   details: $('details'),
   dName: $('dName'),
   dStore: $('dStore'),
@@ -51,6 +55,18 @@ export const els = {
   dTime: $('dTime'),
   dDir: $('dDir'),
   dChoices: $('dChoices'),
+  artPick: $('artPick'),
+  artQuery: $('artQuery'),
+  artStatus: $('artStatus'),
+  artTiles: $('artTiles'),
+  artChoices: $('artChoices'),
+  artKeys: $('artKeys'),
+  add: $('add'),
+  addTitle: $('addTitle'),
+  addPath: $('addPath'),
+  addList: $('addList'),
+  addName: $('addName'),
+  addKeys: $('addKeys'),
   settings: $('settings'),
   settingsTitle: $('settingsTitle'),
   settingsList: $('settingsList'),
@@ -74,10 +90,56 @@ export const state = {
   find: { query: '', store: null, sort: 'played' },
   /** @type {string} the focused key or choice in the Find panel (its data-id) */
   findFocus: 'a',
-  /** @type {'browse' | 'starting' | 'details' | 'settings' | 'find'} */
+  /** @type {'browse' | 'starting' | 'details' | 'settings' | 'find' | 'add'} details: a game's menu (library.js) */
   mode: 'browse',
-  /** the focused choice under the details (logic.js detailChoices) */
+  /** whether the library has come in yet, so an empty row means no games found */
+  loaded: false,
+  /** the focused choice in a game's menu (logic.js detailChoices) */
   detailsIdx: 0,
+  /** ✕ was pressed once on Remove from Lamplit */
+  removing: false,
+  /** @type {string | null} the game whose cover is lifted (lift.js); its cover in the row hides meanwhile */
+  lifted: null,
+  /**
+   * Change art (art.js), over a game's menu. `found` is null while Steam's store is searched; `focus` is the data-id
+   * of the focused cover or choice.
+   */
+  art: {
+    open: false,
+    id: '',
+    query: '',
+    /** @type {import('./api.js').ArtCandidate[] | null} */
+    found: null,
+    error: '',
+    focus: 'search',
+    editing: false,
+    saving: false,
+  },
+  /**
+   * Add a game (add.js): the list of programs, a folder of the PC, or naming the exe picked. `rows` are what the list
+   * shows now.
+   */
+  add: {
+    /** @type {'list' | 'browse' | 'name'} */
+    view: 'list',
+    /** @type {import('./api.js').Program[] | null} */
+    programs: null,
+    /** @type {import('./api.js').Folder | null} */
+    folder: null,
+    /**
+     * A heading, or a row: `kind` is what ✕ does there ('browse', 'program', 'drive', 'folder', 'exe'; '' for none),
+     * `path` the exe or folder, `title` the name an exe's game would get.
+     * @type {{ heading?: string, kind?: string, label?: string, value?: string, path?: string, title?: string }[]}
+     */
+    rows: [],
+    idx: 0,
+    exe: '',
+    /** @type {'list' | 'browse'} the view naming goes back to */
+    from: 'list',
+    busy: false,
+  },
+  /** @type {import('./keyboard.js').Field | null} the names keyboard in use, which the PC's keyboard types into */
+  typing: null,
   /** @type {string | null} the game being started */
   launching: null,
   /** @type {string | null} the game Lamplit is waiting on to close */

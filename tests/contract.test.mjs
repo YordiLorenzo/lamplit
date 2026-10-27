@@ -42,6 +42,7 @@ test("the page's types allow exactly the values Rust sends", () => {
     connection: 'Controller.connection',
     battery_level: 'BatteryLevel',
     screensaver_style: 'ScreensaverStyle',
+    entry_kind: 'FolderEntry.kind',
   };
   for (const [kind, type] of Object.entries(types)) assert.deepEqual(sorted(pageValues(type)), sorted(values[kind]), type);
 });

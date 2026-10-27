@@ -7,5 +7,6 @@
   "pad_kind": ["dualsense", "playstation", "xbox", "other"],
   "connection": ["usb", "bluetooth", "wireless"],
   "battery_level": ["empty", "low", "medium", "full"],
-  "screensaver_style": ["mix", "2d", "3d"]
+  "screensaver_style": ["mix", "2d", "3d"],
+  "entry_kind": ["drive", "folder", "exe"]
 }

@@ -3,6 +3,7 @@
 // change while the panel is open (logic.js rowOf); this file draws the panel and acts on it.
 
 import { showHints } from './hints.js';
+import { SEARCH, buildKeys } from './keyboard.js';
 import { showRow } from './library.js';
 import { nearest, storeChoices, typed } from './logic.js';
 import { sfx } from './sounds.js';
@@ -10,38 +11,7 @@ import { els, state, withStoreLogo } from './state.js';
 
 /** @typedef {import('./logic.js').Find} Find */
 
-/**
- * The on-screen keyboard, QWERTY, on a grid of half keys (20 columns): each row is its indent in half keys, then its
- * keys. The rows step right as on a real keyboard; the d-pad goes to the nearest key (logic.js nearest).
- * @type {[number, string[]][]}
- */
-const KEYBOARD = [
-  [0, [...'1234567890']],
-  [0, [...'qwertyuiop']],
-  [1, [...'asdfghjkl']],
-  [2, [...'zxcvbnm', 'delete']],
-  [0, ['clear', 'space', 'done']],
-];
-/** The keys that aren't a letter or digit: their label and their width in half keys. */
-const WIDE = { space: ['Space', 10], delete: ['Delete', 4], clear: ['Clear', 4], done: ['Done', 6] };
-
-els.findKeys.append(
-  ...KEYBOARD.flatMap(([indent, ids], row) => {
-    // Every key gets its own column: left to the grid, a key would fill the gap the indent leaves.
-    let column = indent + 1;
-    return ids.map((id) => {
-      const key = document.createElement('div');
-      key.className = 'key';
-      key.dataset.id = id;
-      const [label, span] = WIDE[id] ?? [id, 2];
-      key.textContent = label;
-      if (span > 2) key.classList.add('wide');
-      key.style.gridArea = `${row + 1} / ${column} / auto / span ${span}`;
-      column += span;
-      return key;
-    });
-  })
-);
+buildKeys(els.findKeys, SEARCH);
 
 /** The keys and choices focus can move between. */
 const targets = () => /** @type {HTMLElement[]} */ ([...els.find.querySelectorAll('[data-id]')]);

@@ -319,11 +319,11 @@ const state = (page) =>
   await page.evaluate(() => window.__emit('pad', 'back'));
   s = await state(page);
   check('Circle closes details', !s.details);
-  check('the hints show PlayStation symbols at first', s.hint === '✕Play≡Details△Settings□Find', s.hint);
+  check('the hints show PlayStation symbols at first', s.hint === '✕Play≡Game menu△Settings□Find', s.hint);
   await emit(page, 'pad-kind', known('pad_kind', 'xbox'));
   s = await state(page);
   const colour = await page.evaluate(() => getComputedStyle(document.querySelector('#hint b')).color);
-  check('an Xbox controller turns the hints into its letters', s.hint === 'APlay≡DetailsYSettingsXFind' && colour === 'rgb(127, 211, 110)', `${s.hint} ${colour}`);
+  check('an Xbox controller turns the hints into its letters', s.hint === 'APlay≡Game menuYSettingsXFind' && colour === 'rgb(127, 211, 110)', `${s.hint} ${colour}`);
   await page.evaluate(() => window.__emit('pad', 'menu'));
   await emit(page, 'pad-kind', known('pad_kind', 'other'));
   s = await state(page);
@@ -335,7 +335,7 @@ const state = (page) =>
   // Rust reads the controllers before the page listens: the page asks which kind was used last.
   const early = await open({ games: [game(1), game(2)], padKind: known('pad_kind', 'xbox') });
   s = await state(early);
-  check('the hints start in the letters of a controller used before the page listened', s.hint === 'APlay≡DetailsYSettingsXFind', s.hint);
+  check('the hints start in the letters of a controller used before the page listened', s.hint === 'APlay≡Game menuYSettingsXFind', s.hint);
   await close(early);
 }
 
@@ -482,7 +482,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('c');
   await idle(page);
   let v = await view();
-  check('settings open on the list of sections, Power last', v.open && v.title === 'Settings' && v.rows.length === 8 && v.rows[7].startsWith('Power'), JSON.stringify(v.rows));
+  check('settings open on the list of sections, Power last', v.open && v.title === 'Settings' && v.rows.length === 9 && v.rows[8].startsWith('Power'), JSON.stringify(v.rows));
   check('section summaries say what is going on', v.rows[0].includes('PRO X 2 headset · 45%') && v.rows[1].includes('On · 80% · charging') && v.rows[2].includes('2 connected · 65%, medium') && v.rows[4].includes('EA app: sign in'), JSON.stringify(v.rows));
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
@@ -958,7 +958,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   d = await details();
   let s = await state(page);
   check('Details show hours and minutes played', d.time === '12 h 34 min', d.time);
-  check('Details open on Play, with the other choices below', d.focus === 'Play' && JSON.stringify(d.choices) === '["Play","Add to favourites","Hide this game"]' && s.hint.includes('✕Play'), `${JSON.stringify(d)} ${s.hint}`);
+  check('Details open on Play, with the other choices below', d.focus === 'Play' && JSON.stringify(d.choices) === '["Play","Add to favourites","Change art","Hide this game"]' && s.hint.includes('✕Play'), `${JSON.stringify(d)} ${s.hint}`);
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await idle(page);
@@ -970,9 +970,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('Escape');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('i');
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('ArrowDown');
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
   d = await details();
   check('Details stop at the last choice', d.focus === 'Hide this game', d.focus);
   await page.keyboard.press('Enter');
@@ -1107,8 +1105,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('i');
   let s = await state(page);
   check('Details of the running game offer Back to game', s.hint.includes('✕Back to game'), s.hint);
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('ArrowDown');
+  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await idle(page);
   s = await state(page);
@@ -1354,8 +1351,7 @@ const findView = (page) =>
     };
   }, games);
   await page.keyboard.press('i');
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('ArrowDown');
+  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
@@ -1629,6 +1625,392 @@ const saverOn = (page) => until(page, () => document.querySelector('#saver.on'))
   check("the game's logo drifts over it", v.logo?.endsWith(encodeURIComponent(plain.logo)), v.logo);
   check('the log says why there is no WebGL', /css \(WebGL2 is not available\), colours from 1 game$/.test(v.log ?? ''), v.log);
   await close(page);
+}
+
+// 31. A game's menu lifts its cover: the card grows out of the row over the blurred, dimmed screen, the menu opens
+// beside it on screen, and Back lowers the card onto its cover again, also from halfway up.
+for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, { width: 1440, height: 1080 }]) {
+  const page = await open({ games: [game(1), game(2), game(3)] }, vp);
+  const lifted = () =>
+    page.evaluate(() => {
+      const box = (el) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, w: r.width, h: r.height };
+      };
+      const lift = document.getElementById('lift');
+      const veil = getComputedStyle(lift.querySelector('.veil'));
+      const cover = document.querySelector('#track .cover.focus');
+      return {
+        shown: lift.classList.contains('shown'),
+        on: lift.classList.contains('on'),
+        visibility: getComputedStyle(lift).visibility,
+        veil: { opacity: veil.opacity, filter: veil.backdropFilter },
+        card: box(document.getElementById('card')),
+        menu: box(document.getElementById('details')),
+        menuOn: document.getElementById('details').classList.contains('on'),
+        cover: box(cover),
+        coverHidden: getComputedStyle(cover).visibility === 'hidden',
+        drift: getComputedStyle(document.querySelector('.hero')).animationPlayState,
+        w: innerWidth,
+        h: innerHeight,
+      };
+    });
+  const rest = await lifted();
+  await page.keyboard.press('i');
+  await settled(page);
+  let l = await lifted();
+  const at = `${vp.width}x${vp.height}`;
+  check(`${at}: the menu lifts the focused cover over a blurred, dimmed screen`, l.on && l.veil.opacity === '1' && l.veil.filter.includes('blur') && l.coverHidden, JSON.stringify(l));
+  check(`${at}: the lifted cover is larger than in the row, and higher`, l.card.h > rest.cover.h * 1.4 && l.card.y + l.card.h / 2 < rest.cover.y + rest.cover.h / 2 - l.h * 0.1, JSON.stringify([rest.cover, l.card]));
+  check(`${at}: the menu opens beside the cover, inside the screen`, l.menuOn && l.menu.x >= l.card.x + l.card.w && l.menu.x + l.menu.w <= l.w * 0.95 + 1 && l.menu.y >= 0 && l.menu.y + l.menu.h <= l.h, JSON.stringify([l.card, l.menu]));
+  check(`${at}: the art behind holds still while the menu is up`, l.drift === 'paused', l.drift);
+  await page.screenshot({ path: path.join(shots, `menu-${vp.width}x${vp.height}.png`) });
+  await page.keyboard.press('Escape');
+  await until(page, () => !document.getElementById('lift').classList.contains('shown'));
+  l = await lifted();
+  check(`${at}: Back lowers the cover into the row, which shows it again`, !l.shown && l.visibility === 'hidden' && !l.coverHidden && l.drift === 'running', JSON.stringify(l));
+  if (vp.width === 1920) {
+    // Back while the card still rises: it turns round from where it is, rather than jumping.
+    await page.keyboard.press('i');
+    await page.waitForTimeout(150);
+    const rising = (await lifted()).card;
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(80);
+    const lowering = (await lifted()).card;
+    check('Back during the lift lowers the card from where it was', lowering.h < rising.h && lowering.h > rest.cover.h * 1.02, JSON.stringify({ rising, lowering, cover: rest.cover }));
+    await until(page, () => !document.getElementById('lift').classList.contains('shown'));
+    // A click on the blurred screen closes the menu too.
+    await page.keyboard.press('i');
+    await settled(page);
+    await page.mouse.click(l.w - 20, 20);
+    l = await lifted();
+    check('a click beside the menu closes it', !l.on, JSON.stringify(l));
+    if (perf) {
+      await until(page, () => !document.getElementById('lift').classList.contains('shown'));
+      const frames = await page.evaluate(
+        () =>
+          new Promise((resolve) => {
+            const deltas = [];
+            let last = performance.now();
+            window.__emit('pad', 'menu');
+            const step = (now) => {
+              deltas.push(now - last);
+              last = now;
+              if (deltas.length < 45) requestAnimationFrame(step);
+              else resolve(deltas.slice(2));
+            };
+            requestAnimationFrame(step);
+          })
+      );
+      frames.sort((a, b) => a - b);
+      check('frames while the cover lifts', frames[Math.floor(frames.length * 0.95)] < 20, `median ${frames[Math.floor(frames.length / 2)].toFixed(1)} ms, p95 ${frames[Math.floor(frames.length * 0.95)].toFixed(1)} ms`);
+    }
+  }
+  await close(page);
+}
+
+// 32. Change art: Steam's matches for the game's name as covers, the card showing the one in focus, then the choice
+// saved; no art; back to automatic; another search typed on the keyboard; and a search that fails.
+{
+  const games = [game(1, { name: 'Cyberpunk 2077' }), game(2)];
+  const [withCover, noCover] = ipc('art-candidates');
+  const found = [like(withCover, { portrait: art[0].portrait }), noCover];
+  const page = await open({ games });
+  await page.evaluate(
+    ([list, found, error]) => {
+      const s = (window.__settings = { list });
+      s.library_art_search = ({ query }) => {
+        if (query === 'offline') throw error;
+        return query === 'nothing' ? [] : found;
+      };
+      /** Rust's answer: every game, the chosen art on the game. */
+      s.library_set_art = ({ id, choice }) => {
+        const g = s.list.find((x) => x.id === id);
+        g.art_choice = choice;
+        g.art = { portrait: choice?.steam === found[0].appid ? found[0].portrait : null, hero: null, logo: null };
+        return s.list;
+      };
+    },
+    [games, found, like(ipc('error'), { message: 'Find art online is off. Settings > System switches it on.' })]
+  );
+  const picker = () =>
+    page.evaluate(() => ({
+      open: document.getElementById('artPick').classList.contains('on'),
+      menu: document.getElementById('details').classList.contains('on'),
+      editing: document.getElementById('artPick').classList.contains('editing'),
+      query: document.getElementById('artQuery').textContent,
+      status: document.getElementById('artStatus').textContent,
+      tiles: [...document.querySelectorAll('#artTiles .tile')].map((t) => t.querySelector('.caption').textContent + (t.querySelector('.badge') ? ' (chosen)' : '')),
+      choices: [...document.querySelectorAll('#artChoices .choice')].map((c) => c.textContent + (c.classList.contains('on') ? ' (on)' : '')),
+      focus: (document.querySelector('#artPick .focus .caption') ?? document.querySelector('#artPick .focus'))?.textContent ?? null,
+      face: { art: document.getElementById('face').classList.contains('has-art'), image: document.getElementById('face').style.backgroundImage },
+      hint: document.getElementById('hint').textContent,
+      lastCall: window.__calls.at(-1),
+    }));
+  await page.keyboard.press('i');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  let p = await picker();
+  check('Change art searches Steam for the game\'s name', p.open && !p.menu && JSON.stringify(p.lastCall) === '["library_art_search",{"query":"Cyberpunk 2077"}]', JSON.stringify(p));
+  check('the matches show as covers, with no art below', JSON.stringify(p.tiles) === '["Cyberpunk 2077","Cyberpunk 2077: Phantom Liberty"]' && JSON.stringify(p.choices) === '["No art, show the name"]', JSON.stringify(p));
+  check('focus starts on the first match, which the lifted cover shows', p.focus === 'Cyberpunk 2077' && p.face.art && p.face.image.includes(encodeURIComponent(found[0].portrait)), JSON.stringify(p));
+  check('Change art hints Select, Edit search and Back', p.hint === '✕Select□Edit search○Back', p.hint);
+  await settled(page);
+  await page.screenshot({ path: path.join(shots, 'change-art.png') });
+  await page.keyboard.press('ArrowRight');
+  p = await picker();
+  check('a match without a cover shows the name on the lifted cover', p.focus === 'Cyberpunk 2077: Phantom Liberty' && !p.face.art, JSON.stringify(p));
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  p = await picker();
+  let s = await state(page);
+  check('✕ on a match saves it for the game', JSON.stringify(s.lastCall) === '["library_set_art",{"id":"pc:1","choice":{"steam":1091500}}]', JSON.stringify(s.lastCall));
+  check('then the menu is back, with the cover in its new art', !p.open && p.menu && p.face.art && s.hint.includes('✕Select'), JSON.stringify(p));
+  // Again: the choice is marked, and automatic art is a choice now.
+  await page.keyboard.press('Enter');
+  await idle(page);
+  p = await picker();
+  check('the chosen match is marked, and Back to automatic offered', p.tiles[0] === 'Cyberpunk 2077 (chosen)' && JSON.stringify(p.choices) === '["No art, show the name","Back to automatic"]', JSON.stringify(p));
+  await page.keyboard.press('ArrowDown');
+  p = await picker();
+  check('No art shows the name on the lifted cover', p.focus === 'No art, show the name' && !p.face.art, JSON.stringify(p));
+  await page.keyboard.press('Enter');
+  await idle(page);
+  s = await state(page);
+  check('✕ on No art saves it', JSON.stringify(s.lastCall) === '["library_set_art",{"id":"pc:1","choice":"none"}]', JSON.stringify(s.lastCall));
+  await page.keyboard.press('Enter');
+  await idle(page);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowRight');
+  p = await picker();
+  check('No art is marked as the choice', p.choices[0] === 'No art, show the name (on)' && p.focus === 'Back to automatic', JSON.stringify(p));
+  await page.keyboard.press('Enter');
+  await idle(page);
+  s = await state(page);
+  check('✕ on Back to automatic clears the choice', JSON.stringify(s.lastCall) === '["library_set_art",{"id":"pc:1","choice":null}]', JSON.stringify(s.lastCall));
+  // Other words, typed on the keyboard: on screen with the pad, or on the PC's keyboard.
+  await page.keyboard.press('Enter');
+  await idle(page);
+  await page.keyboard.press('f');
+  p = await picker();
+  check('□ edits the search on the keyboard', p.editing && p.query === 'Cyberpunk 2077' && p.hint === '✕Select□Delete△Space○Cancel', JSON.stringify(p));
+  for (let i = 0; i < 'Cyberpunk 2077'.length; i++) await page.keyboard.press('Backspace');
+  await page.keyboard.type('nothing');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  p = await picker();
+  check('Done searches for the words typed', !p.editing && JSON.stringify(p.lastCall) === '["library_art_search",{"query":"nothing"}]' && p.status.startsWith('Nothing on Steam\'s store matches "nothing"') && p.tiles.length === 0, JSON.stringify(p));
+  check('with no matches, focus is on the search', p.focus?.includes('nothing'), JSON.stringify(p));
+  await page.keyboard.press('Enter');
+  for (let i = 0; i < 'nothing'.length; i++) await page.keyboard.press('Backspace');
+  await page.keyboard.type('offline');
+  await page.keyboard.press('Escape');
+  p = await picker();
+  check('○ on the keyboard keeps the search it had', !p.editing && p.query === 'nothing', JSON.stringify(p));
+  await page.keyboard.press('Enter');
+  for (let i = 0; i < 'nothing'.length; i++) await page.keyboard.press('Backspace');
+  await page.keyboard.type('offline');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  p = await picker();
+  check('a search that fails says why, and No art still works', p.status === 'Find art online is off. Settings > System switches it on.' && p.choices[0].startsWith('No art'), JSON.stringify(p));
+  await page.keyboard.press('Escape');
+  p = await picker();
+  check('○ goes back to the menu', !p.open && p.menu, JSON.stringify(p));
+  await page.keyboard.press('Escape');
+  await until(page, () => !document.getElementById('lift').classList.contains('shown'));
+  s = await state(page);
+  check('and ○ again to the row', s.hint.startsWith('✕Play'), s.hint);
+  await close(page);
+}
+
+// 33. Add a game: a program Lamplit passed over, or an exe browsed for on the drives, named on the keyboard, then its
+// art; a game added by hand can be removed again. With nothing found at all, ✕ on the empty row adds one.
+{
+  const games = [game(1)];
+  const [program] = ipc('programs');
+  const programs = [program, like(program, { name: 'Zeta Tool', exe: 'C:\\Program Files\\Zeta\\zeta.exe', folder: 'C:\\Program Files\\Zeta' })];
+  const games2 = ipc('folder');
+  const drive = (letter) => ({ name: `${letter}:`, path: `${letter}:\\`, kind: known('entry_kind', 'drive'), title: null });
+  const folders = {
+    '': { path: null, parent: null, entries: [drive('C'), drive('D')] },
+    'D:\\': { path: 'D:\\', parent: null, entries: [{ ...games2.entries[0], name: 'Games', path: 'D:\\Games' }] },
+    'D:\\Games': games2,
+  };
+  const page = await open({ games });
+  await page.evaluate(
+    ([list, programs, folders, base]) => {
+      const s = (window.__settings = { list });
+      s.library_programs = programs;
+      s.library_browse = ({ path }) => folders[path ?? ''];
+      s.library_add_game = ({ exe, name }) => {
+        if (name === 'Taken') throw { kind: 'player', message: 'That folder belongs to Game 001, which Lamplit already has.' };
+        const id = `manual:${exe.toLowerCase()}`;
+        s.list = [...s.list, { ...base, id, name, store: null, dir: exe.slice(0, exe.lastIndexOf('\\')), manual: true, requires: [] }];
+        return { id, games: s.list };
+      };
+      s.library_art_search = [];
+      s.library_remove_game = ({ id }) => (s.list = s.list.filter((g) => g.id !== id));
+    },
+    [games, programs, folders, game(9)]
+  );
+  const add = () =>
+    page.evaluate(() => ({
+      open: document.getElementById('add').classList.contains('on'),
+      naming: document.getElementById('add').classList.contains('naming'),
+      title: document.getElementById('addTitle').textContent,
+      path: document.getElementById('addPath').textContent,
+      rows: [...document.querySelectorAll('#addList > *')].map((r) => (r.tagName === 'H3' ? `# ${r.textContent}` : r.textContent)),
+      focus: document.querySelector('#addList .row.focus')?.textContent ?? null,
+      name: document.getElementById('addName').textContent,
+      hint: document.getElementById('hint').textContent,
+      lastCall: window.__calls.at(-1),
+    }));
+  const settingsRows = () => page.evaluate(() => [...document.querySelectorAll('#settingsList .row')].map((r) => r.textContent));
+  await page.keyboard.press('c');
+  await idle(page);
+  const at = (await settingsRows()).findIndex((r) => r.startsWith('Add a game'));
+  for (let i = 0; i < at; i++) await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  let a = await add();
+  check('Settings > Add a game lists browsing first, then the programs Lamplit passed over', a.open && a.title === 'Add a game' && JSON.stringify(a.rows) === '["Browse drives and folders","# Programs on this PC","Old RacerC:\\\\Program Files\\\\Old Racer","Zeta ToolC:\\\\Program Files\\\\Zeta"]' && a.focus === 'Browse drives and folders', JSON.stringify(a));
+  await settled(page);
+  await page.screenshot({ path: path.join(shots, 'add-list.png') });
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  a = await add();
+  check('a program goes to naming, with its name filled in and focus on Done', a.naming && a.title === 'Name the game' && a.name === 'Old Racer' && a.path === program.exe && a.hint === '✕Select□Delete△Space○Back', JSON.stringify(a));
+  await page.keyboard.press('Enter');
+  await idle(page);
+  let s = await state(page);
+  const lift = () =>
+    page.evaluate(() => ({
+      art: document.getElementById('artPick').classList.contains('on'),
+      face: document.querySelector('#face .name').textContent,
+    }));
+  const added = await page.evaluate(() => window.__calls.find((c) => c[0] === 'library_add_game'));
+  check('Done adds the game', JSON.stringify(added) === `["library_add_game",{"exe":${JSON.stringify(program.exe)},"name":"Old Racer"}]`, JSON.stringify(added));
+  let l = await lift();
+  check('then its cover lifts into Change art, searching for its name', !(await add()).open && s.focusName === 'Old Racer' && l.art && l.face === 'Old Racer' && JSON.stringify(s.lastCall) === '["library_art_search",{"query":"Old Racer"}]', JSON.stringify({ ...l, focus: s.focusName, last: s.lastCall }));
+  // Its menu offers Remove; ✕ once asks, ✕ again removes it.
+  await page.keyboard.press('Escape');
+  const choices = await page.evaluate(() => [...document.querySelectorAll('#dChoices .row')].map((r) => r.textContent));
+  check('the menu of a game added by hand offers Remove from Lamplit', choices.at(-1) === 'Remove from Lamplit' && (await page.evaluate(() => document.getElementById('dStore').textContent)) === 'Added by hand', JSON.stringify(choices));
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  s = await state(page);
+  check('✕ on Remove asks first', s.lastCall?.[0] !== 'library_remove_game' && (await page.evaluate(() => document.querySelector('#dChoices .row.focus').textContent)) === 'Press again to remove', JSON.stringify(s.lastCall));
+  await page.keyboard.press('Enter');
+  await idle(page);
+  s = await state(page);
+  check('✕ again removes it from the row', s.lastCall?.[0] === 'library_remove_game' && s.covers === 1 && s.toast === 'Old Racer is no longer in Lamplit.', `${JSON.stringify(s.lastCall)} ${s.covers} ${s.toast}`);
+  // Browsing: drives, folders, an exe; ○ goes up a level with focus on where it came from.
+  await page.keyboard.press('c');
+  await idle(page);
+  for (let i = 0; i < at; i++) await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  await page.keyboard.press('Enter');
+  await idle(page);
+  a = await add();
+  check('Browse starts at the drives', a.title === "Choose the game's exe" && a.path === 'This PC' && JSON.stringify(a.rows) === '["C:","D:"]' && JSON.stringify(a.lastCall) === '["library_browse",{"path":null}]', JSON.stringify(a));
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowRight');
+  await idle(page);
+  await page.keyboard.press('Enter');
+  await idle(page);
+  a = await add();
+  check('folders open with ✕ or →, folders first, then exes', a.path === 'D:\\Games' && JSON.stringify(a.rows) === '["Racer","tetris.exe"]' && a.hint === '✕Open○Back', JSON.stringify(a));
+  await page.keyboard.press('ArrowDown');
+  a = await add();
+  check('an exe is chosen, not opened', a.focus === 'tetris.exe' && a.hint === '✕Choose○Back', a.hint);
+  await settled(page);
+  await page.screenshot({ path: path.join(shots, 'add-browse.png') });
+  await page.keyboard.press('Escape');
+  await idle(page);
+  a = await add();
+  check('○ goes up a level, onto the folder it came from', a.path === 'D:\\' && a.focus === 'Games', JSON.stringify(a));
+  await page.keyboard.press('ArrowLeft');
+  await idle(page);
+  a = await add();
+  check('← goes up too, to the drives at the top', a.path === 'This PC' && a.focus === 'D:', JSON.stringify(a));
+  await page.keyboard.press('Enter');
+  await idle(page);
+  await page.keyboard.press('Enter');
+  await idle(page);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  a = await add();
+  check('an exe goes to naming, with the name of its folder or file', a.naming && a.name === 'Tetris' && a.path === 'D:\\Games\\tetris.exe', JSON.stringify(a));
+  // The on-screen keyboard: a capital at each word. (The pad's ✕ right after the key's Enter would count as Steam's
+  // mirror of it.)
+  await page.waitForTimeout(350);
+  await emit(page, 'pad', 'triangle');
+  for (const step of ['up', 'up', 'up', 'left']) await emit(page, 'pad', step);
+  a = await add();
+  const focusKey = await page.evaluate(() => document.querySelector('#addKeys .key.focus').textContent);
+  await emit(page, 'pad', 'ok');
+  a = await add();
+  check('the names keyboard types a capital at the start of a word', a.name === `Tetris ${focusKey.toUpperCase()}`, `${a.name} ${focusKey}`);
+  await settled(page);
+  await page.screenshot({ path: path.join(shots, 'add-name.png') });
+  await emit(page, 'pad', 'square');
+  await emit(page, 'pad', 'square');
+  await page.waitForTimeout(2100);
+  await page.keyboard.type(' Classic');
+  a = await add();
+  check('the PC\'s keyboard types into the name as typed', a.name === 'Tetris Classic', a.name);
+  await page.keyboard.press('Enter');
+  await idle(page);
+  s = await state(page);
+  check('a browsed exe is added with the name typed', JSON.stringify(await page.evaluate(() => window.__calls.filter((c) => c[0] === 'library_add_game').at(-1))) === '["library_add_game",{"exe":"D:\\\\Games\\\\tetris.exe","name":"Tetris Classic"}]' && s.focusName === 'Tetris Classic', JSON.stringify(s.calls.slice(-3)));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  // A refusal stays on naming, with Rust's reason.
+  await page.keyboard.press('c');
+  await idle(page);
+  for (let i = 0; i < at; i++) await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(2100);
+  for (let i = 0; i < 'Old Racer'.length; i++) await page.keyboard.press('Backspace');
+  await page.keyboard.type('Taken');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  a = await add();
+  s = await state(page);
+  check('a game Rust refuses stays on naming, and says why', a.naming && s.toast.startsWith('That folder belongs to Game 001'), `${a.naming} ${s.toast}`);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  const settings = await page.evaluate(() => ({
+    open: document.getElementById('settings').classList.contains('on'),
+    focus: document.querySelector('#settingsList .row.focus')?.textContent,
+  }));
+  check('○ from Add a game goes back to Settings, on Add a game', settings.open && settings.focus?.startsWith('Add a game'), JSON.stringify(settings));
+  await close(page);
+
+  // Nothing found at all: the empty row offers to add a game.
+  const empty = await open({ games: [] });
+  await empty.evaluate(() => (window.__settings = { library_programs: [] }));
+  s = await state(empty);
+  check('with no games found, ✕ adds one', s.empty === 'No games found' && s.hint.startsWith('✕Add a game'), s.hint);
+  await empty.keyboard.press('Enter');
+  await idle(empty);
+  const e = await empty.evaluate(() => ({
+    open: document.getElementById('add').classList.contains('on'),
+    rows: [...document.querySelectorAll('#addList > *')].map((r) => r.textContent),
+  }));
+  check('…and lists that no other programs were found', e.open && JSON.stringify(e.rows) === '["Browse drives and folders","Programs on this PC","No other programs found"]', JSON.stringify(e));
+  await empty.keyboard.press('Escape');
+  s = await state(empty);
+  check('○ from there goes back to the empty row', s.hint.startsWith('✕Add a game'), s.hint);
+  await close(empty);
 }
 
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));

@@ -9,7 +9,9 @@ import {
   byPlayed,
   detailChoices,
   focusIndex,
+  liftLayout,
   matcher,
+  nameAfter,
   narrowed,
   nearest,
   padBatteryText,
@@ -20,6 +22,7 @@ import {
   rowOf,
   sectionRows,
   sectionSummary,
+  spring,
   stepAutoOff,
   stepSaver,
   storeChoices,
@@ -135,12 +138,62 @@ describe('favourites and hidden games in the row', () => {
 });
 
 describe('detailChoices', () => {
-  const labels = (g, running = null) => detailChoices(g, running).map((c) => c.label);
-  test('Play first, then the favourite and hide choices', () => {
-    assert.deepEqual(labels(game('a', 'A')), ['Play', 'Add to favourites', 'Hide this game']);
-    assert.deepEqual(labels(game('a', 'A', { favourite: true })), ['Play', 'Remove from favourites', 'Hide this game']);
+  const labels = (g, running = null, removing = false) => detailChoices(g, running, removing).map((c) => c.label);
+  test('Play first, then favourites, art and hiding', () => {
+    assert.deepEqual(labels(game('a', 'A')), ['Play', 'Add to favourites', 'Change art', 'Hide this game']);
+    assert.deepEqual(labels(game('a', 'A', { favourite: true })), ['Play', 'Remove from favourites', 'Change art', 'Hide this game']);
   });
   test('the running game goes back to the game', () => assert.equal(labels(game('a', 'A'), 'a')[0], 'Back to game'));
+  test('a game added by hand can be removed, after ✕ once asks', () => {
+    const added = game('manual:x', 'X', { manual: true });
+    assert.equal(labels(added).at(-1), 'Remove from Lamplit');
+    assert.equal(labels(added, null, true).at(-1), 'Press again to remove');
+    assert.equal(detailChoices(added, null).at(-1).kind, 'remove');
+  });
+});
+
+describe('the lifted game menu', () => {
+  test('the lift springs past its place and settles back; the way down only settles', () => {
+    const stops = (s) => s.easing.match(/^linear\((.*)\)$/)[1].split(', ').map(Number);
+    const up = spring(210, 22);
+    const down = spring(500, 45);
+    for (const s of [up, down]) {
+      const p = stops(s);
+      assert.deepEqual([p[0], p.at(-1)], [0, 1]);
+      assert.ok(s.ms > 300 && s.ms < 800, `${s.ms} ms`);
+    }
+    const peak = Math.max(...stops(up));
+    assert.ok(peak > 1.01 && peak < 1.05, `overshoot ${peak}`);
+    assert.ok(Math.max(...stops(down)) <= 1, 'no overshoot on the way down');
+    // Most of the way in the first quarter, so it reads as quick.
+    assert.ok(stops(down)[10] > 0.7, String(stops(down)[10]));
+  });
+
+  const screen = { width: 1920, height: 1080 };
+  // The focused cover in the row, at 1080p: in the first slot, grown by 1.14.
+  const cover = { x: 96, y: 1080 * 0.88 - 369.36, width: 246.24, height: 369.36 };
+  test('the cover grows over its column and rises to the middle; the menu opens beside it', () => {
+    const { card, menu, side } = liftLayout(cover, screen, 650);
+    assert.equal(side, 1);
+    assert.ok(Math.abs(card.width / card.height - cover.width / cover.height) < 1e-9, 'keeps the cover\'s shape');
+    assert.ok(card.height > cover.height * 1.5, `${card.height}`);
+    assert.ok(card.y + card.height / 2 < cover.y + cover.height / 2 - 100, 'rises');
+    assert.ok(card.x >= 96 && menu.x >= card.x + card.width && menu.x + menu.width <= 1920 - 96, JSON.stringify({ card, menu }));
+    assert.equal(menu.width, 650);
+  });
+  test('near the right edge, the menu opens on the left', () => {
+    const { card, menu, side } = liftLayout({ ...cover, x: 1600 }, screen, 650);
+    assert.equal(side, -1);
+    assert.ok(card.x + card.width <= 1920 - 96, 'the card stays inside the safe area');
+    assert.ok(menu.x >= 96 && menu.x + menu.width <= card.x, JSON.stringify({ card, menu }));
+  });
+  test('with room on neither side for the whole menu, it takes the roomier side, narrowed', () => {
+    const narrow = { width: 1000, height: 1080 };
+    const { card, menu, side } = liftLayout({ ...cover, x: 300 }, narrow, 650);
+    assert.equal(side, 1);
+    assert.equal(menu.width, menu.room);
+    assert.ok(menu.x + menu.width <= 1000 - 50 + 1e-9 && menu.x >= card.x + card.width, JSON.stringify({ card, menu }));
+  });
 });
 
 describe('finding a game', () => {
@@ -244,6 +297,30 @@ describe('finding a game', () => {
     assert.equal(typed(long, 'b'), long);
     assert.equal(typed(long, 'space'), long);
     assert.equal(typed(long, 'delete').length, 29);
+    assert.equal(typed(long, 'b', 40), `${long}b`);
+  });
+
+  describe('typing a name', () => {
+    /** Types `keys` from an empty name, as the names keyboard does. */
+    const type = (keys, max = 40) => keys.reduce((n, k) => nameAfter(n, k, max), { text: '', caps: true });
+    const letters = (word) => [...word];
+    test('each word starts with a capital', () => {
+      assert.deepEqual(type([...letters('far'), 'space', ...letters('cry'), 'space', '6']), { text: 'Far Cry 6', caps: true });
+    });
+    test('Shift turns a capital off, or on for the next letter', () => {
+      const name = type([...letters('call'), 'space', 'shift', ...letters('of'), 'space', ...letters('duty')]);
+      assert.equal(name.text, 'Call of Duty');
+      assert.equal(type([...letters('half'), '-', 'shift', ...letters('life')]).text, 'Half-Life');
+    });
+    test('delete and clear, and the capital they leave', () => {
+      assert.deepEqual(type([...letters('ab'), 'space', 'delete']), { text: 'Ab', caps: false });
+      assert.deepEqual(type([...letters('ab'), 'space', 'c', 'delete']), { text: 'Ab ', caps: true });
+      assert.deepEqual(type([...letters('ab'), 'clear']), { text: '', caps: true });
+    });
+    test('signs and digits leave the capital as it was, and the name stops at its length', () => {
+      assert.deepEqual(type(['shift', ':', 'x']), { text: ':x', caps: false });
+      assert.equal(type(letters('abcdef'), 4).text, 'Abcd');
+    });
   });
 
   describe('moving in rows', () => {
@@ -542,6 +619,12 @@ describe('Power', () => {
   /** The rows with ✕ pressed once on `confirm`, while `running` runs. */
   const rows = (confirm, running = null) =>
     sectionRows('power', settingsState({ all: library, running, settings: { section: 'power', focus: null, idx: 0, rows: [], confirm } }));
+  test('Add a game is there with or without games, before Hidden games', () => {
+    const keys = (state) => visibleSections(state).map((s) => s.key);
+    assert.ok(keys(settingsState()).includes('add'));
+    assert.deepEqual(keys(settingsState({ all: [game('h', 'H', { hidden: true })] })).slice(-3), ['add', 'hidden', 'power']);
+    assert.deepEqual(sectionSummary('add', settingsState()), ['A program or an exe on this PC']);
+  });
   test('Power is the last section, always there', () => {
     assert.equal(visibleSections(settingsState()).at(-1).key, 'power');
     assert.deepEqual(rows(null).map((r) => [r.kind, r.id, r.label, r.value]), [

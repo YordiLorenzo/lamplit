@@ -19,7 +19,8 @@ src-tauri/
     data.rs          the data folder and the JSON files in it
     files.rs         path helpers: drive-letter checks, safe joins, atomic writes
     logging.rs       lamplit.log, supervisor.log and setup.log
-    library/         the game list: discovery, sorting, art, favourites, hidden games and play time
+    library/         the game list: discovery, sorting, art and the art the player chose, favourites, hidden
+                     games, play time, and games added by hand
     stores/          one file per store app; loose.rs finds games outside any store
     launch/          starting a game, watching it, and Lamplit's own window
     devices/         controllers (pad/), the headset, sound devices, where the sound goes
@@ -34,7 +35,11 @@ ui/
   api.js           every command and event, with JSDoc types; no other file names one
   state.js         the page's state and its elements
   input.js         controller, keyboard and mouse as one set of actions
-  library.js       the cover row and the focused game
+  library.js       the cover row, the focused game and its menu
+  lift.js          a game's menu lifting its cover over the blurred screen
+  art.js           Change art, in a game's menu
+  add.js           Add a game: the programs Lamplit passed over, browsing the drives, naming the game
+  keyboard.js      the on-screen keyboards: Find's, and the one for names and art searches
   find.js          the Find panel: the on-screen keyboard, the store filter and the sort
   launch.js        the starting screen
   settings.js      the Settings panel
@@ -67,10 +72,11 @@ Lamplit brings the first one's window forward and exits. Task Scheduler only res
 one that crashes later, which is why the supervisor exists.
 
 Lamplit keeps its files in the data folder, `%LOCALAPPDATA%\lamplit`: `prefs.json`, `games.json` (per game id:
-favourite, hidden, when it was last played and how long Lamplit saw it run; 0.1.0's `played.json` is still read for
-the last-played times), `art.json` and `art\<steam appid>\` (art lookups and downloads), `setup.json` (setup is
-done, for which exe) and `quiet-saved.json` (the settings quiet mode replaced), plus the logs. WebView2 keeps its
-profile in `%LOCALAPPDATA%\io.github.yordilorenzo.lamplit`.
+favourite, hidden, when it was last played, how long Lamplit saw it run, the art the player chose, and for a game
+added by hand its name and exe; 0.1.0's `played.json` is still read for the last-played times), `art.json` and
+`art\<steam appid>\` (art lookups and downloads), `setup.json` (setup is done, for which exe) and `quiet-saved.json`
+(the settings quiet mode replaced), plus the logs. WebView2 keeps its profile in
+`%LOCALAPPDATA%\io.github.yordilorenzo.lamplit`.
 
 ## Inside the app
 
