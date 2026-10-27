@@ -2070,6 +2070,16 @@ await dockTests({ open, close, check, shots });
     shown.join(', ')
   );
   check('the preview and its scenes load without errors under the CSP', errors.length === 0, JSON.stringify(errors));
+  // Thirty seconds into a scene its game's logo or name has drifted in, but not over the scenes that show the games'
+  // own art.
+  const marks = {};
+  for (const id of ['silk', 'gallery', 'drift']) {
+    await page.goto(`${pageOrigin}/ui/screensaver/preview.html?scene=${id}&at=30&hud=0`);
+    await page.waitForFunction(() => document.querySelector('#saver.on'), null, { timeout: 30000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    marks[id] = await page.evaluate(() => Number(document.querySelector('.saver-mark').style.opacity));
+  }
+  check("the game's logo drifts over Silk but not over Gallery or Drift", marks.silk > 0.2 && marks.gallery === 0 && marks.drift === 0, JSON.stringify(marks));
   await page.close();
 }
 

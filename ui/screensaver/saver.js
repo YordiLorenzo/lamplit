@@ -6,7 +6,7 @@
 
 import { LAMPLIT } from './palette.js';
 import { Renderer, WAYS } from './renderer.js';
-import { scenesFor } from './scenes.js';
+import { scenesFor, showsMark } from './scenes.js';
 
 /**
  * @typedef {import('./palette.js').Palette} Palette
@@ -483,7 +483,7 @@ export class Saver {
     const end = s.length - BLEND_S;
     // A scene that is still blending in is under 6 s old, so its mark hasn't started to show.
     const show = smooth((t - 6) / MARK_IN_S) * (1 - smooth((t - (end - MARK_IN_S)) / MARK_IN_S));
-    const opacity = (this.logo.hidden && !this.name.textContent ? 0 : MARK_PEAK) * show;
+    const opacity = (!showsMark(s.scene) || (this.logo.hidden && !this.name.textContent) ? 0 : MARK_PEAK) * show;
     const { x, y, dx, dy } = s.path;
     const px = (x + dx * t) * innerWidth;
     const py = (y + dy * t + Math.sin(t * 0.07) * 0.01) * innerHeight;

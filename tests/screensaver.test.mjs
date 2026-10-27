@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { LAMPLIT, forMood, fromOklch, gradient, medianCut, paletteOf, scenePalette, toOklch } from '../ui/screensaver/palette.js';
-import { DRIFT, SCENES, driftCycle, fragmentSource, particleSources, scenesFor, stateSource } from '../ui/screensaver/scenes.js';
+import { DRIFT, SCENES, driftCycle, fragmentSource, particleSources, scenesFor, showsMark, stateSource } from '../ui/screensaver/scenes.js';
 
 /** RGBA bytes of an image made of `parts`: [[r, g, b, a?], pixel count] each. */
 function image(...parts) {
@@ -171,6 +171,9 @@ describe('scenes', () => {
   test("a style keeps to its kind, whatever the art", () => {
     const have = { covers: true, heroes: 4, float: true };
     assert.ok(scenesFor('2d', have).every((s) => s.kind === '2d') && scenesFor('3d', have).every((s) => s.kind === '3d'));
+  });
+  test("the game's logo drifts over every scene but the two that show the games' own art", () => {
+    assert.deepEqual(SCENES.filter((s) => !showsMark(s)).map((s) => s.id).sort(), ['drift', 'gallery']);
   });
   test('each scene that shows art says which, and Drift picks its hero images', () => {
     for (const s of SCENES.filter((x) => x.needs)) assert.ok(['covers', 'heroes'].includes(s.needs ?? ''), s.id);
