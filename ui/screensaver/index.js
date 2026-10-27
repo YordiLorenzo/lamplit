@@ -102,16 +102,23 @@ export function showScreensaver() {
 }
 
 /**
- * Makes the next show's renderer, colours and art in idle time, so it starts without that work: after WARM_MS without
- * input, and when Settings > Screensaver opens, a row away from Show it now. Nothing while a game runs. Whichever comes
- * first, this or a show, makes the renderer, and only once (Saver.gl).
+ * Makes the next show's renderer, colours and art in idle time, and has the renderer draw its first frame unseen
+ * (Saver.prime), so the show starts without that work: after WARM_MS without input, and when Settings > Screensaver
+ * opens, a row away from Show it now. Nothing while a game runs. Whichever comes first, this or a show, makes the
+ * renderer, and only once (Saver.gl).
  */
 export function warmScreensaver() {
-  requestIdleCallback(() => {
+  requestIdleCallback(async () => {
     if (!allowed()) return;
     // The renderer builds a noise volume and starts compiling its passes as it is made.
-    (saver ??= makeSaver()).gl();
-    gameLooks().then(artOf);
+    const s = (saver ??= makeSaver());
+    s.gl();
+    const looks = await gameLooks();
+    artOf(looks);
+    if (showing || preparing || !allowed()) return;
+    // The hidden frame takes the first game's colours, as the show will.
+    s.setLooks(looks);
+    s.prime();
   });
 }
 
@@ -129,9 +136,11 @@ async function show(asked = performance.now()) {
   if (askedAt === -Infinity) anchor = pointer;
   saver ??= makeSaver();
   saver.setLooks(looks);
+  const ahead = saver.primed && saver.opening;
   saver.start();
   const why = saver.reason ? ` (${saver.reason})` : '';
-  api.log.info(`screensaver on: ${saver.root.dataset.mode}${why}, colours from ${looks.length} game${looks.length === 1 ? '' : 's'}`);
+  const first = ahead ? `, opening on ${ahead.name}, drawn ahead` : '';
+  api.log.info(`screensaver on: ${saver.root.dataset.mode}${why}${first}, colours from ${looks.length} game${looks.length === 1 ? '' : 's'}`);
 }
 
 function makeSaver() {

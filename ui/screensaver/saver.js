@@ -246,6 +246,10 @@ export class Saver {
     this.way = 0;
     /** @type {number | null} */
     this.wayHeld = null;
+    /** @type {Scene | null} the scene the next show opens with, once prime() has picked it */
+    this.opening = null;
+    /** prime() has drawn its hidden frame. */
+    this.primed = false;
     this.frame = this.frame.bind(this);
     this.resize = this.resize.bind(this);
   }
@@ -291,8 +295,9 @@ export class Saver {
     if (art === this.art) return;
     this.renderer?.dropArt();
     this.art = art;
-    // The order so far was shuffled without it.
+    // The order so far was shuffled without it, and an opening scene picked for other art may need what this lacks.
     this.queue = [];
+    if (this.opening?.needs) this.opening = null;
     for (const s of [this.current, this.next]) if (s) s.art = this.artFor(s.lookIndex);
   }
 
@@ -312,9 +317,12 @@ export class Saver {
     return /** @type {Scene} */ (this.queue.shift());
   }
 
-  /** @param {Scene} scene @param {number} start @returns {Showing} */
-  showing(scene, start) {
-    const lookIndex = this.lookAt++ % this.looks.length;
+  /**
+   * @param {Scene} scene @param {number} start
+   * @param {number} [lookIndex]  whose look it takes; the next in turn when not given
+   * @returns {Showing}
+   */
+  showing(scene, start, lookIndex = this.lookAt++ % this.looks.length) {
     const angle = Math.random() * Math.PI * 2;
     return {
       scene,
@@ -336,7 +344,8 @@ export class Saver {
     this.root.dataset.mode = gl ? 'webgl' : 'css';
     this.clock = 0;
     this.next = null;
-    this.current = this.showing(scene ?? this.pickScene(), 0);
+    this.current = this.showing(scene ?? this.opening ?? this.pickScene(), 0);
+    this.opening = null;
     this.mark.style.opacity = '0';
     this.pendingMark = null;
     this.paintMark(this.current);
@@ -361,6 +370,34 @@ export class Saver {
     delete this.root.dataset.state;
     clearTimeout(this.releaseTimer);
     this.releaseTimer = setTimeout(() => this.renderer?.release(), 1000);
+  }
+
+  /**
+   * Draws one frame of the scene the next show opens with, unseen, once per renderer: a renderer's first frame costs
+   * the GPU 90 ms and more (the driver compiles the shaders for their first draw, and the buffers are new), which
+   * would otherwise stall the show's first frames. The buffers go again straight after, so nothing large stays on the
+   * GPU while Lamplit waits; later shows start as fast without them. Lamplit calls it ahead, in idle time (index.js).
+   */
+  prime() {
+    const r = this.renderer;
+    if (!r || this.primed || this.running || (this.hooks.keepGoing && !this.hooks.keepGoing())) return;
+    try {
+      this.opening ??= this.pickScene();
+      // The scene compiles on the driver's threads; it is drawn once it has.
+      if (!r.canDraw(this.opening)) {
+        setTimeout(() => this.prime(), 100);
+        return;
+      }
+      // Never where it could be seen, as while the last show fades out; the next warm-up tries again.
+      if (getComputedStyle(this.root).visibility !== 'hidden') return;
+      this.resize();
+      r.drawScene(0, this.showing(this.opening, 0, 0), 0);
+      r.present(0, 0, 1, 0);
+      r.release();
+      this.primed = true;
+    } catch (e) {
+      this.fallBack(e.message);
+    }
   }
 
   /** Shows `scene` in `look` at once, without a blend: the preview's keys. @param {Scene} scene @param {Look} look */
