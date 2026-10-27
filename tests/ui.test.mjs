@@ -1459,6 +1459,20 @@ const saverOn = (page) => until(page, () => document.querySelector('#saver.on'))
   v = await saverView(page);
   check('a direction held after the press that ended the screensaver moves nothing', !v.on && v.focus === 1, JSON.stringify(v));
 
+  // Steam's mirrored key can come before the controller's own press of the same direction: held on, the direction
+  // still moves nothing.
+  await page.clock.runFor(600);
+  await page.clock.fastForward('05:05');
+  await saverOn(page);
+  await page.keyboard.press('ArrowLeft');
+  await emit(page, 'pad', 'left');
+  for (const gap of [380, 110, 110, 70]) {
+    await page.clock.runFor(gap);
+    await emit(page, 'pad', 'left');
+  }
+  v = await saverView(page);
+  check('a direction held after its mirrored key ended the screensaver moves nothing', !v.on && v.focus === 1, JSON.stringify(v));
+
   // The pointer rests on the focused cover while the screensaver shows; a click there ends it and starts nothing.
   const [x, y] = await page.evaluate(() => {
     const r = document.querySelector('.cover.focus').getBoundingClientRect();
