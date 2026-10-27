@@ -286,10 +286,11 @@ pub fn dock_home(app: AppHandle) {
     launch::window::summon(&app);
 }
 
-/// Asks the running game to close, or with `force` ends it.
+/// Asks the game the dock showed (`id` in `session`) to close, or with `force` ends it; refused when another game or
+/// session runs now.
 #[tauri::command]
-pub async fn dock_close_game(app: AppHandle, force: bool) -> Result<()> {
-    blocking(move || dock::close_game(&app, force)).await?
+pub async fn dock_close_game(app: AppHandle, force: bool, id: String, session: u64) -> Result<()> {
+    blocking(move || dock::close_game(&app, force, &id, session)).await?
 }
 
 /// Returns once the PC has woken up again.

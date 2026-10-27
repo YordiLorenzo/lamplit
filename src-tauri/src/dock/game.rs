@@ -10,6 +10,7 @@ use crate::stores::Processes;
 use crate::win;
 use parking_lot::Mutex;
 use serde::Serialize;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 
@@ -22,6 +23,8 @@ pub struct GameState {
     pub art: Art,
     /// When this session started, Unix seconds (Lamplit records it as the game's last play); 0 when unknown.
     pub started: u64,
+    /// This launch of the game, which a close from the dock names, so it can't reach another game or session.
+    pub session: u64,
     /// Its window answers Windows.
     pub responding: bool,
     /// The dock offers to end the game: it isn't responding, has no window to ask, or was asked to close a while ago
@@ -36,6 +39,21 @@ const GRACE: Duration = Duration::from_secs(10);
 /// A game window that doesn't answer Windows within this counts as not responding.
 const ANSWER_WITHIN: Duration = Duration::from_secs(1);
 
+/// Where session numbers count from: Lamplit's start (dock::start reads it first).
+pub static SESSIONS_FROM: LazyLock<Instant> = LazyLock::new(Instant::now);
+
+/// The number of the launch that opened a game at `opened`: microseconds since SESSIONS_FROM, the same on every
+/// reading, and another for each launch.
+fn session(opened: Instant) -> u64 {
+    opened.saturating_duration_since(*SESSIONS_FROM).as_micros() as u64
+}
+
+/// The game the player saw in the dock, `id` in `session`, is the one running now, in the session opened at
+/// `opened`. The dock opens on what it knew of the game, so a close it asks for may name a game that has gone since.
+fn shown_runs(id: &str, session: u64, running: &str, opened: Instant) -> bool {
+    id == running && session == self::session(opened)
+}
+
 /// The running game, None when none runs. Reads every process.
 pub fn game_state(app: &AppHandle) -> Option<GameState> {
     let (id, watch) = app.state::<Launcher>().running()?;
@@ -45,7 +63,7 @@ pub fn game_state(app: &AppHandle) -> Option<GameState> {
     let windows = launch::game_windows(&watch.own_pids(&procs.list()));
     let responding = windows.iter().all(|&w| win::window::responds(w, ANSWER_WITHIN));
     let force_close = offers_force(responding, !windows.is_empty(), &id, watch.opened);
-    Some(GameState { id, name, art, started, responding, force_close })
+    Some(GameState { id, name, art, started, session: session(watch.opened), responding, force_close })
 }
 
 /// The dock offers to end the game: it isn't responding, has no window to ask, or the player asked it to close at
@@ -79,11 +97,16 @@ fn name(app: &AppHandle, id: &str) -> String {
     app.state::<Library>().game(id).map_or_else(|| id.to_string(), |g| g.name)
 }
 
-/// Closes the running game: asks its windows to close, or with `force` ends its processes. Returns once Windows has
-/// the request. Lamplit comes forward once the game has gone, as after any game.
-pub fn close_game(app: &AppHandle, force: bool) -> Result<()> {
+/// Closes the game the dock showed, `shown` in `session`, if it still runs: asks its windows to close, or with
+/// `force` ends its processes, when the game still gives cause for that. Returns once Windows has the request.
+/// Lamplit comes forward once the game has gone, as after any game.
+pub fn close_game(app: &AppHandle, force: bool, shown: &str, session: u64) -> Result<()> {
     let gone = || Error::Player("The game has already closed.".into());
     let (id, watch) = app.state::<Launcher>().running().ok_or_else(gone)?;
+    if !shown_runs(shown, session, &id, watch.opened) {
+        log::info!("dock: {shown} isn't running any more, so it isn't closed ({id} runs)");
+        return Err(gone());
+    }
     let name = name(app, &id);
     let procs = Processes::now();
     let list = procs.list();
@@ -99,6 +122,13 @@ pub fn close_game(app: &AppHandle, force: bool) -> Result<()> {
         });
     }
     if force {
+        // The dock may have offered it on an older reading: a game that answers again, with nobody having asked it to
+        // close, is asked rather than ended.
+        let windows = launch::game_windows(&pids);
+        let responding = windows.iter().all(|&w| win::window::responds(w, ANSWER_WITHIN));
+        if !offers_force(responding, !windows.is_empty(), &id, watch.opened) {
+            return Err(Error::Player(format!("{name} is responding again. Hold Close game to ask it to close.")));
+        }
         let ended = pids
             .iter()
             .filter(|&&pid| {
@@ -147,10 +177,25 @@ mod tests {
             name: "Half-Life".into(),
             art,
             started: 1_761_560_000,
+            session: 4_200_000,
             responding: false,
             force_close: true,
         };
         assert_eq!(serde_json::to_value(game).unwrap(), ipc_fixture!("dock-game"));
+    }
+
+    #[test]
+    fn a_close_reaches_only_the_game_and_session_the_dock_showed() {
+        let opened = Instant::now();
+        let shown = session(opened);
+        assert!(shown_runs("steam:70", shown, "steam:70", opened));
+        // Another game took its place while the dock showed the first.
+        assert!(!shown_runs("steam:70", shown, "steam:80", opened));
+        // The same game, started again since.
+        let reopened = opened + Duration::from_millis(1);
+        assert!(!shown_runs("steam:70", shown, "steam:70", reopened));
+        // Every reading of one session gives the same number.
+        assert_eq!(session(opened), shown);
     }
 
     // One test for everything that reads ASKED, which tests running side by side would share.
