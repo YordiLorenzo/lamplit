@@ -40,8 +40,12 @@ pub fn games() -> Vec<Game> {
     let Some(roaming) = std::env::var_os("APPDATA") else { return Vec::new() };
     let user_data = Path::new(&roaming).join("itch");
     let Some(db) = sqlite::Db::open(&user_data.join(r"db\butler.db")) else { return Vec::new() };
-    let isolate_apps = isolate_apps(&user_data.join("preferences.json"));
-    let setup = base().join("itch-setup.exe");
+    let app = App {
+        isolate_apps: isolate_apps(&user_data.join("preferences.json")),
+        setup: base().join("itch-setup.exe"),
+        // The app's prerequisites folder, which butler marks each prerequisite installed in.
+        prereqs: user_data.join("prereqs"),
+    };
     let mut out: Vec<Game> = Vec::new();
     for cave in caves(&db) {
         let id = format!("itch:{}", cave.game_id);
@@ -50,7 +54,7 @@ pub fn games() -> Vec<Game> {
             log::info!("discovery itch: {name} skipped, {} is missing", cave.dir.display());
             continue;
         }
-        let Some((start, exe_names)) = launch(&cave, isolate_apps, &setup) else {
+        let Some((start, exe_names)) = launch(&cave, &app) else {
             log::info!("discovery itch: {name} skipped, it has no Windows exe (an HTML or Java game, say)");
             continue;
         };
@@ -73,6 +77,8 @@ struct Cave {
     target: Option<String>,
     /// The game's own sandbox setting in the app, when the player set one.
     sandbox: Option<bool>,
+    /// butler has run the game from this install (it records the run once the game ends, `local_last_run_at`).
+    ran: bool,
 }
 
 /// The installs of games, from the tables caves, games and install_locations: one per game. itch.io also sells tools,
@@ -118,7 +124,8 @@ fn caves(db: &sqlite::Db) -> Vec<Cave> {
             let settings: Value = c.text("settings").and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default();
             let target = settings["launchTarget"].as_str().filter(|t| !t.is_empty()).map(str::to_string);
             let sandbox = settings["sandbox"].as_bool();
-            Some(Cave { game_id, title, dir, exes: windows_exes(&verdict), target, sandbox })
+            let ran = c.text("local_last_run_at").is_some();
+            Some(Cave { game_id, title, dir, exes: windows_exes(&verdict), target, sandbox, ran })
         })
         .collect()
 }
@@ -147,28 +154,43 @@ fn windows_exes(verdict: &Value) -> Vec<String> {
     list.into_iter().map(|(.., path)| path).collect()
 }
 
+/// What Lamplit knows of the itch app itself.
+struct App {
+    /// The app's preference to run every game in its sandbox.
+    isolate_apps: bool,
+    /// The app's launcher, which also starts games: `itch-setup --run-game` (itch 26.20 and later).
+    setup: PathBuf,
+    /// The folder butler installs prerequisites from, and marks each one installed in (`<name>\.installed`).
+    prereqs: PathBuf,
+}
+
 /// What starts a game, and the names of its exes when Lamplit can know the game only by them. The game's own start
 /// is picked as butler (the app's helper) picks it: an action from the game's manifest that runs on Windows, else the
 /// exes the app found; of several, the one the player picked in the app, else the action named "play", else the
 /// first (the app itself would ask the player).
 ///
-/// The app runs a game in its sandbox, a Windows account of its own with less access than the player's, when the
-/// game's own setting says so, or, without one, when the app's preference (`isolate_apps`) or the manifest's action
-/// asks for it (perform-launch.ts in the app). Such a game goes to the app's launcher, `itch-setup --run-game`
-/// (itch 26.20 and later), which starts it through butler in the sandbox. Started from its exe, it would run with all
-/// the player's access. Its processes then belong to the sandbox's account, so Lamplit also knows them by name. So
-/// does an action that asks for an itch.io API key: butler hands the game one for the session (`ITCHIO_API_KEY`), and
-/// started from its exe, the game would get none.
-fn launch(cave: &Cave, isolate_apps: bool, setup: &Path) -> Option<(Launch, Vec<String>)> {
+/// A game starts from that exe unless it needs something only the app gives it. Then it goes to the app's launcher,
+/// which starts it through butler as the app would:
+/// - The sandbox, a Windows account of its own with less access than the player's: when the game's own setting says
+///   so, or, without one, when the app's preference or the manifest's action asks for it (perform-launch.ts in the
+///   app). Its processes then belong to the sandbox's account, so Lamplit also knows them by name.
+/// - An itch.io API key for the session (`ITCHIO_API_KEY`), which the manifest's action can ask for.
+/// - Prerequisites (VC++, .NET, DirectX and the like), which butler installs before every start that needs them:
+///   those the manifest names until each is marked installed, and before the first start, those it finds from the
+///   DLLs the game's exes import, and Unreal Engine's (launchers/native/prereqs.go). butler records a run only after
+///   all that, so a game it has run from this install has had them.
+fn launch(cave: &Cave, app: &App) -> Option<(Launch, Vec<String>)> {
     let scanned = || {
         let picked = cave.target.as_deref().and_then(|t| cave.exes.iter().find(|e| same_path(e, t)));
         let exe = picked.into_iter().chain(&cave.exes).filter_map(|rel| inside(&cave.dir, rel)).find(|p| p.is_file());
-        exe.map(|exe| Start { exe, args: Vec::new(), sandbox: false, api_key: false })
+        exe.map(|exe| Start { exe, args: Vec::new(), sandbox: false, api_key: false, prereqs: Vec::new() })
     };
     let start = manifest_action(&cave.dir, cave.target.as_deref()).or_else(scanned)?;
-    if start.api_key || cave.sandbox.unwrap_or(isolate_apps || start.sandbox) {
+    let installed = |name: &String| inside(&app.prereqs, name).is_some_and(|d| d.join(".installed").is_file());
+    let prereqs = !cave.ran || !start.prereqs.iter().all(installed);
+    if prereqs || start.api_key || cave.sandbox.unwrap_or(app.isolate_apps || start.sandbox) {
         let run = format!("--appname itch --run-game {}", cave.game_id);
-        return Some((Launch::ExeArgs(setup.to_path_buf(), run), vec![file_name(&start.exe).to_lowercase()]));
+        return Some((Launch::ExeArgs(app.setup.clone(), run), vec![file_name(&start.exe).to_lowercase()]));
     }
     let launch = if start.args.is_empty() {
         Launch::Exe(start.exe)
@@ -186,6 +208,8 @@ struct Start {
     sandbox: bool,
     /// The manifest's action asks for an itch.io API key (`scope`), which only the app hands out.
     api_key: bool,
+    /// The prerequisites the manifest names, by their names in butler's list.
+    prereqs: Vec<String>,
 }
 
 /// Whether the app's preference to run every game in its sandbox is on (preferences.json in the app's data folder).
@@ -195,12 +219,19 @@ fn isolate_apps(preferences: &Path) -> bool {
 }
 
 /// A game's `.itch.toml`, at the top of its folder (https://itch.io/docs/itch/integrating/manifest.html). Lamplit
-/// reads the actions' name, path, args, platform, sandbox opt-in and API scope; the rest (prerequisites, console
-/// window, translated names) is the app's.
+/// reads the actions' name, path, args, platform, sandbox opt-in and API scope, and the prerequisites' names; the rest
+/// (console window, translated names) is the app's.
 #[derive(Deserialize)]
 struct Manifest {
     #[serde(default)]
     actions: Vec<Action>,
+    #[serde(default)]
+    prereqs: Vec<Prereq>,
+}
+
+#[derive(Deserialize)]
+struct Prereq {
+    name: String,
 }
 
 #[derive(Deserialize)]
@@ -247,6 +278,7 @@ fn manifest_action(dir: &Path, picked: Option<&str>) -> Option<Start> {
         args: action.args.clone(),
         sandbox: action.sandbox,
         api_key: !action.scope.is_empty(),
+        prereqs: manifest.prereqs.iter().map(|p| p.name.clone()).collect(),
     })
 }
 
@@ -309,6 +341,7 @@ mod tests {
             exes: exes.iter().map(|e| (*e).to_string()).collect(),
             target: None,
             sandbox: None,
+            ran: false,
         };
         // Not the tool. The HTML game is there, with no exe to start (games() leaves it out), and so is the one on a
         // share (games() never follows it).
@@ -316,7 +349,8 @@ mod tests {
             caves(&db),
             vec![
                 // Of Fennel's two downloads, the one used last, which butler launches for the game.
-                cave(1001, "Fennel", &format!(r"{apps}\fennel-beta"), &["FennelBeta.exe"]),
+                // butler has run it from there.
+                Cave { ran: true, ..cave(1001, "Fennel", &format!(r"{apps}\fennel-beta"), &["FennelBeta.exe"]) },
                 cave(1003, "Web Toy", &format!(r"{apps}\web-toy"), &[]),
                 // The player picked the play action in the app, and switched the sandbox off for it.
                 Cave {
@@ -369,13 +403,31 @@ mod tests {
             exes: exes.clone(),
             target: target.map(str::to_string),
             sandbox: None,
+            // Run by butler before, so its prerequisites are in.
+            ran: true,
         };
         (dir, cave)
     }
 
-    /// How a game outside the sandbox starts.
+    /// The app, with its preference to run every game in its sandbox, and its prerequisites folder (by default one
+    /// with nothing marked installed).
+    fn app(isolate_apps: bool) -> App {
+        App {
+            isolate_apps,
+            setup: PathBuf::from(r"C:\Users\player\AppData\Local\itch\itch-setup.exe"),
+            prereqs: PathBuf::from(r"C:\Users\player\AppData\Roaming\itch\prereqs"),
+        }
+    }
+
+    /// How a game that needs nothing of the app starts.
     fn direct(cave: &Cave) -> Option<Launch> {
-        launch(cave, false, Path::new("itch-setup.exe")).map(|(launch, _)| launch)
+        launch(cave, &app(false)).map(|(launch, _)| launch)
+    }
+
+    /// The app's launcher starting game 1.
+    fn handed() -> (Launch, Vec<String>) {
+        let run = "--appname itch --run-game 1".to_string();
+        (Launch::ExeArgs(app(false).setup, run), vec!["game.exe".to_string()])
     }
 
     #[test]
@@ -413,9 +465,6 @@ path = "https://example.itch.io/fennel/community"
 [[actions]]
 name = "manual"
 path = "docs/"
-
-[[prereqs]]
-name = "vcredist-2015-x64"
 "#;
         let write = |text: &str| fs::write(dir.join(".itch.toml"), text).unwrap();
         write(manifest);
@@ -451,38 +500,67 @@ name = "vcredist-2015-x64"
     #[test]
     fn a_game_in_the_sandbox_goes_to_the_apps_launcher() {
         let (dir, cave) = install("sandbox", &[r"bin\Game.exe"], &[r"bin\Game.exe"]);
-        let setup = Path::new(r"C:\Users\player\AppData\Local\itch\itch-setup.exe");
-        let run = "--appname itch --run-game 1".to_string();
-        let handed = Some((Launch::ExeArgs(setup.to_path_buf(), run), vec!["game.exe".to_string()]));
+        let handed = Some(handed());
         let from_exe = Some((Launch::Exe(dir.join(r"bin\Game.exe")), Vec::new()));
         // The app's preference to run every game in the sandbox.
-        assert_eq!(launch(&cave(None), true, setup), handed);
-        assert_eq!(launch(&cave(None), false, setup), from_exe);
+        assert_eq!(launch(&cave(None), &app(true)), handed);
+        assert_eq!(launch(&cave(None), &app(false)), from_exe);
         // The manifest's action asks for it.
         fs::write(dir.join(".itch.toml"), "[[actions]]\nname = 'play'\npath = 'bin/Game.exe'\nsandbox = true").unwrap();
-        assert_eq!(launch(&cave(None), false, setup), handed);
+        assert_eq!(launch(&cave(None), &app(false)), handed);
         // The game's own setting in the app wins either way, as it does in the app.
         let set = |sandbox| Cave { sandbox: Some(sandbox), ..cave(None) };
-        assert_eq!(launch(&set(false), true, setup), from_exe);
+        assert_eq!(launch(&set(false), &app(true)), from_exe);
         fs::remove_file(dir.join(".itch.toml")).unwrap();
-        assert_eq!(launch(&set(true), false, setup), handed);
+        assert_eq!(launch(&set(true), &app(false)), handed);
         fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn a_game_that_asks_for_an_api_key_goes_to_the_apps_launcher() {
         let (dir, cave) = install("apikey", &[r"bin\Game.exe"], &[r"bin\Game.exe"]);
-        let setup = Path::new(r"C:\Users\player\AppData\Local\itch\itch-setup.exe");
-        let run = "--appname itch --run-game 1".to_string();
-        let handed = Some((Launch::ExeArgs(setup.to_path_buf(), run), vec!["game.exe".to_string()]));
+        let handed = Some(handed());
         let manifest = "[[actions]]\nname = 'play'\npath = 'bin/Game.exe'\nargs = ['--online']\n";
         fs::write(dir.join(".itch.toml"), manifest).unwrap();
         let from_exe = Some((Launch::ExeArgs(dir.join(r"bin\Game.exe"), "--online".into()), Vec::new()));
-        assert_eq!(launch(&cave(None), false, setup), from_exe);
+        assert_eq!(launch(&cave(None), &app(false)), from_exe);
         // Only the app hands out the key, also to a game kept out of the sandbox.
         fs::write(dir.join(".itch.toml"), format!("{manifest}scope = 'profile:me'\n")).unwrap();
-        assert_eq!(launch(&cave(None), false, setup), handed);
-        assert_eq!(launch(&Cave { sandbox: Some(false), ..cave(None) }, false, setup), handed);
+        assert_eq!(launch(&cave(None), &app(false)), handed);
+        assert_eq!(launch(&Cave { sandbox: Some(false), ..cave(None) }, &app(false)), handed);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn prerequisites_go_through_the_app_until_installed() {
+        let (dir, cave) = install("prereqs", &[r"bin\Game.exe"], &[r"bin\Game.exe"]);
+        let app = App { prereqs: dir.join("prereqs"), ..app(false) };
+        let from_exe = Some((Launch::Exe(dir.join(r"bin\Game.exe")), Vec::new()));
+        let manifest = "[[actions]]\nname = 'play'\npath = 'bin/Game.exe'\n\n\
+            [[prereqs]]\nname = 'vcredist-2015-x64'\n\n[[prereqs]]\nname = 'net-4.8'\n";
+        fs::write(dir.join(".itch.toml"), manifest).unwrap();
+        let mark = |name: &str| {
+            fs::create_dir_all(dir.join(r"prereqs").join(name)).unwrap();
+            fs::write(dir.join(r"prereqs").join(name).join(".installed"), "Installed on 2026-10-27").unwrap();
+        };
+        // Named in the manifest and not yet marked installed: butler installs them first.
+        assert_eq!(launch(&cave(None), &app), Some(handed()));
+        mark("vcredist-2015-x64");
+        assert_eq!(launch(&cave(None), &app), Some(handed()));
+        mark("net-4.8");
+        assert_eq!(launch(&cave(None), &app), from_exe);
+        // A name that would lead out of the prerequisites folder is never taken for installed.
+        fs::write(
+            dir.join(".itch.toml"),
+            "[[actions]]\nname = 'play'\npath = 'bin/Game.exe'\n[[prereqs]]\nname = '../prereqs/net-4.8'\n",
+        )
+        .unwrap();
+        assert_eq!(launch(&cave(None), &app), Some(handed()));
+        // Without a manifest, butler finds them from the game's DLLs, which only it can: an install it has never run
+        // goes to it, once.
+        fs::remove_file(dir.join(".itch.toml")).unwrap();
+        assert_eq!(launch(&Cave { ran: false, ..cave(None) }, &app), Some(handed()));
+        assert_eq!(launch(&cave(None), &app), from_exe);
         fs::remove_dir_all(&dir).unwrap();
     }
 

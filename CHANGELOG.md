@@ -35,8 +35,10 @@ Every release of Lamplit, newest first. The format follows
   exe and arguments the game's launch manifest (`.itch.toml`) names, else the exe the app found, so the app doesn't
   have to run. Of several, the one you picked in the itch app goes first. A game the itch app runs in its sandbox
   starts through the app's launcher, `itch-setup --run-game` (itch 26.20 or newer), so it stays in the sandbox, and
-  so does a game that asks the app for an itch.io API key, which only the app hands out. A game installed from two
-  of its downloads starts from the one you used last, as the itch app starts it.
+  so does a game that asks the app for an itch.io API key, which only the app hands out. So does a game that may
+  still need prerequisites the app installs before starting it, such as a VC++ or .NET runtime: on its first start
+  from an install, and while its manifest names one not yet installed. A game installed from two of its downloads
+  starts from the one you used last, as the itch app starts it.
 - The three stores have their own choice in Find's store filter, and their apps show in Settings > Stores. Battle.net
   and itch.io games carry the store's logo; the Amazon Games app has no logo Lamplit can use, so it shows its name.
 - A game's menu (Options, or Menu on an Xbox controller) lifts the game's cover out of the row toward you, blurs the
