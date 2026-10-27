@@ -8,6 +8,13 @@ Every release of Lamplit, newest first. The format follows
 
 ### Added
 
+- The in-game dock: holding PS over a game (View and Menu on an Xbox controller) opens a small dock along the bottom
+  of the screen instead of the whole home screen. It holds the volume, the sound output, quiet mode, NVIDIA's stats,
+  Home and Close game, and shows the game, the batteries and the time. Close game asks the game to close, and offers
+  Force close when the game isn't responding. The folded dock also shows for a moment when the headset turns on or
+  off, a controller connects or disconnects, or a battery runs low. It is Lamplit's own window above the game, and
+  over a game in exclusive full screen holding PS brings the home screen as before. Settings > Overlay and pop-ups
+  switches it off.
 - A screensaver. After a few minutes without input, while Lamplit is in front and no game runs, generative art covers
   the screen, so a still home screen can't mark an OLED TV: three 2D and four 3D scenes drawn with WebGL2, coloured
   from the art of your games, with a game's logo or name drifting faintly through each, and finished with a soft
@@ -41,6 +48,7 @@ Every release of Lamplit, newest first. The format follows
 - Games from these three stores no longer turn up as games outside any store.
 - The button hint for a game's details says Game menu.
 - Exes in Windows' cache of installers (`Package Cache`) are no longer taken for games outside any store.
+- Bringing Lamplit over a game no longer waits on a game that stopped responding.
 
 ## 0.2.0 - 2026-10-26
 

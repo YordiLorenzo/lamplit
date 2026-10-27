@@ -22,8 +22,9 @@ pub fn lamplit_in_front() -> bool {
     LAMPLIT.get().is_some_and(|&lamplit| window::foreground().0 as isize == lamplit)
 }
 
-/// Brings Lamplit in front of whatever has the screen, a game included.
+/// Brings Lamplit in front of whatever has the screen, a game included. The dock, which is above every window, goes.
 pub fn bring_lamplit_forward(app: &AppHandle) {
+    crate::dock::hide(app);
     let Some(&lamplit) = LAMPLIT.get() else { return };
     // Windows lets only the thread that owns the window take the foreground for it.
     let _ = app.run_on_main_thread(move || window::force_foreground(HWND(lamplit as *mut _)));

@@ -46,6 +46,8 @@ Good to know:
   prefs, art and logs.
 - The page in `ui/` is built into the exe. After you change it, run the build again (cargo notices the change).
 - In a debug build, Ctrl+Shift+I opens the WebView's developer tools, and the log also goes to the console.
+- A debug build also takes keys for the in-game dock, to try it without a controller: Ctrl+Alt+Shift+D does what
+  holding PS does, and Ctrl+Alt+Shift+N shows news in the folded dock.
 - `scripts/restart.ps1` swaps a new build in for the installed one and restarts it through its logon task.
 
 ## Cross-building from macOS or Linux
@@ -107,12 +109,13 @@ npm --prefix tests test
 npm --prefix tests run typecheck
 ```
 
-- `logic.test.mjs` tests the pure functions in `ui/logic.js`.
+- `logic.test.mjs` tests the pure functions in `ui/logic.js`, and `dock-logic.test.mjs` those in `ui/dock/logic.js`.
 - `screensaver.test.mjs` tests the screensaver's palettes (`ui/screensaver/palette.js`) and its list of scenes.
 - `contract.test.mjs` checks that the page and the Rust core agree on every command, argument and event.
 - `ui.test.mjs` drives the page in Chromium at 1920 x 1080 and other sizes. `page.mjs` serves the page the way
   Tauri serves it on Windows, under the same content security policy, with a fake Tauri that refuses any call Rust
   would refuse. It writes screenshots to `tests/shots/`. `PERF=1` adds timing checks, which depend on the machine.
+  It also runs `dock.mjs`, which drives the in-game dock's page (`ui/dock.html`) in a window the size Rust gives it.
 
 The art checks use small generated images. For realistic covers in the screenshots, copy `%LOCALAPPDATA%\lamplit\art`
 from a Windows PC that has run Lamplit to `tests/art` (it is ignored by git).

@@ -9,5 +9,5 @@
     "noEmit": true,
     "types": []
   },
-  "include": ["*.js", "screensaver/*.js"]
+  "include": ["*.js", "screensaver/*.js", "dock/*.js"]
 }

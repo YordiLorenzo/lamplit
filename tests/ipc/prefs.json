@@ -4,5 +4,6 @@
   "steam_devtools": false,
   "online_art": true,
   "screensaver_minutes": 5,
-  "screensaver_style": "mix"
+  "screensaver_style": "mix",
+  "dock": true
 }

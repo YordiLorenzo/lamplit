@@ -228,7 +228,7 @@ async function adjustScreensaver(kind, dir) {
 }
 
 /** The rows that switch one of the player's prefs. */
-const PREF_ROWS = ['follows', 'touchmouse', 'steamport', 'onlineart', 'saverafter', 'saverstyle'];
+const PREF_ROWS = ['follows', 'touchmouse', 'steamport', 'onlineart', 'dock', 'saverafter', 'saverstyle'];
 /** What each row of Settings > Power calls. */
 const POWER = { sleep: api.powerSleep, restart: api.powerRestart, shutdown: api.powerShutDown };
 
@@ -264,6 +264,8 @@ export async function selectSetting() {
       toast(state.prefs.steam_devtools ? "Steam's DevTools port opens when Steam next starts." : "Steam's DevTools port closes when Steam next starts.");
     } else if (row.kind === 'onlineart') {
       state.prefs = await api.prefsSetOnlineArt(!state.prefs?.online_art);
+    } else if (row.kind === 'dock') {
+      state.prefs = await api.prefsSetDock(!state.prefs?.dock);
     } else if (row.kind === 'padoff') {
       await api.controllerTurnOff(row.id);
       toast('Controller turned off.');

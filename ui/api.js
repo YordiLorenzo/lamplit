@@ -170,6 +170,7 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {boolean} online_art  art comes from Steam's store too
  * @property {number} screensaver_minutes  minutes without input before the screensaver, 0 for never
  * @property {ScreensaverStyle} screensaver_style
+ * @property {boolean} dock  holding PS over a game opens the dock rather than the home screen
  */
 
 /** @typedef {'mix' | '2d' | '3d'} ScreensaverStyle  the screensaver's scenes: 2D and 3D in turn, or one kind */
@@ -188,6 +189,22 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {'busy' | 'ok' | 'warn' | 'block' | 'error'} state  block: the player has to act
  * @property {string} label
  * @property {StoreKey | null} store  the store app the line is about
+ */
+
+/**
+ * The game the dock is over.
+ * @typedef {object} DockGame
+ * @property {string} id
+ * @property {string} name
+ * @property {boolean} responding  its window answers Windows
+ * @property {boolean} force_close  the dock offers to end it: not responding, no window, or asked to close a while ago
+ */
+
+/** @typedef {'headset' | 'controller'} DockIcon */
+
+/**
+ * What the dock shows: open over the game, folded away, or news for a moment in the folded pill.
+ * @typedef {{ mode: 'open' } | { mode: 'closed' } | { mode: 'status', icon: DockIcon, text: string, warn: boolean }} DockShow
  */
 
 /** @typedef {'left' | 'right' | 'up' | 'down' | 'l1' | 'r1' | 'ok' | 'back' | 'menu' | 'triangle' | 'square'} Action */
@@ -261,6 +278,14 @@ export const launchCancel = () => call('launch_cancel');
 export const launchResume = () => call('launch_resume');
 /** @returns {Promise<string | null>} the id of the game Lamplit waits on to close */
 export const launchRunning = () => call('launch_running');
+/** The game the dock is over. @returns {Promise<DockGame | null>} */
+export const dockState = () => call('dock_state');
+/** Folds the dock away, back to the game. @returns {Promise<void>} */
+export const dockResume = () => call('dock_resume');
+/** The home screen, in place of the dock. @returns {Promise<void>} */
+export const dockHome = () => call('dock_home');
+/** Asks the running game to close, or ends it. @param {boolean} force @returns {Promise<void>} */
+export const dockCloseGame = (force) => call('dock_close_game', { force });
 /** @returns {Promise<StoreStatus[]>} */
 export const storesStatus = () => call('stores_status');
 /** Shows a store app so the player can sign in or deal with an update. @param {StoreKey} store @returns {Promise<void>} */
@@ -316,6 +341,8 @@ export const prefsSetOnlineArt = (on) => call('prefs_set_online_art', { on });
 export const prefsSetScreensaverMinutes = (minutes) => call('prefs_set_screensaver_minutes', { minutes });
 /** @param {ScreensaverStyle} style @returns {Promise<Prefs>} */
 export const prefsSetScreensaverStyle = (style) => call('prefs_set_screensaver_style', { style });
+/** @param {boolean} on @returns {Promise<Prefs>} */
+export const prefsSetDock = (on) => call('prefs_set_dock', { on });
 /** @returns {Promise<void>} once the PC has woken up again */
 export const powerSleep = () => call('power_sleep');
 /** @returns {Promise<void>} once Windows has started to restart */
@@ -347,6 +374,10 @@ export const onPadKind = (handle) => on('pad-kind', handle);
 export const onPlay = (handle) => on('play', handle);
 /** A controller brought Lamplit forward. @param {(runningId: string | null) => void} handle */
 export const onSummoned = (handle) => on('summoned', handle);
+/** The dock opens, folds away, or shows news. @param {(show: DockShow) => void} handle */
+export const onDock = (handle) => on('dock', handle);
+/** A controller press while the dock is in front. @param {(action: Action) => void} handle */
+export const onDockPad = (handle) => on('dock-pad', handle);
 /** @param {(step: LaunchStep) => void} handle */
 export const onLaunchStep = (handle) => on('launch-step', handle);
 /** @param {(stores: StoreStatus[]) => void} handle */

@@ -7,6 +7,7 @@
 use crate::devices::headset::{self, Headset};
 use crate::devices::pad::{self, Controllers};
 use crate::devices::{accessories, audio};
+use crate::dock;
 use crate::error::{Error, Result};
 use crate::launch::{self, Launcher};
 use crate::library::{self, ArtChoice, Game, Library};
@@ -253,6 +254,36 @@ pub async fn prefs_set_screensaver_minutes(app: AppHandle, minutes: u32) -> Resu
 #[tauri::command]
 pub async fn prefs_set_screensaver_style(app: AppHandle, style: ScreensaverStyle) -> Result<Prefs> {
     blocking(move || prefs::change(&app, |p| p.screensaver_style = style).map(|()| prefs::get(&app))).await?
+}
+
+/// The dock is switched on or off: off, holding PS over a game brings the home screen.
+#[tauri::command]
+pub async fn prefs_set_dock(app: AppHandle, on: bool) -> Result<Prefs> {
+    blocking(move || dock::set_on(&app, on).map(|()| prefs::get(&app))).await?
+}
+
+/// The game the dock is over, None when none runs. Reads every process.
+#[tauri::command]
+pub async fn dock_state(app: AppHandle) -> Result<Option<dock::GameState>> {
+    blocking(move || dock::game_state(&app)).await
+}
+
+/// Folds the dock away, back to the game.
+#[tauri::command]
+pub fn dock_resume(app: AppHandle) {
+    dock::fold(&app, true);
+}
+
+/// The home screen, in place of the dock.
+#[tauri::command]
+pub fn dock_home(app: AppHandle) {
+    launch::window::summon(&app);
+}
+
+/// Asks the running game to close, or with `force` ends it.
+#[tauri::command]
+pub async fn dock_close_game(app: AppHandle, force: bool) -> Result<()> {
+    blocking(move || dock::close_game(&app, force)).await?
 }
 
 /// Returns once the PC has woken up again.

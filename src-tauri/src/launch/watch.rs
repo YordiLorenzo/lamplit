@@ -35,7 +35,7 @@ impl Watch {
     }
 
     /// The game's processes among `procs` (pid, exe name, exe path), as `Processes::iter` lists them.
-    fn pids<'a>(&self, procs: impl Iterator<Item = (u32, &'a OsStr, Option<&'a Path>)>) -> HashSet<u32> {
+    pub fn pids<'a>(&self, procs: impl Iterator<Item = (u32, &'a OsStr, Option<&'a Path>)>) -> HashSet<u32> {
         procs
             .filter(|(_, name, exe)| {
                 let name = name.to_string_lossy().to_lowercase();
@@ -117,6 +117,9 @@ pub fn watch_game(app: &AppHandle, generation: u64, game: &Game) {
         let pids = watch.pids(procs.iter());
         save_play(!pids.is_empty());
         let Some(next) = tracker.poll(!pids.is_empty(), Instant::now()) else { continue };
+        // Closed from the dock soon after it started: the game has ended, it isn't a launcher handing over.
+        let next =
+            if next == Step::Restarting && crate::dock::closed_from_dock(id, opened) { Step::Ended } else { next };
         match next {
             Step::Started => {
                 log::info!("{name} is running (pids {pids:?})");
@@ -178,20 +181,25 @@ pub fn resume(app: &AppHandle) {
     let pids = watch.pids(Processes::now().iter());
     minimize_lamplit(app);
     let _ = app.run_on_main_thread(move || {
-        // The game's own window: visible, and not a dialog or tool window of another.
-        let mut found = None;
-        window::for_each_window(|w| {
-            if pids.contains(&window::process_id(w)) && window::is_visible(w) && !window::has_owner(w) {
-                found = Some(w);
-                return ControlFlow::Break(());
-            }
-            ControlFlow::Continue(())
-        });
+        let found = game_windows(&pids).first().copied();
         log::info!("resume {id}: game window {:?}", found.map(|w| w.0));
         if let Some(w) = found {
             window::force_foreground(w);
         }
     });
+}
+
+/// The game's own windows, front first: those of its processes `pids` that are visible, and not a dialog or tool
+/// window of another.
+pub fn game_windows(pids: &HashSet<u32>) -> Vec<window::HWND> {
+    let mut found = Vec::new();
+    window::for_each_window(|w| {
+        if pids.contains(&window::process_id(w)) && window::is_visible(w) && !window::has_owner(w) {
+            found.push(w);
+        }
+        ControlFlow::Continue(())
+    });
+    found
 }
 
 #[cfg(test)]

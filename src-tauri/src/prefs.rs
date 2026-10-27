@@ -25,6 +25,8 @@ pub struct Prefs {
     /// Minutes without input before the page shows its screensaver, 0 for never (ui/screensaver).
     pub screensaver_minutes: u32,
     pub screensaver_style: ScreensaverStyle,
+    /// Holding PS over a game opens the dock (dock/) rather than the home screen.
+    pub dock: bool,
 }
 
 /// Which of the screensaver's scenes the page shows.
@@ -48,6 +50,7 @@ impl Default for Prefs {
             online_art: true,
             screensaver_minutes: 5,
             screensaver_style: ScreensaverStyle::Mix,
+            dock: true,
         }
     }
 }

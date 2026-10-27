@@ -1,0 +1,5 @@
+[
+  { "mode": "open" },
+  { "mode": "closed" },
+  { "mode": "status", "icon": "controller", "text": "DualSense battery low · 15%", "warn": true }
+]

@@ -1,10 +1,11 @@
 // Top-level windows: finding them, reading their title and process, and moving them in front, aside or down.
 // A window handle can go stale at any moment (its window closes); these calls then fail or read as empty.
-// Nothing here waits for another process's window: it may be a game that stopped responding, which is just when the
-// player calls Lamplit up, and Lamplit would then hang with it.
+// Nothing here waits for another process's window for more than a moment: it may be a game that stopped responding,
+// which is just when the player calls Lamplit up, and Lamplit would then hang with it.
 
 use std::ops::ControlFlow;
-use windows::Win32::Foundation::LPARAM;
+use std::time::Duration;
+use windows::Win32::Foundation::{LPARAM, WPARAM};
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, VK_MENU, keybd_event};
 use windows::Win32::UI::Shell::{
@@ -12,8 +13,8 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     ASFW_ANY, AllowSetForegroundWindow, BringWindowToTop, EnumWindows, GW_OWNER, GetForegroundWindow, GetWindow,
-    GetWindowTextW, GetWindowThreadProcessId, IsHungAppWindow, IsIconic, IsWindowVisible, SHOW_WINDOW_CMD, SW_MINIMIZE,
-    SW_RESTORE, SetForegroundWindow, ShowWindow, ShowWindowAsync,
+    GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible, SHOW_WINDOW_CMD, SMTO_ABORTIFHUNG, SMTO_BLOCK,
+    SW_MINIMIZE, SW_RESTORE, SendMessageTimeoutW, SetForegroundWindow, ShowWindow, ShowWindowAsync, WM_NULL,
 };
 use windows::core::BOOL;
 
@@ -56,6 +57,16 @@ pub fn is_visible(window: HWND) -> bool {
 pub fn has_owner(window: HWND) -> bool {
     // SAFETY: only reads the window's state; it fails for a window without an owner.
     unsafe { GetWindow(window, GW_OWNER) }.is_ok()
+}
+
+/// The window's thread reads its messages: it answers a message that asks nothing (WM_NULL) within `wait`, or at once
+/// when Windows already counts it as not responding. IsHungAppWindow alone misses a thread that stopped while it
+/// waited for input: Windows counts it as hung only once a message has waited 5 seconds for it.
+pub fn responds(window: HWND, wait: Duration) -> bool {
+    let (flags, wait) = (SMTO_ABORTIFHUNG | SMTO_BLOCK, wait.as_millis() as u32);
+    // SAFETY: sends a message without parameters and waits at most `wait`; a stale handle makes it fail.
+    let answered = unsafe { SendMessageTimeoutW(window, WM_NULL, WPARAM(0), LPARAM(0), flags, wait, None) };
+    answered.0 != 0
 }
 
 pub fn is_minimized(window: HWND) -> bool {
@@ -110,10 +121,11 @@ pub fn force_foreground(window: HWND) {
         let me = GetCurrentThreadId();
         let other = GetWindowThreadProcessId(front, None);
         // Attached threads share one input queue, so while a thread that has stopped responding (a frozen game) is
-        // attached, this one waits on it too. Such a thread gets the Alt press below instead.
+        // attached, this one waits on it too: on 2026-10-27 a suspended stand-in game held Lamplit's main thread here
+        // until it ran again. Such a thread gets the Alt press below instead.
         let attached = other != 0
             && other != me
-            && !IsHungAppWindow(front).as_bool()
+            && responds(front, Duration::from_millis(200))
             && AttachThreadInput(me, other, true).as_bool();
         // BringWindowToTop waits for the thread that owns the window. SetForegroundWindow raises another thread's
         // window without waiting, so a game that isn't responding can't hold Lamplit up here.

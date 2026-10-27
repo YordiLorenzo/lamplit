@@ -1,6 +1,7 @@
 // What Rust tells the page without being asked. Each event has one name (see `Event::name`) and one payload shape.
 
 use crate::devices::pad;
+use crate::dock;
 use crate::library::{Art, Game};
 use crate::stores::{self, Store};
 use crate::system::setup;
@@ -32,6 +33,10 @@ pub enum Event<'a> {
     Notice(String),
     /// Setup started from Settings has ended: whether it is still needed.
     Setup(setup::Status),
+    /// A controller press for the dock while the dock is in front: "left", "ok", "back" and so on.
+    DockPad(&'a str),
+    /// The dock opens over the game, folds away, or shows news for a moment.
+    Dock(dock::Show),
 }
 
 /// What became of a launched game. `starting`: it closed within `session::STUB_RUN` (20 s) of starting (a launcher
@@ -85,6 +90,8 @@ impl Event<'_> {
             Event::Accessories => "accessories",
             Event::Notice(_) => "notice",
             Event::Setup(_) => "setup",
+            Event::DockPad(_) => "dock-pad",
+            Event::Dock(_) => "dock",
         }
     }
 }
@@ -130,6 +137,7 @@ mod tests {
         assert_eq!(payload(&Event::Pad("ok")), json!("ok"));
         assert_eq!(payload(&Event::PadKind(pad::Kind::Xbox)), ipc_fixture!("pad-kind"));
         assert_eq!(payload(&Event::Summoned(None)), Value::Null);
+        assert_eq!(payload(&Event::DockPad("left")), json!("left"));
     }
 
     #[test]

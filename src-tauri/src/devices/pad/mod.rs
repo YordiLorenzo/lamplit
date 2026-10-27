@@ -15,6 +15,7 @@ mod trackpad;
 mod xbox;
 
 use crate::devices::{Charge, accessories};
+use crate::dock;
 use crate::error::{Error, Result};
 use crate::events::{self, Event};
 use crate::launch::window;
@@ -337,12 +338,15 @@ fn act(app: &AppHandle, kind: Kind, action: Action) {
         events::emit(app, Event::PadKind(kind));
     }
     match action {
-        // Navigation only reaches the UI while Lamplit is the window in front, so a game never moves it.
+        // Navigation only reaches the UI while Lamplit is the window in front, or while the dock is open, so a game
+        // never moves it.
         Action::Nav(nav) => {
             if window::lamplit_in_front() {
                 events::emit(app, Event::Pad(nav));
+            } else if dock::is_open() {
+                events::emit(app, Event::DockPad(nav));
             }
         }
-        Action::Summon => window::summon(app),
+        Action::Summon => dock::summon(app),
     }
 }

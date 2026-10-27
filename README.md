@@ -78,12 +78,45 @@ while you play. When the game closes, Lamplit is back on screen.
   carries on once you have signed in. A Steam update shows its progress before the game starts.
 - **Out of the way while you play.** Lamplit minimises itself once the game runs and comes back when the game
   closes. A launcher that hands over to the game a few seconds after starting doesn't fool it.
-- **Hold the PS button to come back,** or View and Menu together on an Xbox controller. Lamplit appears over the
-  running game; press Cross (A) to return to the game.
+- **Hold the PS button over a game for the dock,** or View and Menu together on an Xbox controller: see
+  [The in-game dock](#the-in-game-dock). With the dock switched off, Lamplit itself appears over the running game;
+  press Cross (A) to return to the game.
 - **Awake while it waits.** The PC and the TV don't go to sleep while a store app starts or Steam downloads an
   update.
 - **Steam stays in the background.** Lamplit closes Steam's Big Picture mode whenever Steam opens it, and minimises
   Steam's window after a Steam game.
+
+### The in-game dock
+
+- **Hold PS while you play** (or View and Menu on an Xbox controller) and a small dock opens along the bottom of the
+  screen, over the game, rather than the whole home screen. It opens on Resume, so Cross (A) goes straight back.
+- **What it holds:** the volume (Up, then Left and Right; Cross mutes), the sound output, quiet mode, NVIDIA's
+  performance stats when NVIDIA's overlay is installed, Home for the whole home screen, and Close game. Its top line
+  shows the game, each controller's battery and the headset's, and the time.
+- **Close game** asks once more, then asks the game to close, as its own close button does, so the game can save or
+  ask you first. A game that isn't responding, or still runs 10 seconds after you asked, gets **Force close**
+  instead, which ends it as Task Manager's End task does. Unsaved progress is lost.
+- Circle (B), a second hold or Resume closes the dock, and the game is in front again.
+- **News while you play:** the folded dock shows for a few seconds when the headset turns on or off, a controller
+  connects or disconnects, or a battery runs low (15% or less). It doesn't take the game's focus, and clicks go
+  through it.
+- Switch the dock off in **Settings > Overlay and pop-ups**; holding PS then brings the whole home screen, as before.
+
+How it works, and its limits:
+
+- The dock is Lamplit's own window, transparent and above the game. Nothing is drawn inside the game, and no code
+  goes into it.
+- While the dock is open, it is the window in front, as the home screen is when you hold PS. Many games pause, or
+  ignore the controller, while another window is in front, which keeps the presses you make in the dock out of the
+  game. A game that reads the controller in the background still sees them. A dock that left the game in front
+  would have every game see every press, so Lamplit doesn't do that.
+- Windows shows no other window over a game in exclusive full screen. When Windows reports one, holding PS brings
+  the home screen as before. For the dock, choose borderless or windowed full screen in the game's settings.
+- A game that minimises or leaves full screen when another window comes in front does the same for the dock.
+- Over a game that stopped responding, Windows may keep the game in front. The dock still opens, and the controller
+  works in it, so Force close is in reach; the keyboard then still goes to the game.
+- The dock is tested with a stand-in game window on Windows 11, and not yet with real games in each kind of full
+  screen.
 
 ### Sound and accessories
 
@@ -173,7 +206,7 @@ game's exe directly, which some of those games refuse.
 | | DualSense | Xbox and Xbox-style | Other controllers |
 | --- | --- | --- | --- |
 | Buttons, d-pad and left stick | Yes | Yes | Yes, while Lamplit is in front (see below) |
-| Bring Lamplit over a running game | Hold PS for 0.6 seconds | Hold View and Menu for 1 second | No |
+| Open the dock over a running game | Hold PS for 0.6 seconds | Hold View and Menu for 1 second | No |
 | Button hints | Cross, Circle, Triangle | A, B, Y | A, B, Y; PlayStation symbols on a Sony controller |
 | Battery level | Over USB; over Bluetooth usually (see below) | A rough level, when wireless | When Windows reports it |
 | Touchpad as a mouse | Over USB; over Bluetooth usually | No | No |
@@ -288,7 +321,8 @@ logon task.
 | Back, close, or cancel a launch | Circle | B | Esc or Backspace |
 | Every game again, after a search | Circle | B | Esc |
 | Return to the running game from the row | Circle | B | Esc |
-| Bring Lamplit over a running game | Hold PS for 0.6 seconds | Hold View and Menu for 1 second | Alt+Tab |
+| Open the dock over a running game | Hold PS for 0.6 seconds | Hold View and Menu for 1 second | |
+| Bring Lamplit over a running game | Home in the dock, or hold PS with the dock off | Home in the dock, or hold View and Menu with the dock off | Alt+Tab |
 | Close Lamplit | | | Alt+F4 |
 
 Other controllers follow the same layout by position: the bottom face button plays, the right one goes back, the top
@@ -298,7 +332,9 @@ While a game starts, Cross (A) opens the store app that needs you, Triangle (Y) 
 sign-in, and Circle (B) cancels. In Settings, Up and Down move, Cross or Right opens a section, Left and Right change
 the volume, sidetone and auto-off timer, Circle goes back, and Triangle closes Settings. In Find, Cross types the key
 or picks the choice you're on, Square (X) deletes, Triangle (Y) adds a space, and Circle closes Find on the games it
-found. On a keyboard, type the name and press Enter.
+found. In the dock, Left and Right move along the row, Up goes to the volume, where Left and Right change it,
+Cross does what the focused tile says, and Circle goes back to the game. On a keyboard, type the name and press
+Enter.
 
 In a game's menu, Up and Down move and Cross picks; Circle or Options closes it. **Remove from Lamplit** asks first:
 press Cross once more to remove the game. In Change art, the d-pad moves between the covers and the choices below
@@ -358,8 +394,9 @@ comes from Steam's public store website.
 
 ### Is it safe to use with anti-cheat?
 
-Lamplit doesn't inject code into games, hook them or draw over them. To know when a game starts and closes, it reads
-the list of running processes and the folder each one runs from, as other launchers do. If a game's anti-cheat ever
+Lamplit doesn't inject code into games, hook them or draw inside them. The in-game dock is a separate window that
+Windows shows above the game. To know when a game starts and closes, Lamplit reads the list of running processes and
+the folder each one runs from, as other launchers do. If a game's anti-cheat ever
 objects to Lamplit, please open an issue.
 
 ### Which controllers work?

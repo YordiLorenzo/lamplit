@@ -18,6 +18,7 @@ macro_rules! ipc_fixture {
 
 // The features, one folder each.
 mod devices;
+mod dock;
 mod launch;
 mod library;
 mod stores;
@@ -137,10 +138,15 @@ pub fn run() {
             commands::prefs_set_online_art,
             commands::prefs_set_screensaver_minutes,
             commands::prefs_set_screensaver_style,
+            commands::prefs_set_dock,
             commands::power_sleep,
             commands::power_restart,
             commands::power_shut_down,
             commands::display_mode,
+            commands::dock_state,
+            commands::dock_resume,
+            commands::dock_home,
+            commands::dock_close_game,
         ])
         .setup(|app| {
             log::info!("Lamplit {} starting", env!("CARGO_PKG_VERSION"));
@@ -151,6 +157,7 @@ pub fn run() {
             // The headset before the controllers: a controller's thread reads the headset's state.
             devices::headset::start(app.handle().clone());
             devices::pad::start(app.handle().clone());
+            dock::start(app.handle());
             upkeep(app.handle().clone());
             stores::steam::guard_big_picture();
             Ok(())

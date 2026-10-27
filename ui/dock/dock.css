@@ -1,0 +1,241 @@
+/* The in-game dock (dock.html): an island along the bottom of the screen, over the running game. Its window covers
+   only part of the screen, so sizes are in --u, a hundredth of the screen's height, which main.js sets: the dock is
+   the same size on a 1080p and a 4K TV, and matches the home screen, which is sized in vh. */
+
+:root {
+  --u: 1vh;
+  --ink: #f5f5f7;
+  --ink-dim: rgb(245 245 247 / .72);
+  --accent: 140 170 255;
+  --good: #7be09a;
+  --warn: #ffc75e;
+  /* main.js puts a real spring here (logic.js spring); this curve overshoots once in its place. */
+  --spring: cubic-bezier(.34, 1.56, .64, 1);
+  --spring-ms: 520ms;
+  --glide: cubic-bezier(.2, .9, .25, 1);
+  font-family: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  color: var(--ink);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* The window is transparent: only the island shows over the game. */
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  cursor: none;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+body.pointer { cursor: default; }
+[hidden] { display: none !important; }
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+/* ---------- the island ---------- */
+
+/* Folded, it is a pill; main.js gives it the size of the face it shows, and it springs there from wherever it was.
+   Opening, the pill appears first and springs open a moment later. */
+#island {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--u) * 5);
+  width: calc(var(--u) * 16);
+  height: calc(var(--u) * 5);
+  border-radius: calc(var(--u) * 2.5);
+  overflow: hidden;
+  background: rgb(14 13 22 / .94);
+  box-shadow:
+    inset 0 0 0 calc(var(--u) * .12) rgb(255 255 255 / .13),
+    0 calc(var(--u) * 1.6) calc(var(--u) * 5) rgb(0 0 0 / .55);
+  translate: -50% 0;
+  transform-origin: 50% 100%;
+  transition:
+    width var(--spring-ms) var(--spring) 70ms,
+    height var(--spring-ms) var(--spring) 70ms,
+    border-radius var(--spring-ms) var(--spring) 70ms,
+    opacity 140ms ease,
+    scale 320ms var(--spring);
+}
+#island[data-mode='news'] { height: calc(var(--u) * 6.4); border-radius: calc(var(--u) * 3.2); }
+#island[data-mode='open'] { border-radius: calc(var(--u) * 3.6); }
+/* Folding: back into the pill without a bounce, then gone. Rust hides the window 450 ms in (dock/mod.rs FOLD). */
+#island[data-mode='gone'] {
+  opacity: 0;
+  scale: .6;
+  pointer-events: none;
+  transition:
+    width 260ms var(--glide),
+    height 260ms var(--glide),
+    border-radius 260ms var(--glide),
+    opacity 180ms ease 160ms,
+    scale 300ms var(--glide) 100ms;
+}
+
+/* What the island shows, laid out from its bottom centre at its own size; the island reveals it as it grows. */
+.face {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: max-content;
+  translate: -50% 0;
+  opacity: 0;
+  scale: .94;
+  pointer-events: none;
+  transition: opacity 110ms ease, scale 110ms ease;
+}
+#island[data-mode='news'] #news,
+#island[data-mode='open'] #dock {
+  opacity: 1;
+  scale: 1;
+  pointer-events: auto;
+  transition: opacity 220ms ease 150ms, scale 320ms var(--glide) 120ms;
+}
+
+.icon { flex: none; width: calc(var(--u) * 3); height: calc(var(--u) * 3); }
+
+/* ---------- news ---------- */
+
+#news {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.2);
+  height: calc(var(--u) * 6.4);
+  padding: 0 calc(var(--u) * 2.8) 0 calc(var(--u) * 2.2);
+  font-size: calc(var(--u) * 2.3);
+  font-weight: 600;
+  white-space: nowrap;
+}
+#news.warn .icon { color: var(--warn); }
+#newsText { max-width: calc(var(--u) * 60); overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- the dock ---------- */
+
+#dock {
+  display: grid;
+  gap: calc(var(--u) * 1.6);
+  padding: calc(var(--u) * 2.4) calc(var(--u) * 2.6) calc(var(--u) * 2.2);
+}
+
+#top {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2.4);
+  font-size: calc(var(--u) * 2.3);
+}
+#game {
+  flex: 1;
+  min-width: 0;
+  max-width: calc(var(--u) * 56);
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#chips { display: flex; gap: calc(var(--u) * 1.8); margin-left: auto; font-size: calc(var(--u) * 1.9); color: var(--ink-dim); }
+.chip { display: inline-flex; align-items: center; gap: calc(var(--u) * .5); font-variant-numeric: tabular-nums; }
+.chip svg { width: calc(var(--u) * 2.5); height: calc(var(--u) * 2.5); }
+.chip.warn { color: var(--warn); font-weight: 600; }
+#clock { font-size: calc(var(--u) * 2.1); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* Something the player can focus: the volume row, a tile, an output. */
+.slot {
+  border-radius: calc(var(--u) * 1.6);
+  background: rgb(255 255 255 / .06);
+  transition: background 150ms ease, box-shadow 150ms ease, scale 280ms var(--spring);
+}
+.slot.focus { background: rgb(255 255 255 / .16); box-shadow: inset 0 0 0 calc(var(--u) * .3) #fff; }
+
+#volume {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.6);
+  padding: calc(var(--u) * 1.1) calc(var(--u) * 1.8);
+}
+#volume .bar {
+  flex: 1;
+  height: calc(var(--u) * .8);
+  border-radius: 99px;
+  background: rgb(255 255 255 / .16);
+  overflow: hidden;
+}
+#volume .bar i { display: block; height: 100%; border-radius: inherit; background: rgb(var(--accent)); transition: width 160ms var(--glide); }
+#volume.muted .bar i { background: rgb(255 255 255 / .35); }
+#volumeText { min-width: calc(var(--u) * 8); text-align: right; font-size: calc(var(--u) * 2.1); font-variant-numeric: tabular-nums; }
+
+#tiles { display: flex; gap: calc(var(--u) * 1.2); }
+.tile {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: calc(var(--u) * .5);
+  width: calc(var(--u) * 15);
+  height: calc(var(--u) * 13);
+  padding: 0 calc(var(--u) * .7);
+}
+.tile.focus { scale: 1.05; }
+.tile .icon { width: calc(var(--u) * 4.4); height: calc(var(--u) * 4.4); margin-bottom: calc(var(--u) * .4); }
+.tile .label { font-size: calc(var(--u) * 2.05); font-weight: 650; }
+.tile .label, .tile .value { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .value { min-height: 1.3em; font-size: calc(var(--u) * 1.75); color: var(--ink-dim); }
+.value.good { color: var(--good); }
+.value.warn { color: var(--warn); font-weight: 600; }
+
+/* Choosing the sound output: a list in place of the volume and the tiles. */
+#outputs { display: grid; gap: calc(var(--u) * .8); min-width: calc(var(--u) * 56); }
+/* Six outputs fit; more scroll, with the focused one kept in view. */
+#outputList { display: grid; gap: calc(var(--u) * .8); max-height: calc(var(--u) * 37); overflow-y: auto; scrollbar-width: none; }
+#outputs h3 {
+  margin-bottom: calc(var(--u) * .6);
+  font-size: calc(var(--u) * 1.8);
+  font-weight: 650;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.output {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.6);
+  padding: calc(var(--u) * 1.3) calc(var(--u) * 1.8);
+  font-size: calc(var(--u) * 2.3);
+}
+.output span:first-of-type { flex: 1; }
+.output .value { font-size: calc(var(--u) * 1.9); }
+
+#message { max-width: calc(var(--u) * 90); font-size: calc(var(--u) * 2); color: var(--warn); text-align: center; }
+#message:empty { display: none; }
+
+/* The button hints, drawn as on the home screen (style.css #hint). */
+#hint {
+  display: flex;
+  justify-content: flex-end;
+  gap: calc(var(--u) * 3);
+  font-size: calc(var(--u) * 2);
+  color: var(--ink-dim);
+}
+#hint span { display: inline-flex; align-items: center; gap: calc(var(--u) * .9); }
+#hint b {
+  display: inline-grid;
+  place-items: center;
+  width: calc(var(--u) * 3);
+  height: calc(var(--u) * 3);
+  border-radius: 50%;
+  background: rgb(255 255 255 / .12);
+  font-size: calc(var(--u) * 1.7);
+  font-weight: 700;
+  line-height: 1;
+}
+#hint b svg { width: calc(var(--u) * 1.9); height: calc(var(--u) * 1.9); }
+#hint b i { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+#hint b.cross { color: #8fb0ff; }
+#hint b.circle { color: #ff7a7a; }
+#hint b.options { color: var(--ink); }
+#hint b.xbox-a { color: #7fd36e; }
+#hint b.xbox-b { color: #ff7a7a; }
+
+@media (prefers-reduced-motion: reduce) {
+  #island, #island[data-mode='gone'], .face, .slot { transition-duration: 1ms; transition-delay: 0s; }
+  #island[data-mode='gone'] { transition: opacity 150ms ease; }
+}
