@@ -9,7 +9,7 @@ mod manual;
 mod name_match;
 mod user_data;
 
-pub use art::Candidate;
+pub use art::{Candidate, candidates as art_candidates};
 pub use game::{Art, ArtChoice, Game, Launch};
 pub use manual::{Folder, Program, browse};
 pub use user_data::UserData;
@@ -210,11 +210,6 @@ pub fn set_hidden(app: &AppHandle, id: &str, on: bool) -> Result<Vec<Game>> {
     change(app, id, |e| e.hidden = on)?;
     log::info!("{id}: {}", if on { "hidden" } else { "shown again" });
     Ok(all(app))
-}
-
-/// What Change art finds on Steam's store for `query`.
-pub fn art_candidates(app: &AppHandle, query: &str) -> Result<Vec<Candidate>> {
-    art::candidates(app, query)
 }
 
 /// Gives a game the art the player chose (after fetching what isn't on the PC yet), or back to Lamplit's own match
