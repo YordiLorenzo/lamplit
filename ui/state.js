@@ -144,7 +144,6 @@ export const state = {
   launching: null,
   /** @type {string | null} the game Lamplit is waiting on to close */
   running: null,
-  lastPad: -Infinity,
   /** @type {import('./api.js').PadKind} the kind of controller used last, whose buttons the hints show */
   padKind: 'dualsense',
   heroLayer: 0,

@@ -49,6 +49,45 @@ const FACES = {
 export const buttonFace = (kind, button) =>
   FACES[kind === 'dualsense' || kind === 'playstation' ? 'playstation' : 'xbox'][button];
 
+// ---------- the controller and the keyboard ----------
+
+/** How long a mirrored key and the pad's own press can be apart and still be one press. */
+export const MIRROR_MS = 300;
+/** After a pad press, keys are Steam mirroring the pad, and are ignored this long. */
+export const PAD_KEEPS_MS = 2000;
+
+/** @typedef {{ lastPad: number, lastKey: { action: string, at: number } }} Seen what a window had from the pad and the keys */
+
+/** @returns {Seen} */
+export const nothingSeen = () => ({ lastPad: -Infinity, lastKey: { action: '', at: 0 } });
+
+/** The pad was used a moment ago, so keys now are Steam mirroring it. @param {Seen} seen @param {number} now */
+export const padInUse = (seen, now) => now - seen.lastPad < PAD_KEEPS_MS;
+
+/**
+ * Whether an input counts. Steam mirrors the controller as keys while a window other than a game is in front, so the
+ * same press comes once from Rust and once as a key, in either order. A key that comes first, while the pad is idle,
+ * is the press the pad's own then repeats: without this, one press of ✕ could ask "Shut down?" and answer it.
+ * @param {Seen} seen  updated in place
+ * @param {string} action
+ * @param {'pad' | 'key' | 'mouse'} source
+ * @param {number} now  milliseconds
+ */
+export function counts(seen, action, source, now) {
+  if (source === 'pad') {
+    seen.lastPad = now;
+    if (action === seen.lastKey.action && now - seen.lastKey.at < MIRROR_MS) {
+      // That key had one press behind it: a second press right after is a real one.
+      seen.lastKey = { action: '', at: 0 };
+      return false;
+    }
+  } else if (source === 'key') {
+    if (padInUse(seen, now)) return false;
+    seen.lastKey = { action, at: now };
+  }
+  return true;
+}
+
 // ---------- the focused game ----------
 
 /** Keeps the hue, lifts saturation and lightness so the colour reads on a dark screen. @param {number[]} rgb */
@@ -66,6 +105,27 @@ export function readable([r, g, b]) {
   const m = 0.62 - c / 2;
   const [R, G, B] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
   return [R, G, B].map((v) => Math.round((v + m) * 255));
+}
+
+/**
+ * A picture's accent: the average of its pixels, where vivid, mid-bright ones count most and dark and washed-out ones
+ * barely, made readable.
+ * @param {ArrayLike<number>} rgba  the pixels as a canvas gives them back
+ */
+export function accentOf(rgba) {
+  let r = 0, g = 0, b = 0, w = 0;
+  for (let i = 0; i < rgba.length; i += 4) {
+    const max = Math.max(rgba[i], rgba[i + 1], rgba[i + 2]);
+    const min = Math.min(rgba[i], rgba[i + 1], rgba[i + 2]);
+    const sat = max ? (max - min) / max : 0;
+    const lum = max / 255;
+    const wt = sat * sat * (lum > 0.2 && lum < 0.95 ? 1 : 0.15) + 0.002;
+    r += rgba[i] * wt;
+    g += rgba[i + 1] * wt;
+    b += rgba[i + 2] * wt;
+    w += wt;
+  }
+  return readable([r / w, g / w, b / w]);
 }
 
 /** @param {number} ts Unix seconds, 0 for never @param {number} [now] Unix seconds */
