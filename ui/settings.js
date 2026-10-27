@@ -7,7 +7,7 @@ import * as api from './api.js';
 import { showHints, toast } from './hints.js';
 import { setGames, showInfo } from './library.js';
 import { SAVER_DEFAULT, SECTIONS, focusIndex, quietMode, rowKey, sectionRows, sectionSummary, stepAutoOff, stepSaverMinutes, visibleSections } from './logic.js';
-import { showScreensaver } from './screensaver/index.js';
+import { showScreensaver, warmScreensaver } from './screensaver/index.js';
 import { sfx } from './sounds.js';
 import { els, state, withStoreLogo } from './state.js';
 
@@ -241,6 +241,8 @@ export async function selectSetting() {
   if (row.kind === 'section') {
     s.section = row.key;
     s.focus = null;
+    // Show it now is a row away: the screensaver gets ready in idle time, so it starts without a stutter.
+    if (row.key === 'screensaver') warmScreensaver();
     return renderSettings();
   }
   try {

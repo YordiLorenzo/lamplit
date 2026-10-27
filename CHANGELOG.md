@@ -23,10 +23,10 @@ Every release of Lamplit, newest first. The format follows
   curve and depth of field. Gallery shows your covers in a dark room with a glossy floor, and Drift turns one game's
   hero art into another's through thousands of points of light; over the other five a game's logo or name drifts
   faintly. A new scene comes in every minute and a half or so, in a crossfade, through the dark parts first, through
-  drifting noise or pushing in, and after an hour it fades to black. The first press only ends it. Lamplit reads and
-  scales the art in the background while it sits unused for a moment, and keeps it between shows, so the screensaver
-  comes and goes without a stutter. Settings > Screensaver sets the delay (Off, 2, 5, 10 or 20 minutes; 5 by default) and shows it now. Without WebGL2
-  it shows a moving gradient.
+  drifting noise or pushing in, and after an hour it fades to black. The first press only ends it. Lamplit gets the
+  screensaver ready in the background while it sits unused for a moment, or as Settings > Screensaver opens, and keeps
+  its art between shows, so it comes and goes without a stutter. Settings > Screensaver sets the delay (Off, 2, 5, 10
+  or 20 minutes; 5 by default) and shows it now. Without WebGL2 it shows a moving gradient.
 - `ui/screensaver/preview.html` shows the screensaver's scenes in a normal browser, for working on them.
 - Battle.net: its installed games, from Battle.net's own list. Lamplit starts Battle.net, waits until its log says it
   has signed in, and asks it to start the game. A game too new for Lamplit's list of launch codes opens on its page
