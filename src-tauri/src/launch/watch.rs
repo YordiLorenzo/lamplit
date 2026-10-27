@@ -26,12 +26,14 @@ const STILL_WAITING: Duration = Duration::from_secs(45);
 pub struct Watch {
     dirs: Vec<String>,
     names: Vec<String>,
+    /// When this launch opened the game. What the player asked of the game before then was about an earlier session.
+    pub opened: Instant,
 }
 
 impl Watch {
     fn of(g: &Game) -> Self {
         let dirs = std::iter::once(&g.dir).chain(&g.extra_dirs).map(|d| format!("{}\\", folder_key(d))).collect();
-        Watch { dirs, names: g.exe_names.clone() }
+        Watch { dirs, names: g.exe_names.clone(), opened: Instant::now() }
     }
 
     /// The game's processes among `procs` (pid, exe name, exe path), as `Processes::iter` lists them.
@@ -94,7 +96,7 @@ pub fn watch_game(app: &AppHandle, generation: u64, game: &Game) {
     let mut last_progress = None;
     // The store app most likely to be holding things up: the publisher's launcher if there is one, else the store.
     let blocker = game.requires.last().copied();
-    let opened = Instant::now();
+    let opened = watch.opened;
     let mut hinted = false;
     let mut reminded = false;
     loop {
