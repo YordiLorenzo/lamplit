@@ -189,10 +189,13 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   only when it answers. `IsHungAppWindow` alone missed a game suspended while it waited for input, and Lamplit's main
   thread then waited with it. Should Windows still keep the foreground with the game, the controller works in the
   open dock all the same: Lamplit reads it whatever window is in front.
-- **Folding**, the page plays the fold and Rust hides the window 450 ms later. The window that was in front when the
-  dock opened gets the foreground back, or the game's window if that one has gone. When another window takes the
-  foreground, the dock folds and leaves it there. Alt+F4 on the dock folds it as Circle does: its window refuses to
-  close, since Lamplit keeps its handle for the next hold of PS.
+- **Folding**, the island fades and shrinks a little on the compositor alone, keeping its size, so nothing on the
+  full-screen window is laid out or painted again on the way; Rust fades the real glass the same way and hides the
+  window 300 ms later. Only then does the window that was in front when the dock opened get the foreground back (or
+  the game's window, if that one has gone): a game coming back to full speed, and window calls, cost the fold frames.
+  When another window takes the foreground, the dock folds and leaves it there. Alt+F4 on the dock folds it as Circle
+  does: its window refuses to close, since Lamplit keeps its handle for the next hold of PS. After each opening, fold
+  and Home the page logs its frames and the longest wait between two (`dock: fold 36 frames, worst 9 ms`).
 - **News** (`dock/news.rs`) shows in a strip around the folded pill at the bottom centre, with `WS_EX_NOACTIVATE`
   and `WS_EX_TRANSPARENT`: the game keeps the foreground and its clicks. Only over a running game, with Lamplit not
   in front and no exclusive full screen.

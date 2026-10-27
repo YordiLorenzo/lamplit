@@ -4,6 +4,7 @@
 
 use crate::win::glass::{Glass, Shape};
 use std::cell::RefCell;
+use std::time::Duration;
 use winreg::RegKey;
 use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
 
@@ -51,6 +52,18 @@ pub fn show(island: Option<Shape>) -> bool {
         let Some((_, Ok(glass))) = glass else { return false };
         glass.show(shape).inspect_err(|e| log::warn!("dock: the glass didn't show: {e}")).is_ok() && shape.is_some()
     })
+}
+
+/// Fades the glass out with the island as it goes, if it shows: scaled to `scale` over `scale_for`, and out over
+/// `fade_for`, `fade_after` in, as dock.css moves the island. On the main thread.
+pub fn fade(scale: f32, scale_for: Duration, fade_for: Duration, fade_after: Duration) {
+    GLASS.with_borrow(|glass| {
+        if let Some((_, Ok(glass))) = glass
+            && let Err(e) = glass.fade(scale, scale_for, fade_for, fade_after)
+        {
+            log::warn!("dock: the glass didn't fade: {e}");
+        }
+    });
 }
 
 #[cfg(test)]

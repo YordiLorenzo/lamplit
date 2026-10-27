@@ -87,17 +87,69 @@ function measure() {
   document.documentElement.style.setProperty('--u', `${screen.height / 100}px`);
 }
 
-/** The island takes the size of the face it shows, or folds into the pill. @param {'gone' | 'news' | 'open'} mode */
+/**
+ * The island takes the size of the face it shows. Folding, it keeps its size and only fades and shrinks a little,
+ * which the compositor does alone (on the glass under it too, dock/mod.rs fold); once out of sight it is the pill
+ * again (rest).
+ * @param {'gone' | 'news' | 'open'} mode
+ */
 function shape(mode) {
-  const face = mode === 'open' ? els.dock : mode === 'news' ? els.news : null;
-  const [width, height] = face ? [`${face.offsetWidth}px`, `${face.offsetHeight}px`] : ['', ''];
+  if (mode === 'gone') {
+    clearTimeout(glassTimer);
+    state.mode = mode;
+    els.island.dataset.mode = mode;
+    return;
+  }
+  const face = mode === 'open' ? els.dock : els.news;
+  const [width, height] = [`${face.offsetWidth}px`, `${face.offsetHeight}px`];
   const moves = mode !== state.mode || width !== els.island.style.width || height !== els.island.style.height;
   if (moves) dropGlass();
   state.mode = mode;
   els.island.dataset.mode = mode;
+  els.island.classList.remove('rested');
   els.island.style.width = width;
   els.island.style.height = height;
   if (moves && mode === 'open') glassTimer = setTimeout(takeGlass, springMs + SETTLE_MS);
+}
+
+/** How long folding takes: Rust hides the window then (dock/mod.rs FOLD). */
+const FOLD_MS = 300;
+let restTimer = 0;
+
+/**
+ * Folded out of sight: the island is the pill again, on the art's glass, for the next time it springs open. Without
+ * its transitions: nothing shows.
+ */
+function rest() {
+  if (state.mode !== 'gone') return;
+  ++glassAsks;
+  els.island.style.transition = 'none';
+  els.island.classList.remove('glass');
+  els.island.classList.add('rested');
+  els.island.style.width = '';
+  els.island.style.height = '';
+  void els.island.offsetWidth;
+  els.island.style.transition = '';
+}
+
+/**
+ * One line in Lamplit's log after one of the dock's animations: how many frames it drew in `ms`, and the longest
+ * wait between two, so the player's own runs tell whether it ran smoothly.
+ * @param {string} name
+ * @param {number} ms
+ */
+function meter(name, ms) {
+  /** @type {number[]} */
+  const times = [];
+  const step = (/** @type {number} */ t) => {
+    times.push(t);
+    if (t - times[0] < ms) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  setTimeout(() => {
+    const worst = Math.max(0, ...times.slice(1).map((t, i) => t - times[i]));
+    api.log.info(`dock: ${name} ${times.length} frames, worst ${Math.round(worst)} ms`);
+  }, ms + 50);
 }
 
 // ---------- real glass ----------
@@ -150,6 +202,7 @@ function open() {
   els.ring.classList.remove('on');
   render();
   shape('open');
+  meter('open', springMs + 130);
   sfx.open();
   refresh();
   clearInterval(gameTimer);
@@ -162,7 +215,11 @@ function fold() {
   cancelHold();
   // Going home, the home screen is behind the veil now (or Circle went back to the game): the veil lifts.
   if (state.leaving) document.body.classList.add('lift');
-  if (state.mode !== 'gone') shape('gone');
+  if (state.mode === 'gone') return;
+  shape('gone');
+  meter('fold', FOLD_MS);
+  clearTimeout(restTimer);
+  restTimer = setTimeout(rest, FOLD_MS + 40);
 }
 
 /**
@@ -172,11 +229,11 @@ function fold() {
  */
 function goHome() {
   sfx.open();
-  // The island fades on its own glass: the real glass would stay behind as it went.
-  dropGlass();
   state.leaving = true;
   document.body.classList.add('home');
+  // Rust fades the real glass with the island as it grows into the veil (dock/mod.rs home).
   api.dockHome();
+  meter('home', 240);
 }
 
 /** @param {Extract<import('../api.js').DockShow, { mode: 'status' }>} news */
@@ -188,7 +245,7 @@ function showNews(news) {
   measure();
   shape('news');
   clearTimeout(newsTimer);
-  newsTimer = setTimeout(() => shape('gone'), NEWS_HOLD_MS);
+  newsTimer = setTimeout(fold, NEWS_HOLD_MS);
 }
 
 /** @param {import('../api.js').DockShow} show */
