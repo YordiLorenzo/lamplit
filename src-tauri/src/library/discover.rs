@@ -4,7 +4,7 @@
 use super::Game;
 use crate::files::folder_key;
 use crate::stores::{self, Installed};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 /// Every game, with the `manual` ones the player added by hand.
@@ -51,9 +51,13 @@ fn names(games: &[Game]) -> String {
 
 /// Brings the games added by hand among `games`, which a scan found, in line with `manual`, those the player has now. A
 /// scan reads them before the stores, and the player may add or remove one meanwhile: a game added then would leave
-/// the row until the next scan, and one removed would come back.
-pub fn reconcile_manual(games: &mut Vec<Game>, manual: Vec<Game>) {
+/// the row until the next scan, and one removed would come back. `removed`: the exes of games the player added by
+/// hand and removed again. Found outside any store (Windows' game list may have such an exe once it has run), they
+/// stay off the row.
+pub fn reconcile_manual(games: &mut Vec<Game>, manual: Vec<Game>, removed: &[PathBuf]) {
     games.retain(|g| !g.manual || manual.iter().any(|m| m.id == g.id));
+    let holds = |dir: &Path, exe: &Path| folder_key(exe).starts_with(&format!("{}\\", folder_key(dir)));
+    games.retain(|g| g.manual || g.store.is_some() || !removed.iter().any(|exe| holds(&g.dir, exe)));
     for mut g in manual {
         let key = folder_key(&g.dir);
         if !games.iter().any(|o| o.id == g.id || folder_key(&o.dir) == key) {
@@ -110,9 +114,25 @@ mod tests {
         // The scan read Old before the player removed it, and missed New, which they added meanwhile.
         let mut games = vec![store_game, manual("manual:old", r"D:\Old")];
         let now = vec![manual("manual:new", r"D:\New"), manual("manual:racer", r"D:\Steam\Racer")];
-        reconcile_manual(&mut games, now);
+        reconcile_manual(&mut games, now, &[]);
         // A game added by hand in a folder a store has since installed into stays the store's.
         let ids: Vec<&str> = games.iter().map(|g| g.id.as_str()).collect();
         assert_eq!(ids, ["steam:1", "manual:new"]);
+    }
+
+    #[test]
+    fn a_game_removed_by_hand_stays_off_once_windows_knows_its_exe() {
+        // The player added Racer by hand, played it, so Windows' game list now has its exe, and removed it again.
+        let exe = PathBuf::from(r"D:\Old Games\Racer\bin\Racer.exe");
+        let mut games = stores::loose::games(&[], std::slice::from_ref(&exe), &[], &[]);
+        let ids: Vec<&str> = games.iter().map(|g| g.id.as_str()).collect();
+        assert_eq!(ids, [r"pc:d:\old games\racer"], "found outside any store");
+        let store_game = |dir: &str| {
+            Game::new("steam:1".into(), "Racer".into(), Some(Store::Steam), dir.into(), Launch::Uri(String::new()))
+        };
+        games.push(store_game(r"D:\Steam\Racer"));
+        reconcile_manual(&mut games, Vec::new(), &[exe]);
+        let ids: Vec<&str> = games.iter().map(|g| g.id.as_str()).collect();
+        assert_eq!(ids, ["steam:1"]);
     }
 }

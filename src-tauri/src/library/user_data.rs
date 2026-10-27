@@ -8,6 +8,7 @@ use crate::error::Result;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use std::path::PathBuf;
 
 const FILE: &str = "games.json";
 /// Lamplit 0.1.0 kept only when each game was last played, in this file. It is read at every start and never
@@ -29,6 +30,10 @@ pub struct Entry {
     /// The game's name and exe, for a game the player added by hand.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub manual: Option<manual::Manual>,
+    /// A game the player added by hand and removed again, which stays off the row when a scan finds its exe outside
+    /// any store (see `discover::reconcile_manual`). Its id names the exe.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub removed: bool,
 }
 
 /// Every game's entry. Tauri state.
@@ -53,6 +58,12 @@ impl UserData {
         entries.iter().filter_map(|(id, e)| e.manual.as_ref().map(|m| manual::game(id, m))).collect()
     }
 
+    /// The exes of the games the player added by hand and removed again.
+    pub fn removed(&self) -> Vec<PathBuf> {
+        let entries = self.0.lock();
+        entries.iter().filter(|(_, e)| e.removed).filter_map(|(id, _)| manual::exe_of(id)).collect()
+    }
+
     /// Saves a change to one game's entry, then makes it, and returns the entry.
     pub fn change(&self, id: &str, change: impl FnOnce(&mut Entry)) -> Result<Entry> {
         let mut entries = self.0.lock();
@@ -67,17 +78,6 @@ impl UserData {
             return Err(e);
         }
         Ok(entry)
-    }
-
-    /// Forgets a game: its favourite, play time and art go with it.
-    pub fn remove(&self, id: &str) -> Result<()> {
-        let mut entries = self.0.lock();
-        let Some(before) = entries.remove(id) else { return Ok(()) };
-        if let Err(e) = data::save(FILE, &*entries) {
-            entries.insert(id.to_string(), before);
-            return Err(e);
-        }
-        Ok(())
     }
 }
 

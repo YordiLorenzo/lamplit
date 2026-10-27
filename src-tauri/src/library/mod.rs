@@ -150,7 +150,7 @@ fn find_games(app: &AppHandle) {
         // chosen, or a game added or removed by hand while this scan ran is then on the list either way.
         let mut list = library.games.lock();
         let user = app.state::<UserData>();
-        discover::reconcile_manual(&mut games, user.manual_games());
+        discover::reconcile_manual(&mut games, user.manual_games(), &user.removed());
         user.apply(&mut games);
         art::from_disk(&mut games);
         games.sort_by(by_played);
@@ -264,7 +264,10 @@ pub fn add_game(app: &AppHandle, exe: &str, name: &str) -> Result<Added> {
         let library = app.state::<Library>();
         let mut list = library.games.lock();
         manual::check(exe, list.as_deref().unwrap_or_default())?;
-        let entry = app.state::<UserData>().change(&id, |e| e.manual = Some(added.clone()))?;
+        let entry = app.state::<UserData>().change(&id, |e| {
+            e.manual = Some(added.clone());
+            e.removed = false;
+        })?;
         let mut game = manual::game(&id, &added);
         user_data::apply(&mut game, &entry);
         stores::set_requirements(std::slice::from_mut(&mut game));
@@ -285,7 +288,9 @@ pub fn remove_game(app: &AppHandle, id: &str) -> Result<Vec<Game>> {
     if !list.iter().flatten().any(|g| g.id == id && g.manual) {
         return Err(Error::Player("Only a game added by hand can be removed. Hide this one instead.".into()));
     }
-    app.state::<UserData>().remove(id)?;
+    // Its favourite, play time and art go with it. Kept as removed: Windows may know its exe as a game by now, and a
+    // scan would find it again outside any store.
+    app.state::<UserData>().change(id, |e| *e = user_data::Entry { removed: true, ..Default::default() })?;
     list.iter_mut().for_each(|games| games.retain(|g| g.id != id));
     drop(list);
     log::info!("{id}: removed");
