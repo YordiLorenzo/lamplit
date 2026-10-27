@@ -32,10 +32,7 @@ const POINTER_PX = 8;
 const SETTLE_MS = 1000;
 /** The games whose art colours the show: favourites first, then the most recently played. */
 const GAMES = 8;
-/**
- * After this long without input the next show's colours, art and renderer are made ahead, in idle time, so a show
- * starts without that work.
- */
+/** After this long without input the next show is made ready (warmScreensaver). */
 const WARM_MS = 2000;
 
 /** @type {Saver | null} made on the first show */
@@ -102,6 +99,20 @@ export function showScreensaver() {
   askedAt = now;
   anchor = pointer;
   show(now);
+}
+
+/**
+ * Makes the next show's renderer, colours and art in idle time, so it starts without that work: after WARM_MS without
+ * input, and when Settings > Screensaver opens, a row away from Show it now. Nothing while a game runs. Whichever comes
+ * first, this or a show, makes the renderer, and only once (Saver.gl).
+ */
+export function warmScreensaver() {
+  requestIdleCallback(() => {
+    if (!allowed()) return;
+    // The renderer builds a noise volume and starts compiling its passes as it is made.
+    (saver ??= makeSaver()).gl();
+    gameLooks().then(artOf);
+  });
 }
 
 /** @param {number} [asked]  when the show was asked for; input after that calls it off */
@@ -252,11 +263,7 @@ export function startScreensaver() {
     if (quiet >= m * 60_000) show();
     else if (quiet >= WARM_MS && (warmed.input !== lastInput || warmed.games !== state.all)) {
       warmed = { input: lastInput, games: state.all };
-      requestIdleCallback(() => {
-        // The WebGL renderer too, once: it builds a noise volume and starts compiling its passes as it is made.
-        (saver ??= makeSaver()).gl();
-        gameLooks().then(artOf);
-      });
+      warmScreensaver();
     }
   }, 1000);
 }
