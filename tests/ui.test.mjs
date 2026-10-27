@@ -2143,6 +2143,28 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
       again.scene === 'drift' && again.art >= 2 && again.freed && again.uploads === 0,
       JSON.stringify(again)
     );
+    // The frame Lamplit draws ahead (Saver.prime) waits while the last show fades out, though its scene is compiled.
+    const fading = await page.evaluate(async () => {
+      const { saver } = window.preview;
+      let draws = 0;
+      const draw = WebGL2RenderingContext.prototype.drawArrays;
+      WebGL2RenderingContext.prototype.drawArrays = function (...args) {
+        draws++;
+        return draw.apply(this, args);
+      };
+      saver.stop();
+      saver.opening = saver.current.scene;
+      saver.prime();
+      const whileFading = draws;
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      saver.prime();
+      return { whileFading, once: draws, freed: saver.renderer.targets.every((t) => !t), canvas: saver.canvas.width };
+    });
+    check(
+      'the frame drawn ahead waits while a show fades out, then draws unseen and lets its buffers go',
+      fading.whileFading === 0 && fading.once > 0 && fading.freed && fading.canvas === 1,
+      JSON.stringify(fading)
+    );
   }
   await page.close();
 }
@@ -2527,9 +2549,10 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await close(page);
 }
 
-// 39. Opening Settings > Screensaver gets the screensaver ready in idle time, a row before Show it now, so the show
-// doesn't make its renderer on the press; a show and a warm-up close together make one renderer between them; and
-// nothing is made while a game runs. The delay is Off here, so the warm-up after two quiet seconds stays out of it.
+// 39. Opening Settings > Screensaver gets the screensaver ready in idle time, a row before Show it now: its renderer,
+// and its first frame drawn unseen, of the scene the show then opens on. A show and a warm-up close together make one
+// renderer between them, and nothing is made while a game runs. The delay is Off here, so the warm-up after two quiet
+// seconds stays out of it.
 {
   const prefs = { ...ipc('prefs'), screensaver_minutes: 0 };
   /** A page whose WebGL renderers are counted. */
@@ -2542,10 +2565,30 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
         if (type === 'webgl2') window.__renderers++;
         return get.call(this, type, ...rest);
       };
+      // Draws, and those made while the screensaver isn't on yet could be seen all the same.
+      window.__draws = 0;
+      window.__seen = 0;
+      for (const name of ['drawArrays', 'drawArraysInstanced']) {
+        const draw = WebGL2RenderingContext.prototype[name];
+        WebGL2RenderingContext.prototype[name] = function (...args) {
+          window.__draws++;
+          const root = document.getElementById('saver');
+          if (root && !root.classList.contains('on') && getComputedStyle(root).visibility !== 'hidden') window.__seen++;
+          return draw.apply(this, args);
+        };
+      }
     });
     return page;
   };
   const renderers = (page) => page.evaluate(() => window.__renderers);
+  const drawn = (page) =>
+    page.evaluate(() => ({
+      renderers: window.__renderers,
+      draws: window.__draws,
+      seen: window.__seen,
+      shown: !!document.querySelector('#saver.on'),
+      canvas: document.querySelector('#saver canvas')?.width ?? null,
+    }));
   /** Opens Settings > Screensaver from the home screen or the list of sections. */
   const section = async (page) => {
     const focus = () => page.evaluate(() => document.querySelector('#settingsList .row.focus')?.textContent ?? '');
@@ -2558,17 +2601,32 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await running(page, 'pc:1');
   await section(page);
   await page.waitForTimeout(500);
-  check('Settings > Screensaver makes nothing while a game runs', (await renderers(page)) === 0, `${await renderers(page)} renderers`);
+  let d = await drawn(page);
+  check('Settings > Screensaver makes and draws nothing while a game runs', d.renderers === 0 && d.draws === 0, JSON.stringify(d));
   await emit(page, 'play', play('ended', 'pc:1'));
   await page.keyboard.press('Escape');
   await section(page);
-  await page.waitForTimeout(500);
-  const ahead = { renderers: await renderers(page), shown: (await saverView(page)).on };
-  check('Settings > Screensaver makes the renderer in idle time, before Show it now', ahead.renderers === 1 && !ahead.shown, JSON.stringify(ahead));
+  // Raymarched scenes compile slowly on a GPU that is emulated in software.
+  await page.waitForFunction(() => window.__draws > 0, null, { timeout: 30000 }).catch(() => {});
+  d = await drawn(page);
+  check(
+    'Settings > Screensaver makes the renderer and draws its first frame unseen, before Show it now, keeping no buffers',
+    d.renderers === 1 && d.draws > 0 && d.seen === 0 && !d.shown && d.canvas === 1,
+    JSON.stringify(d)
+  );
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await saverOn(page);
-  check('Show it now then starts on that renderer', (await renderers(page)) === 1, `${await renderers(page)} renderers`);
+  const on = await page.evaluate(() => ({
+    log: window.__logs.find((line) => line.includes('screensaver on')) ?? '',
+    scene: document.getElementById('saver').dataset.scene,
+  }));
+  const opened = SCENES.find((x) => on.log.includes(`opening on ${x.name}, drawn ahead`));
+  check(
+    'Show it now then starts on that renderer, on the scene drawn ahead',
+    (await renderers(page)) === 1 && opened?.id === on.scene,
+    JSON.stringify({ ...on, renderers: await renderers(page) })
+  );
   await close(page);
 
   // Show it now before the warm-up has had its idle time: the idle callbacks wait until the show is on.
@@ -2584,7 +2642,8 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await saverOn(page);
   await page.evaluate(() => window.__idle());
   await page.waitForTimeout(300);
-  check('a show before the warm-up has run, and the warm-up after it, make one renderer', (await renderers(page)) === 1, `${await renderers(page)} renderers`);
+  d = await drawn(page);
+  check('a show before the warm-up has run, and the warm-up after it, make one renderer', d.renderers === 1 && d.seen === 0, JSON.stringify(d));
   await close(page);
 }
 
