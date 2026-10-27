@@ -321,6 +321,8 @@ export async function dockTests({ open, close, check, shots }) {
     await emit(page, 'dock', like(status, { text: 'Headset on · 80%', icon: known('dock_icon', 'headset'), warn: false }));
     await emit(page, 'dock', opened);
     await emit(page, 'dock', status);
+    // The island shows open two frames after the dock opens (dock/main.js open).
+    await page.waitForTimeout(100);
     v = await view(page);
     check('news waits while the dock is open', v.mode === 'open', v.mode);
     await close(page);

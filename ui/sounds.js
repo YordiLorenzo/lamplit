@@ -3,6 +3,9 @@
 
 /** @type {AudioContext | null} */
 let ctx = null;
+// Starting the audio device takes the main thread for a moment (106 ms with the CPU slowed 4x): it happens while the
+// page is idle after it starts, rather than inside the first press's sound.
+requestIdleCallback(() => (ctx ??= new AudioContext()));
 
 /**
  * @param {number} freq

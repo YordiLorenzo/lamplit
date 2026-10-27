@@ -99,9 +99,11 @@ function shape(mode) {
   if (mode === 'gone') return squeeze();
   const face = mode === 'open' ? els.dock : els.news;
   const [width, height] = [`${face.offsetWidth}px`, `${face.offsetHeight}px`];
-  const moves = mode !== state.mode || width !== els.island.style.width || height !== els.island.style.height;
+  // What the island shows now: a dock that has just opened is still the pill for two frames (open).
+  const from = els.island.dataset.mode;
+  const moves = mode !== from || width !== els.island.style.width || height !== els.island.style.height;
   if (moves) dropGlass();
-  if (state.mode === 'gone') unfold(face);
+  if (from === 'gone') unfold(face);
   state.mode = mode;
   for (const el of [els.island, els.shade]) {
     el.dataset.mode = mode;
@@ -220,6 +222,10 @@ function dropGlass() {
 
 let newsTimer = 0;
 let gameTimer = 0;
+/** Counts the openings, so one that a fold came before doesn't open. */
+let openings = 0;
+/** The dock is open and shows so: not in its first two frames, which still show the pill (open). */
+const shown = () => state.mode === 'open' && els.island.dataset.mode === 'open';
 
 function open() {
   state.leaving = false;
@@ -233,9 +239,19 @@ function open() {
   // The ring appears on Resume rather than springing there from where it was last time.
   els.ring.classList.add('instant');
   els.ring.classList.remove('on');
+  // Open at once for the controller, the keyboard and the answers drawn meanwhile.
+  state.mode = 'open';
   render();
-  shape('open');
-  meter('dock: open', springMs + 130);
+  // The window has just come up over the game, which Windows composes anew for a frame or two: the spring starts
+  // after them, while nothing on screen moves yet.
+  const mine = ++openings;
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      if (mine !== openings) return;
+      shape('open');
+      meter('dock: open', springMs + 130);
+    })
+  );
   sfx.open();
   refresh();
   clearInterval(gameTimer);
@@ -243,6 +259,7 @@ function open() {
 }
 
 function fold() {
+  ++openings;
   clearTimeout(newsTimer);
   clearInterval(gameTimer);
   cancelHold();
@@ -307,7 +324,13 @@ function showArt(game) {
   const img = new Image();
   // Read back for its colour, which needs the CORS header Tauri's asset protocol sends.
   img.crossOrigin = 'anonymous';
-  img.onload = () => state.artFor === key && paintBackdrop(img);
+  // Only a blur of it shows: a small copy, scaled where the browser decodes it, rather than the 3840 pixel wide art
+  // decoded on the page's thread.
+  img.onload = () =>
+    createImageBitmap(img, { resizeWidth: 256, resizeQuality: 'medium' }).then(
+      (small) => state.artFor === key && paintBackdrop(small),
+      () => state.artFor === key && paintBackdrop(null)
+    );
   img.onerror = () => state.artFor === key && paintBackdrop(null);
   img.src = api.assetUrl(wide);
 }
@@ -315,7 +338,7 @@ function showArt(game) {
 /**
  * Draws the art small and blurred into the backdrop, which the page scales up to the island: a blur that costs nothing
  * while the island springs open, where a CSS blur would be worked out again on every frame.
- * @param {HTMLImageElement | null} img
+ * @param {ImageBitmap | null} img
  */
 function paintBackdrop(img) {
   const canvas = els.backdrop;
@@ -349,7 +372,7 @@ function say(text) {
   if (!text) return;
   messageTimer = setTimeout(() => {
     els.message.textContent = '';
-    if (state.mode === 'open') shape('open');
+    if (shown()) shape('open');
   }, MESSAGE_MS);
 }
 
@@ -396,20 +419,36 @@ const face = (button) =>
   button === 'up' ? ['options', '↑'] : button === 'down' ? ['options', '↓'] : buttonFace(state.padKind, button);
 
 function renderHints() {
-  els.hint.innerHTML = hints(state.row, state.tile, state.data)
+  const html = hints(state.row, state.tile, state.data)
     .map(([button, label]) => {
       const [cls, glyph] = face(button);
       const drawn = SHAPES[glyph] ? `<svg aria-hidden="true"><use href="#${SHAPES[glyph]}"/></svg><i>${glyph}</i>` : glyph;
       return `<span><b class="${cls}">${drawn}</b>${label}</span>`;
     })
     .join('');
+  if (els.hint.innerHTML !== html) els.hint.innerHTML = html;
+}
+
+/**
+ * Writes `text` into `el` only when it differs: the dock is drawn again on every answer from Rust, and an unchanged
+ * text written again still has the page laid out anew.
+ * @param {HTMLElement} el
+ * @param {string} text
+ */
+function setText(el, text) {
+  if (el.textContent !== text) el.textContent = text;
+}
+
+/** The symbol an icon shows, set only when it changes, as setText. @param {Element} use @param {string} href */
+function setHref(use, href) {
+  if (use.getAttribute('href') !== href) use.setAttribute('href', href);
 }
 
 /** The time, and how long the game has been played, which move on while the dock is open. */
 function tick() {
-  els.clock.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  setText(els.clock, new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }));
   const game = state.data.game;
-  els.session.textContent = sessionText(game, Date.now() / 1000);
+  setText(els.session, sessionText(game, Date.now() / 1000));
   els.session.classList.toggle('warn', !!game && !game.responding);
 }
 
@@ -418,23 +457,28 @@ const tileEl = (key) => /** @type {HTMLElement | null} */ (els.tiles.querySelect
 
 function render() {
   const d = state.data;
-  els.game.textContent = d.game?.name ?? '';
+  setText(els.game, d.game?.name ?? '');
   showArt(d.game);
   tick();
-  els.chips.replaceChildren(
-    ...chips(d.accessories).map((c) => {
-      const chip = span(`chip ${c.tone}`, '');
-      const battery = span('battery', '');
-      battery.style.setProperty('--level', String(c.level / 100));
-      chip.append(icon(`i-${c.icon}`), battery, c.text);
-      return chip;
-    })
-  );
+  const batteries = chips(d.accessories);
+  const drawn = JSON.stringify(batteries);
+  if (els.chips.dataset.drawn !== drawn) {
+    els.chips.dataset.drawn = drawn;
+    els.chips.replaceChildren(
+      ...batteries.map((c) => {
+        const chip = span(`chip ${c.tone}`, '');
+        const battery = span('battery', '');
+        battery.style.setProperty('--level', String(c.level / 100));
+        chip.append(icon(`i-${c.icon}`), battery, c.text);
+        return chip;
+      })
+    );
+  }
 
   const muted = !!d.sound?.muted;
-  els.volumeIcon.setAttribute('href', muted ? '#i-muted' : '#i-volume');
+  setHref(els.volumeIcon, muted ? '#i-muted' : '#i-volume');
   els.volumeFill.style.width = `${muted ? 0 : (d.sound?.volume ?? 0)}%`;
-  els.volumeText.textContent = volumeText(d.sound);
+  setText(els.volumeText, volumeText(d.sound));
   els.volume.classList.toggle('muted', muted);
   els.volume.classList.toggle('focus', state.row === 'volume');
 
@@ -461,8 +505,8 @@ function render() {
     el.classList.toggle('focus', state.row === 'tiles' && state.tile === t.key);
     el.classList.toggle('holding', t.key === 'close' && holding !== 0);
     el.style.setProperty('--i', String(i + 1));
-    /** @type {SVGUseElement} */ (el.querySelector('.icon use')).setAttribute('href', `#i-${t.icon}`);
-    /** @type {HTMLElement} */ (el.querySelector('.label')).textContent = t.label;
+    setHref(/** @type {SVGUseElement} */ (el.querySelector('.icon use')), `#i-${t.icon}`);
+    setText(/** @type {HTMLElement} */ (el.querySelector('.label')), t.label);
     return el;
   });
   if (wanted.some((el, i) => els.tiles.children[i] !== el) || els.tiles.children.length !== wanted.length) {
@@ -494,7 +538,7 @@ function render() {
     );
   }
   renderHints();
-  if (state.mode === 'open') shape('open');
+  if (shown()) shape('open');
   placeRing();
 }
 
