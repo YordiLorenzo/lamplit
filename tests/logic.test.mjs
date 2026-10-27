@@ -22,6 +22,7 @@ import {
   padBatteryText,
   playTimeText,
   playedText,
+  quietMode,
   readable,
   rowKey,
   rowOf,
@@ -546,6 +547,20 @@ describe('Overlay and pop-ups', () => {
   test("an overlay whose state the log doesn't tell can still be switched", () => {
     const stats = sectionRows('popups', settingsState({ overlays: overlays(true, null), quiet: quiet('off', false) }))[0];
     assert.deepEqual([stats.kind, stats.value], ['stats', 'Unknown']);
+  });
+  test("the quiet row follows the player's switch, and says when Windows stays quiet on its own", () => {
+    const row = (state, active) => {
+      const r = sectionRows('popups', settingsState({ quiet: quiet(state, active) })).find((r) => r.kind === 'quiet');
+      return [r.value, r.tone];
+    };
+    assert.deepEqual(row('on', true), ['On', 'good']);
+    assert.deepEqual(row('partly', true), ['On · some pop-ups still show', 'warn']);
+    assert.deepEqual(row('off', false), ['Off', '']);
+    assert.deepEqual(row('on', false), ['Off · Windows is quiet on its own', '']);
+    assert.deepEqual(row('partly', false), ['Off · some pop-ups are off in Windows', '']);
+    // Only switching off over a quiet Windows has something to explain.
+    assert.equal(quietMode(quiet('off', false)).note, '');
+    assert.match(quietMode(quiet('on', false)).note, /already quiet/);
   });
   test('every quiet state Rust sends is named, in the row and the summary', () => {
     for (const state of values.quiet_state) {

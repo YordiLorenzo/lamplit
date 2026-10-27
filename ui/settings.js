@@ -6,7 +6,7 @@ import { openAdd } from './add.js';
 import * as api from './api.js';
 import { showHints, toast } from './hints.js';
 import { setGames, showInfo } from './library.js';
-import { SAVER_DEFAULT, SECTIONS, focusIndex, rowKey, sectionRows, sectionSummary, stepAutoOff, stepSaver, visibleSections } from './logic.js';
+import { SAVER_DEFAULT, SECTIONS, focusIndex, quietMode, rowKey, sectionRows, sectionSummary, stepAutoOff, stepSaver, visibleSections } from './logic.js';
 import { showScreensaver } from './screensaver/index.js';
 import { sfx } from './sounds.js';
 import { els, state, withStoreLogo } from './state.js';
@@ -281,7 +281,8 @@ export async function selectSetting() {
       // Off when the player has it on (that restores what was there, also when only partly applied), else on.
       const report = await api.quietSet(!state.quiet?.active);
       state.quiet = report;
-      if (report.notes.length) toast(report.notes.join(' '));
+      const told = report.notes.length ? report.notes.join(' ') : quietMode(report).note;
+      if (told) toast(told);
     } else if (row.kind === 'setup') {
       // The command returns only once the prompt is answered, and Lamplit says how setup went when it ends.
       toast('Answer the Windows prompt with a keyboard or mouse.');

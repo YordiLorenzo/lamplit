@@ -210,7 +210,10 @@ island moves, where CSS `backdrop-filter` couldn't see the game behind a transpa
 blur what is behind a window (Acrylic, which Tauri offers as a window effect), but it covers the whole window, and the
 dock's window is wider than the island and springs open: shaping it would take a window region redrawn on every
 frame. Close game asks for Cross held: the pad sends `dock-pad` with `ok-up` when Cross is let go after a press
-(`devices/pad/navigation.rs`), or when the controller holding it goes, and only the open dock hears of it.
+(`devices/pad/navigation.rs`), or when the controller holding it goes, and only the open dock hears of it. Home
+grows the dock's window over the whole screen, where its page draws a veil in the game's colours; behind the veil the
+home window comes forward, and the dock folds, which lifts the veil (`dock/mod.rs` home). The home page lifts a veil
+of its own as it settles in (`ui/main.js` arrive).
 
 ## Commands
 

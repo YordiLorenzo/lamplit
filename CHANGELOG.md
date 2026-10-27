@@ -55,6 +55,10 @@ Every release of Lamplit, newest first. The format follows
 
 ### Changed
 
+- Lamplit coming forward over a running game (holding PS, or the dock's Home) no longer appears at once: the home
+  screen settles in under a veil in the game's colours, on the game. From the dock, the veil first comes over the game.
+- Settings' quiet mode row shows how you switched it. Switched off where Windows' own settings were already quiet, it
+  says Off, and that Windows is quiet on its own, rather than On.
 - Games from these three stores no longer turn up as games outside any store.
 - The button hint for a game's details says Game menu.
 - Exes in Windows' cache of installers (`Package Cache`) are no longer taken for games outside any store.

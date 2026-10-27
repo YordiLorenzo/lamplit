@@ -4,7 +4,7 @@
 // is open, and calls the commands its tiles stand for.
 
 import * as api from '../api.js';
-import { accentOf, buttonFace, counts, nothingSeen } from '../logic.js';
+import { accentOf, buttonFace, counts, nothingSeen, quietMode } from '../logic.js';
 import { sfx } from '../sounds.js';
 import { HOLD_MS, chips, hints, outputIcon, sessionText, spring, tiles, volumeText } from './logic.js';
 
@@ -42,6 +42,8 @@ const els = {
 const NEWS_HOLD_MS = 2600;
 /** How long a message under the tiles stays. */
 const MESSAGE_MS = 6000;
+/** How long the output just chosen shows in use before the list closes. */
+const PICKED_MS = 650;
 /**
  * How often the open dock reads the game again: Close game becomes Force close once the game stops responding, or
  * still runs 10 s after it was asked to close (dock/game.rs).
@@ -59,6 +61,10 @@ const state = {
   tile: 'resume',
   /** the focused output while choosing one */
   output: 0,
+  /** @type {string | null} the output just chosen, shown in use for a moment before the list closes */
+  picked: null,
+  /** Going home: the veil is coming, and only Circle (back to the game) still counts. */
+  leaving: false,
   /** @type {import('./logic.js').DockData} what the dock knows; kept between openings, so it opens with the last */
   data: {
     game: null,
@@ -94,6 +100,8 @@ let newsTimer = 0;
 let gameTimer = 0;
 
 function open() {
+  state.leaving = false;
+  document.body.classList.remove('home', 'lift');
   clearTimeout(newsTimer);
   measure();
   state.row = 'tiles';
@@ -115,7 +123,21 @@ function fold() {
   clearTimeout(newsTimer);
   clearInterval(gameTimer);
   cancelHold();
+  // Going home, the home screen is behind the veil now (or Circle went back to the game): the veil lifts.
+  if (state.leaving) document.body.classList.add('lift');
   if (state.mode !== 'gone') shape('gone');
+}
+
+/**
+ * Home: a veil in the game's colours comes over the game, on the whole screen, which Rust gives the window for it,
+ * and the island grows into it. Rust brings the home screen forward behind the veil, then folds the dock, which lifts
+ * the veil off it (dock/mod.rs home).
+ */
+function goHome() {
+  sfx.open();
+  state.leaving = true;
+  document.body.classList.add('home');
+  api.dockHome();
 }
 
 /** @param {Extract<import('../api.js').DockShow, { mode: 'status' }>} news */
@@ -326,9 +348,18 @@ function render() {
     els.outputList.replaceChildren(
       ...(d.sound?.outputs ?? []).map((o, i) => {
         const el = document.createElement('div');
-        el.className = 'output slot' + (i === state.output ? ' focus' : '');
+        // The one just chosen counts as in use while Windows switches to it.
+        const current = state.picked ? o.id === state.picked : o.default;
+        el.className = 'output slot' + (i === state.output ? ' focus' : '') + (current ? ' current' : '');
+        el.classList.toggle('picked', o.id === state.picked);
         if (i === state.output) requestAnimationFrame(() => el.scrollIntoView({ block: 'nearest' }));
-        el.append(icon(`i-${outputIcon(o.kind)}`), span('', o.name), span('value', o.default ? 'In use' : ''));
+        const mark = span('value', '');
+        if (current) {
+          const check = span('check', '');
+          check.append(icon('i-check'));
+          mark.append(check, 'In use');
+        }
+        el.append(icon(`i-${outputIcon(o.kind)}`), span('', o.name), mark);
         return el;
       })
     );
@@ -561,7 +592,7 @@ function select() {
         try {
           // Off when the player has it on (that restores what was there, also when only partly applied), else on.
           d.quiet = await api.quietSet(!d.quiet?.active);
-          if (d.quiet.notes.length) say(d.quiet.notes.join(' '));
+          say(d.quiet.notes.length ? d.quiet.notes.join(' ') : quietMode(d.quiet).note);
         } finally {
           quietBusy = false;
         }
@@ -578,8 +609,7 @@ function select() {
         }
       });
     case 'home':
-      sfx.open();
-      return api.dockHome();
+      return goHome();
     case 'close':
       return startHold();
   }
@@ -601,17 +631,26 @@ function actOnOutputs(action) {
     return render();
   }
   const chosen = outputs[state.output];
-  if (action !== 'ok' || !chosen) return;
+  if (action !== 'ok' || !chosen || state.picked) return;
+  // The check moves to the one chosen at once; the list closes once Windows has switched, and the player has seen it.
+  state.picked = chosen.id;
   sfx.open();
-  state.row = 'tiles';
+  render();
+  const seen = new Promise((resolve) => setTimeout(resolve, PICKED_MS));
   run(async () => {
     state.data.sound = await api.soundSetDefault(chosen.id);
+  }).then(async () => {
+    await seen;
+    state.picked = null;
+    if (state.row === 'outputs') state.row = 'tiles';
+    render();
   });
 }
 
 /** @param {Step} action @param {'pad' | 'key' | 'mouse'} source */
 function act(action, source) {
   if (!counts(state.seen, action, source, performance.now()) || state.mode !== 'open') return;
+  if (state.leaving) return action === 'back' ? resume() : undefined;
   // Letting go of Cross only matters to a hold; any other press ends one too.
   if (action === 'ok-up') return cancelHold();
   cancelHold();

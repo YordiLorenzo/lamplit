@@ -332,6 +332,29 @@ body.launching #info { opacity: 0; }
   transition: opacity 300ms ease;
 }
 body.curtain #curtain { opacity: 1; }
+
+/* Back from a game (the dock's Home, or holding PS over a game): a veil in the game's colours, as the dock's, lifts
+   off the home screen while it settles in, on the game's card (main.js arrive). */
+#arrival {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(90% 70% at 50% 100%, rgb(var(--accent) / .32), transparent 72%), rgb(9 8 14);
+  transition: opacity 340ms ease;
+}
+body.arriving #arrival { opacity: 1; transition: none; }
+body.arrived #stage { animation: settle-stage 520ms var(--glide); }
+body.arrived #row { animation: settle-row 460ms var(--glide); }
+body.arrived #info { animation: settle-info 460ms var(--glide); }
+@keyframes settle-stage { from { scale: 1.04; } }
+@keyframes settle-row { from { translate: 0 3vh; opacity: 0; } }
+@keyframes settle-info { from { translate: 0 1.5vh; } }
+@media (prefers-reduced-motion: reduce) {
+  #arrival { transition: none; }
+  body.arrived :is(#stage, #row, #info) { animation: none; }
+}
 body.launching .cover:not(.focus) { opacity: .2; }
 body.launching .cover.focus { scale: 1.1; }
 

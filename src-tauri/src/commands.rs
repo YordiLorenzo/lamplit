@@ -283,7 +283,7 @@ pub fn dock_resume(app: AppHandle) {
 /// The home screen, in place of the dock.
 #[tauri::command]
 pub fn dock_home(app: AppHandle) {
-    launch::window::summon(&app);
+    dock::home(&app);
 }
 
 /// Asks the game the dock showed (`id` in `session`) to close, or with `force` ends it; refused when another game or
