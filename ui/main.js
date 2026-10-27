@@ -6,7 +6,7 @@ import { setPadKind, toast } from './hints.js';
 import { act } from './input.js';
 import { onPlay, onStep, onSummoned } from './launch.js';
 import { layout, onArt, setGames } from './library.js';
-import { startScreensaver } from './screensaver/index.js';
+import { startScreensaver, wake } from './screensaver/index.js';
 import { refreshAccessories, setSetup, setStores } from './settings.js';
 import { els, state } from './state.js';
 
@@ -41,7 +41,12 @@ async function init() {
       setPadKind(kind);
     }),
     api.onPlay(onPlay),
-    api.onSummoned(onSummoned),
+    api.onSummoned((runningId) => {
+      // Holding PS comes as a summon rather than a press; over the screensaver it only ends it, as any first press
+      // does. What Rust says runs still counts.
+      if (wake('summon')) state.running = runningId;
+      else onSummoned(runningId);
+    }),
     api.onLaunchStep(onStep),
     api.onStores(setStores),
     api.onAccessories(refreshAccessories),

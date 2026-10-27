@@ -2240,6 +2240,24 @@ await dockTests({ open, close, check, shots });
   await close(page);
 }
 
+// 32. Holding PS while the screensaver shows only ends it, as any first press does: Rust sends `summoned` rather than
+// a press, and the game menu open underneath stays open. A summon after the grace does what a summon does.
+{
+  const page = await open({ games: [game(1), game(2)], clock: true });
+  await page.keyboard.press('i');
+  await page.clock.fastForward('05:05');
+  await saverOn(page);
+  await emit(page, 'summoned', null);
+  let v = await saverView(page);
+  let s = await state(page);
+  check('holding PS ends the screensaver and closes nothing underneath', !v.on && s.details, JSON.stringify({ on: v.on, menu: s.details }));
+  await page.clock.runFor(600);
+  await emit(page, 'summoned', null);
+  s = await state(page);
+  check('a summon after that closes the game menu, as before', !s.details, JSON.stringify({ menu: s.details }));
+  await close(page);
+}
+
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));
 check('every command Rust registers is called by a test', untested.length === 0, untested.join(', '));
