@@ -1742,6 +1742,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
       const s = (window.__settings = { list });
       s.library_art_search = ({ query }) => {
         if (query === 'offline') throw error;
+        if (query === 'slow') return new Promise((answer) => setTimeout(() => answer(found), 1000));
         return query === 'nothing' ? [] : found;
       };
       /** Rust's answer: every game, the chosen art on the game. */
@@ -1838,6 +1839,21 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   await idle(page);
   p = await picker();
   check('a search that fails says why, and No art still works', p.status === 'Find art online is off. Settings > System switches it on.' && p.choices[0].startsWith('No art'), JSON.stringify(p));
+  // Back on the keyboard before a search has answered, typing other words: the answer leaves them as they are.
+  await page.keyboard.press('Enter');
+  for (let i = 0; i < 'offline'.length; i++) await page.keyboard.press('Backspace');
+  await page.keyboard.type('slow');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('f');
+  for (let i = 0; i < 'slow'.length; i++) await page.keyboard.press('Backspace');
+  await page.keyboard.type('other');
+  await idle(page);
+  p = await picker();
+  check('a search answering while the player types leaves the words on the keyboard', p.editing && p.query === 'other', JSON.stringify(p));
+  await page.keyboard.press('Enter');
+  await idle(page);
+  p = await picker();
+  check('... and Done searches for those words', JSON.stringify(p.lastCall) === '["library_art_search",{"query":"other"}]', JSON.stringify(p.lastCall));
   await page.keyboard.press('Escape');
   p = await picker();
   check('○ goes back to the menu', !p.open && p.menu, JSON.stringify(p));
@@ -1858,6 +1874,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   const drive = (letter) => ({ name: `${letter}:`, path: `${letter}:\\`, kind: known('entry_kind', 'drive'), title: null });
   const folders = {
     '': { path: null, parent: null, entries: [drive('C'), drive('D')] },
+    'C:\\': { path: 'C:\\', parent: null, entries: [] },
     'D:\\': { path: 'D:\\', parent: null, entries: [{ ...games2.entries[0], name: 'Games', path: 'D:\\Games' }] },
     'D:\\Games': games2,
   };
@@ -1939,6 +1956,16 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   await idle(page);
   a = await add();
   check('Browse starts at the drives', a.title === "Choose the game's exe" && a.path === 'This PC' && JSON.stringify(a.rows) === '["C:","D:"]' && JSON.stringify(a.lastCall) === '["library_browse",{"path":null}]', JSON.stringify(a));
+  // A folder with nothing to open or choose: ✕ does nothing there.
+  await page.keyboard.press('Enter');
+  await idle(page);
+  const errors = await page.evaluate(() => window.__errors.length);
+  await page.keyboard.press('Enter');
+  await idle(page);
+  a = await add();
+  check('✕ in a folder with no folders or exes does nothing', a.path === 'C:\\' && JSON.stringify(a.rows) === '["No folders or exes here"]' && (await page.evaluate(() => window.__errors.length)) === errors, JSON.stringify(a) + JSON.stringify(await page.evaluate(() => window.__errors)));
+  await page.keyboard.press('Escape');
+  await idle(page);
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowRight');
   await idle(page);

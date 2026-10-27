@@ -60,7 +60,8 @@ function render() {
   const { art } = state;
   const g = byId(art.id);
   els.artPick.classList.toggle('editing', art.editing);
-  els.artQuery.textContent = art.query;
+  // While the player types, the field shows what the keyboard holds, which Done searches for.
+  els.artQuery.textContent = art.editing ? field.text : art.query;
   els.artStatus.textContent = art.error
     ? art.error
     : art.found === null

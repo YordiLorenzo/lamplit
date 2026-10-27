@@ -70,8 +70,10 @@ impl Handover {
                 return Next::HandOver(w.id);
             }
         }
-        // Only a window that doesn't cover the screen: one that does gets it once it draws, however long that takes.
+        // Only windows that don't cover the screen: one that does gets it once it draws, however long that takes, and
+        // a splash next to it doesn't.
         if self.running_since.is_some_and(|t| now - t >= SETTLE)
+            && !windows.iter().any(over)
             && let Some(w) = windows.iter().find(|w| w.game && !w.covers)
         {
             return Next::HandOver(w.id);
@@ -183,6 +185,16 @@ mod tests {
         let found =
             run(&mut h, t0, (0.0, 16.0), |t| (vec![Seen { answers: t >= 15.0, ..seen(GAME, true, true) }], true));
         assert_eq!(found, [(15.5, Next::HandOver(GAME))]);
+    }
+
+    #[test]
+    fn a_splash_next_to_a_game_over_the_screen_that_doesnt_draw_yet_doesnt_get_the_screen() {
+        // The splash stays in front while the game's window behind it, over the screen, sets itself up for 15 s.
+        let (t0, mut h) = (Instant::now(), Handover::default());
+        let found = run(&mut h, t0, (0.0, 16.0), |t| {
+            (vec![seen(SPLASH, true, false), Seen { answers: t >= 15.0, ..seen(GAME, true, true) }], true)
+        });
+        assert_eq!(found, [(5.0, Next::Hint { id: SPLASH, own: true }), (15.5, Next::HandOver(GAME))]);
     }
 
     #[test]
