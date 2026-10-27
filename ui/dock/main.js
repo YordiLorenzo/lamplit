@@ -16,6 +16,7 @@ const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 
 const els = {
   island: $('island'),
+  shade: $('shade'),
   backdrop: /** @type {HTMLCanvasElement} */ ($('backdrop')),
   news: $('news'),
   newsIcon: $('newsIcon'),
@@ -94,26 +95,49 @@ function measure() {
  * @param {'gone' | 'news' | 'open'} mode
  */
 function shape(mode) {
-  if (mode === 'gone') {
-    clearTimeout(glassTimer);
-    state.mode = mode;
-    els.island.dataset.mode = mode;
-    return;
-  }
+  if (mode === 'gone') return squeeze();
   const face = mode === 'open' ? els.dock : els.news;
   const [width, height] = [`${face.offsetWidth}px`, `${face.offsetHeight}px`];
   const moves = mode !== state.mode || width !== els.island.style.width || height !== els.island.style.height;
   if (moves) dropGlass();
   state.mode = mode;
-  els.island.dataset.mode = mode;
-  els.island.classList.remove('rested');
-  els.island.style.width = width;
-  els.island.style.height = height;
+  for (const el of [els.island, els.shade]) {
+    el.dataset.mode = mode;
+    el.classList.remove('rested');
+    el.style.width = width;
+    el.style.height = height;
+  }
+  els.island.style.setProperty('--fold-x', '0px');
+  els.island.style.setProperty('--fold-y', '0px');
   if (moves && mode === 'open') glassTimer = setTimeout(takeGlass, springMs + SETTLE_MS);
 }
 
-/** How long folding takes: Rust hides the window then (dock/mod.rs FOLD). */
-const FOLD_MS = 300;
+/** The pill the island folds into, as dock.css draws it: its width, height and corners, in hundredths of the screen. */
+const PILL = { width: 18, height: 5.2, round: 2.6 };
+
+/**
+ * Folding: the island keeps its size, and a clip squeezes it into the pill at its bottom centre on the opening's
+ * spring (dock.css), which then drops onto the edge and goes. Rust squeezes the real glass under it the same way.
+ */
+function squeeze() {
+  clearTimeout(glassTimer);
+  const u = screen.height / 100;
+  const [x, y] = [Math.max(0, (els.island.offsetWidth - PILL.width * u) / 2), Math.max(0, els.island.offsetHeight - PILL.height * u)];
+  els.island.style.setProperty('--fold-x', `${x}px`);
+  els.island.style.setProperty('--fold-y', `${y}px`);
+  if (els.island.classList.contains('glass')) {
+    const box = els.island.getBoundingClientRect();
+    const k = devicePixelRatio;
+    const to = { x: (box.x + x) * k, y: (box.y + y) * k, width: PILL.width * u * k, height: PILL.height * u * k, radius: PILL.round * u * k };
+    api.dockGlassFold({ to, ms: springMs, curve: springCurve, after: springMs * 0.5, fade: 200, drop: 2.4 * u * k }).catch(() => {});
+  }
+  state.mode = 'gone';
+  els.island.dataset.mode = 'gone';
+  els.shade.dataset.mode = 'gone';
+}
+
+/** How long folding takes: the squeeze, then the drop (dock.css). Rust hides the window then (dock/mod.rs FOLD). */
+const FOLD_MS = 520;
 let restTimer = 0;
 
 /**
@@ -123,13 +147,18 @@ let restTimer = 0;
 function rest() {
   if (state.mode !== 'gone') return;
   ++glassAsks;
-  els.island.style.transition = 'none';
   els.island.classList.remove('glass');
-  els.island.classList.add('rested');
-  els.island.style.width = '';
-  els.island.style.height = '';
+  for (const el of [els.island, els.shade]) {
+    el.style.transition = 'none';
+    el.classList.add('rested');
+    el.style.width = '';
+    el.style.height = '';
+  }
+  els.island.style.setProperty('--fold-x', '0px');
+  els.island.style.setProperty('--fold-y', '0px');
   void els.island.offsetWidth;
   els.island.style.transition = '';
+  els.shade.style.transition = '';
 }
 
 /**
@@ -147,8 +176,9 @@ function meter(name, ms) {
   };
   requestAnimationFrame(step);
   setTimeout(() => {
-    const worst = Math.max(0, ...times.slice(1).map((t, i) => t - times[i]));
-    api.log.info(`dock: ${name} ${times.length} frames, worst ${Math.round(worst)} ms`);
+    const gaps = times.slice(1).map((t, i) => t - times[i]).sort((a, b) => a - b);
+    const at = (/** @type {number} */ share) => Math.round(gaps[Math.min(gaps.length - 1, Math.floor(gaps.length * share))] ?? 0);
+    api.log.info(`dock: ${name} ${times.length} frames, worst ${at(1)} ms, 95% ${at(0.95)} ms`);
   }, ms + 50);
 }
 
@@ -157,6 +187,8 @@ function meter(name, ms) {
 /** After the island's spring (its delay and a frame or two): it rests, and real glass can go under it. */
 const SETTLE_MS = 140;
 let springMs = 520;
+/** The spring's way from 0 to 1, for Rust to squeeze the glass on (logic.js spring). @type {number[]} */
+let springCurve = [0, 1];
 let glassTimer = 0;
 /** Counts the asks for glass, so an answer to an earlier one is let go. */
 let glassAsks = 0;
@@ -840,10 +872,10 @@ window.addEventListener('unhandledrejection', (e) => api.log.error(`dock: unhand
 async function init() {
   measure();
   // The island opens on a spring that overshoots a little and settles; the focus ring moves on a quicker one.
-  for (const [name, { easing, ms }] of Object.entries({ spring: spring(0.46, 0.7), snap: spring(0.3, 0.78) })) {
+  for (const [name, { easing, ms, points }] of Object.entries({ spring: spring(0.46, 0.7), snap: spring(0.3, 0.78) })) {
     document.documentElement.style.setProperty(`--${name}`, easing);
     document.documentElement.style.setProperty(`--${name}-ms`, `${ms}ms`);
-    if (name === 'spring') springMs = ms;
+    if (name === 'spring') [springMs, springCurve] = [ms, points];
   }
   setInterval(() => state.mode === 'open' && tick(), 10_000);
   let heardKind = false;

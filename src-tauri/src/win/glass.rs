@@ -72,12 +72,16 @@ impl Glass {
     /// Shows the glass with `shape`, or hides it.
     pub fn show(&self, shape: Option<Shape>) -> windows::core::Result<()> {
         let Some(s) = shape else { return self.visual.SetIsVisible(false) };
-        // As it was before a fade.
-        for property in ["Opacity", "Scale"] {
+        // As it was before a fade or a fold.
+        for property in ["Opacity", "Scale", "Offset"] {
             self.visual.StopAnimation(&HSTRING::from(property))?;
+        }
+        for property in ["Offset", "Size", "CornerRadius"] {
+            self.shape.StopAnimation(&HSTRING::from(property))?;
         }
         self.visual.SetOpacity(1.0)?;
         self.visual.SetScale(Vector3 { X: 1.0, Y: 1.0, Z: 1.0 })?;
+        self.shape.SetOffset(Vector2 { X: 0.0, Y: 0.0 })?;
         let size = Vector2 { X: s.width, Y: s.height };
         self.visual.SetCenterPoint(Vector3 { X: s.width / 2.0, Y: s.height, Z: 0.0 })?;
         self.visual.SetOffset(Vector3 { X: s.x, Y: s.y, Z: 0.0 })?;
@@ -112,6 +116,62 @@ impl Glass {
         out.SetDelayTime(time(fade_after))?;
         self.visual.StartAnimation(&HSTRING::from("Opacity"), &out)
     }
+}
+
+/// How the page folds the island, for the glass to fold the same way: its clip goes to `to` (in the window) over
+/// `ms` along `curve` (the share of the way at even steps of time, as CSS `linear()` takes it), then it drops by
+/// `drop` pixels and fades out over `fade` ms, `after` ms in.
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct Fold {
+    pub to: Shape,
+    pub ms: f32,
+    pub curve: Vec<f32>,
+    pub after: f32,
+    pub fade: f32,
+    pub drop: f32,
+}
+
+impl Glass {
+    /// Squeezes the glass's clip into the pill as the page folds the island, on Windows' compositor.
+    pub fn fold(&self, fold: &Fold) -> windows::core::Result<()> {
+        let compositor = self.visual.Compositor()?;
+        let linear = compositor.CreateLinearEasingFunction()?;
+        let at = self.visual.Offset()?;
+        let along = |property: &str, from: Vector2, to: Vector2| -> windows::core::Result<()> {
+            let animation = compositor.CreateVector2KeyFrameAnimation()?;
+            let last = fold.curve.len().saturating_sub(1).max(1) as f32;
+            for (i, share) in fold.curve.iter().enumerate() {
+                let value = Vector2 { X: from.X + (to.X - from.X) * share, Y: from.Y + (to.Y - from.Y) * share };
+                animation.InsertKeyFrameWithEasingFunction(i as f32 / last, value, &linear)?;
+            }
+            animation.SetDuration(time(ms(fold.ms)))?;
+            self.shape.StartAnimation(&HSTRING::from(property), &animation)
+        };
+        let to = &fold.to;
+        along("Offset", self.shape.Offset()?, Vector2 { X: to.x - at.X, Y: to.y - at.Y })?;
+        along("Size", self.shape.Size()?, Vector2 { X: to.width, Y: to.height })?;
+        along("CornerRadius", self.shape.CornerRadius()?, Vector2 { X: to.radius, Y: to.radius })?;
+        // Then the pill drops onto the edge and goes, as dock.css's glide and ease.
+        let glide =
+            compositor.CreateCubicBezierEasingFunction(Vector2 { X: 0.2, Y: 0.9 }, Vector2 { X: 0.25, Y: 1.0 })?;
+        let down = compositor.CreateVector3KeyFrameAnimation()?;
+        down.InsertKeyFrameWithEasingFunction(1.0, Vector3 { X: at.X, Y: at.Y + fold.drop, Z: at.Z }, &glide)?;
+        down.SetDuration(time(ms(fold.fade)))?;
+        down.SetDelayTime(time(ms(fold.after)))?;
+        self.visual.StartAnimation(&HSTRING::from("Offset"), &down)?;
+        let ease =
+            compositor.CreateCubicBezierEasingFunction(Vector2 { X: 0.25, Y: 0.1 }, Vector2 { X: 0.25, Y: 1.0 })?;
+        let out = compositor.CreateScalarKeyFrameAnimation()?;
+        out.InsertKeyFrameWithEasingFunction(1.0, 0.0, &ease)?;
+        out.SetDuration(time(ms(fold.fade)))?;
+        out.SetDelayTime(time(ms(fold.after)))?;
+        self.visual.StartAnimation(&HSTRING::from("Opacity"), &out)
+    }
+}
+
+/// Milliseconds from the page, which counts in fractions of them.
+fn ms(n: f32) -> Duration {
+    Duration::from_secs_f32(n.max(0.0) / 1000.0)
 }
 
 /// A duration as Windows.Foundation counts it, in 100 ns.

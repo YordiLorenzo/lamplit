@@ -189,13 +189,17 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   only when it answers. `IsHungAppWindow` alone missed a game suspended while it waited for input, and Lamplit's main
   thread then waited with it. Should Windows still keep the foreground with the game, the controller works in the
   open dock all the same: Lamplit reads it whatever window is in front.
-- **Folding**, the island fades and shrinks a little on the compositor alone, keeping its size, so nothing on the
-  full-screen window is laid out or painted again on the way; Rust fades the real glass the same way and hides the
-  window 300 ms later. Only then does the window that was in front when the dock opened get the foreground back (or
-  the game's window, if that one has gone): a game coming back to full speed, and window calls, cost the fold frames.
-  When another window takes the foreground, the dock folds and leaves it there. Alt+F4 on the dock folds it as Circle
-  does: its window refuses to close, since Lamplit keeps its handle for the next hold of PS. After each opening, fold
-  and Home the page logs its frames and the longest wait between two (`dock: fold 36 frames, worst 9 ms`).
+- **Folding**, the island keeps its size and a `clip-path` squeezes it into the pill at its bottom centre on the
+  opening's spring, which then drops onto the edge and goes; its shadow, a layer of its own, fades at once. The clip,
+  translate and opacity run on the compositor (Chromium animates `clip-path` there), so nothing on the full-screen
+  window is laid out or painted again per frame. The page sends Rust the pill and the spring's curve
+  (`dock_glass_fold`), and Rust squeezes the real glass's clip the same way with Windows.UI.Composition key frames,
+  then hides the window 520 ms in. Only then does the window that was in front when the dock opened get the foreground
+  back (or the game's window, if that one has gone): a game coming back to full speed, and window calls, cost the fold
+  frames. When another window takes the foreground, the dock folds and leaves it there. Alt+F4 on the dock folds it as
+  Circle does: its window refuses to close, since Lamplit keeps its handle for the next hold of PS. After each
+  opening, fold and Home the page logs its frames, the longest wait between two and the 95th percentile (`dock: fold
+  62 frames, worst 9 ms, 95% 8 ms`).
 - **News** (`dock/news.rs`) shows in a strip around the folded pill at the bottom centre, with `WS_EX_NOACTIVATE`
   and `WS_EX_TRANSPARENT`: the game keeps the foreground and its clicks. Only over a running game, with Lamplit not
   in front and no exclusive full screen.
@@ -268,6 +272,7 @@ message is written for the player, and the page shows it.
 | `dock_resume` | | Nothing; the dock folds and the game is in front again |
 | `dock_home` | | Nothing; the home screen comes forward and the dock goes |
 | `dock_glass` | `island`: `{ x, y, width, height, radius }` in the window's pixels, or `null` | Whether real glass is under the island now |
+| `dock_glass_fold` | `fold`: `{ to, ms, curve, after, fade, drop }`, the pill and the spring the page folds the island with | Nothing; Rust squeezes the real glass the same way |
 | `dock_close_game` | `force` | Nothing, once Windows has the request; the game's end follows as after any game |
 
 ## Events

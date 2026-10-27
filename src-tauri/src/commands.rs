@@ -288,6 +288,12 @@ pub fn dock_glass(island: Option<win::glass::Shape>) -> bool {
     dock::show_glass(island)
 }
 
+/// Squeezes the real glass under the dock's island into the pill as the page folds it.
+#[tauri::command]
+pub fn dock_glass_fold(fold: win::glass::Fold) {
+    dock::fold_glass(&fold);
+}
+
 /// Asks the game the dock showed (`id` in `session`) to close, or with `force` ends it; refused when another game or
 /// session runs now.
 #[tauri::command]

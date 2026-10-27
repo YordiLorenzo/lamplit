@@ -164,6 +164,6 @@ export function spring(response, damping) {
   const seconds = Math.log(200 / Math.sqrt(1 - damping * damping)) / decay;
   const steps = 40;
   const points = Array.from({ length: steps + 1 }, (_, i) => (i === steps ? 1 : Number(at((seconds * i) / steps).toFixed(4))));
-  return { easing: `linear(${points.join(', ')})`, ms: Math.round(seconds * 1000) };
+  return { easing: `linear(${points.join(', ')})`, ms: Math.round(seconds * 1000), points };
 }
 
