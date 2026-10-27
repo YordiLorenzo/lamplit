@@ -136,10 +136,11 @@ controller is read into the same buttons, by position (south is Cross or A), so 
      foreground, and a `play` event says `running`. The session counts as started from then on (so its end is told
      even when it comes within the first 1.5 seconds). Lamplit stays there, not minimised, while the game runs. A
      window that goes during the fade (a game that replaces its window) leaves the launch and its starting screen
-     going until the next one is up. Any other window that stays 5 seconds (a store
-     app's, also one that opens maximised, or a small window of the game's) gets a `window` line on the starting
-     screen, which `launch_show` brings forward; only the player gives such a window the screen. After the game has
-     run 12 seconds with only small windows of its own, the front one gets the screen.
+     going until the next one is up. Any other window that stays 5 seconds (a store app's, also one that opens
+     maximised, or a small window of the game's) gets a `window` line on the starting screen, which `launch_show`
+     brings forward: the newest such window, and once it goes, the one before it again. Only the player gives such a
+     window the screen. After the game has run 12 seconds with only small windows of its own, the front one gets the
+     screen.
    - For a game added by hand, the game's processes are the exe Lamplit started and every process that came from it,
      wherever it runs from, leaving out Windows' own helpers (a shell, a console host) on the way, and the player's
      own programs it may open, with what they start: a browser, a store or chat app (`NOT_THE_GAME` in `watch.rs`).

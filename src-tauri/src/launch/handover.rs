@@ -7,7 +7,8 @@
 // window.
 
 use crate::win::window::Rect;
-use std::collections::{HashMap, HashSet};
+use std::cmp::Reverse;
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 /// How long a window of the game's must cover the screen and answer before it gets the screen: long enough to tell a
@@ -51,7 +52,8 @@ pub enum Next {
 pub struct Handover {
     first_seen: HashMap<isize, Instant>,
     covering_since: HashMap<isize, Instant>,
-    hinted: HashSet<isize>,
+    /// The window the starting screen offers to show.
+    offered: Option<isize>,
     running_since: Option<Instant>,
 }
 
@@ -78,14 +80,15 @@ impl Handover {
         {
             return Next::HandOver(w.id);
         }
-        let waiting = windows
-            .iter()
-            .find(|w| !over(w) && !self.hinted.contains(&w.id) && now - self.first_seen[&w.id] >= NEEDS_YOU_AFTER);
-        if let Some(w) = waiting {
-            self.hinted.insert(w.id);
-            return Next::Hint { id: w.id, own: w.own };
+        // The newest window that may need the player, front first: one that opens over another (a sign-in over its
+        // store app) is offered in its place, and once it goes, the one under it again.
+        let needs_you = |w: &&Seen| !over(w) && now - self.first_seen[&w.id] >= NEEDS_YOU_AFTER;
+        let newest = windows.iter().filter(needs_you).min_by_key(|w| Reverse(self.first_seen[&w.id]));
+        if newest.map(|w| w.id) == self.offered {
+            return Next::Wait;
         }
-        Next::Wait
+        self.offered = newest.map(|w| w.id);
+        newest.map_or(Next::Wait, |w| Next::Hint { id: w.id, own: w.own })
     }
 }
 
@@ -176,6 +179,23 @@ mod tests {
         let (t0, mut h) = (Instant::now(), Handover::default());
         let found = run(&mut h, t0, (0.0, 30.0), |_| (vec![seen(STEAM, false, false)], false));
         assert_eq!(found, [(5.0, Next::Hint { id: STEAM, own: false })]);
+    }
+
+    #[test]
+    fn the_window_offered_goes_and_the_one_before_it_is_offered_again() {
+        // A store app's window, then its sign-in in front of it, which the player closes: the store app's window may
+        // still need them.
+        const SIGN_IN: isize = 4;
+        let (t0, mut h) = (Instant::now(), Handover::default());
+        let found = run(&mut h, t0, (0.0, 30.0), |t| {
+            let mut windows = vec![seen(STEAM, false, false)];
+            if (3.0..10.0).contains(&t) {
+                windows.insert(0, seen(SIGN_IN, false, false));
+            }
+            (windows, false)
+        });
+        let offered = |id| Next::Hint { id, own: false };
+        assert_eq!(found, [(5.0, offered(STEAM)), (8.0, offered(SIGN_IN)), (10.0, offered(STEAM))]);
     }
 
     #[test]
