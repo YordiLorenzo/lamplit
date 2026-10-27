@@ -129,7 +129,11 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {boolean} touchpad_mouse
  * @property {boolean} steam_devtools  Lamplit opens Steam's DevTools port (the PS button guard and Steam's pop-ups)
  * @property {boolean} online_art  art comes from Steam's store too
+ * @property {number} screensaver_minutes  minutes without input before the screensaver, 0 for never
+ * @property {ScreensaverStyle} screensaver_style
  */
+
+/** @typedef {'mix' | '2d' | '3d'} ScreensaverStyle  the screensaver's scenes: 2D and 3D in turn, or one kind */
 
 /**
  * What became of a launched game. `starting`: it closed within 20 s of starting (a launcher handing over to the game,
@@ -254,6 +258,10 @@ export const prefsSetTouchpadMouse = (on) => call('prefs_set_touchpad_mouse', { 
 export const prefsSetSteamDevtools = (on) => call('prefs_set_steam_devtools', { on });
 /** @param {boolean} on @returns {Promise<Prefs>} */
 export const prefsSetOnlineArt = (on) => call('prefs_set_online_art', { on });
+/** @param {number} minutes 0 for never @returns {Promise<Prefs>} */
+export const prefsSetScreensaverMinutes = (minutes) => call('prefs_set_screensaver_minutes', { minutes });
+/** @param {ScreensaverStyle} style @returns {Promise<Prefs>} */
+export const prefsSetScreensaverStyle = (style) => call('prefs_set_screensaver_style', { style });
 /** @returns {Promise<void>} once the PC has woken up again */
 export const powerSleep = () => call('power_sleep');
 /** @returns {Promise<void>} once Windows has started to restart */

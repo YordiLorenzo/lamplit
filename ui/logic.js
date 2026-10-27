@@ -277,6 +277,7 @@ export const SECTIONS = [
   { key: 'controllers', title: 'Controllers' },
   { key: 'popups', title: 'Overlay and pop-ups' },
   { key: 'stores', title: 'Stores' },
+  { key: 'screensaver', title: 'Screensaver' },
   { key: 'system', title: 'System' },
   { key: 'hidden', title: 'Hidden games' },
   { key: 'power', title: 'Power' },
@@ -299,6 +300,32 @@ const ACCOUNT = {
 };
 /** @param {boolean | null | undefined} v */
 const onOff = (v) => (v ? 'On' : 'Off');
+
+/** The screensaver's settings until Rust's prefs are in, as prefs.rs has them. */
+export const SAVER_DEFAULT = /** @type {const} */ ({ minutes: 5, style: 'mix' });
+/** The delays Settings > Screensaver offers, in minutes; 0 is never. */
+const SAVER_MINUTES = [0, 2, 5, 10, 20];
+/** @type {import('./api.js').ScreensaverStyle[]} */
+const SAVER_STYLES = ['mix', '2d', '3d'];
+const SAVER_STYLE_NAME = { mix: '2D and 3D', '2d': '2D', '3d': '3D' };
+/** @param {number} minutes */
+const saverAfter = (minutes) => (minutes ? `${minutes} min` : 'Off');
+
+/**
+ * The next delay or style in the direction pressed, stopping at either end. A delay Rust holds that isn't in the list
+ * steps to the nearest listed one on that side.
+ * @param {'minutes' | 'style'} what
+ * @param {number | string} now
+ * @param {number} dir -1 or 1
+ */
+export function stepSaver(what, now, dir) {
+  if (what === 'minutes') {
+    const m = Number(now);
+    return (dir > 0 ? SAVER_MINUTES.find((x) => x > m) : SAVER_MINUTES.findLast((x) => x < m)) ?? m;
+  }
+  const at = SAVER_STYLES.indexOf(/** @type {import('./api.js').ScreensaverStyle} */ (now));
+  return SAVER_STYLES[Math.max(0, Math.min(SAVER_STYLES.length - 1, at + dir))];
+}
 
 /**
  * The store apps the Stores section lists: the installed ones. Not the Xbox app: Xbox games start without it, so Rust
@@ -391,6 +418,11 @@ export function sectionSummary(key, state) {
     return [n === 1 ? '1 game' : `${n} games`];
   }
   if (key === 'power') return ['Sleep, restart, shut down'];
+  if (key === 'screensaver') {
+    const minutes = state.prefs?.screensaver_minutes ?? SAVER_DEFAULT.minutes;
+    const style = state.prefs?.screensaver_style ?? SAVER_DEFAULT.style;
+    return [minutes ? `After ${minutes} min · ${SAVER_STYLE_NAME[style]}` : 'Off'];
+  }
   return state.setup?.needed ? ['Setup needed', 'warn'] : [state.display ?? ''];
 }
 
@@ -467,6 +499,11 @@ export function sectionRows(key, state) {
       rows.push({ kind: 'steamport', label: 'Open it (PS button guard, Steam pop-ups in quiet mode)', value: onOff(prefs?.steam_devtools) });
       rows.push({ label: 'While it is open, any program on this PC can control Steam', value: '' });
     }
+  } else if (key === 'screensaver') {
+    rows.push({ kind: 'saverafter', adjust: true, label: 'Starts after', value: saverAfter(prefs?.screensaver_minutes ?? SAVER_DEFAULT.minutes) });
+    rows.push({ kind: 'saverstyle', adjust: true, label: 'Scenes', value: SAVER_STYLE_NAME[prefs?.screensaver_style ?? SAVER_DEFAULT.style] });
+    rows.push({ kind: 'savernow', label: 'Show it now', value: '' });
+    rows.push({ label: 'Starts while Lamplit is in front and no game runs. Any button ends it.', value: '' });
   } else if (key === 'system') {
     if (state.setup?.needed) rows.push({ kind: 'setup', label: 'First-time setup (asks Windows once)', value: 'Needed', tone: 'warn' });
     rows.push({ kind: 'onlineart', label: "Find art online (sends game names to Steam's store)", value: onOff(prefs?.online_art) });

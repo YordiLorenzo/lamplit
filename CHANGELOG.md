@@ -8,6 +8,13 @@ Every release of Lamplit, newest first. The format follows
 
 ### Added
 
+- A screensaver. After a few minutes without input, while Lamplit is in front and no game runs, generative art covers
+  the screen, so a still home screen can't mark an OLED TV: three 2D and three 3D scenes drawn with WebGL2, coloured
+  from the art of your games, with a game's logo or name drifting faintly through each. A new scene blends in every
+  minute and a half or so, and after an hour it fades to black. The first press only ends it. Settings > Screensaver
+  sets the delay (Off, 2, 5, 10 or 20 minutes; 5 by default) and the scenes (2D and 3D, only 2D, or only 3D), and
+  shows it now. Without WebGL2 it shows a moving gradient.
+- `ui/screensaver/preview.html` shows the screensaver's scenes in a normal browser, for working on them.
 - Battle.net: its installed games, from Battle.net's own list. Lamplit starts Battle.net, waits until its log says it
   has signed in, and asks it to start the game. A game too new for Lamplit's list of launch codes opens on its page
   in Battle.net, where you press Play.

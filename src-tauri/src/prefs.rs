@@ -22,11 +22,33 @@ pub struct Prefs {
     /// Art Steam's library cache doesn't have comes from Steam's store, which then learns the names of the games
     /// outside Steam (art.rs).
     pub online_art: bool,
+    /// Minutes without input before the page shows its screensaver, 0 for never (ui/screensaver).
+    pub screensaver_minutes: u32,
+    pub screensaver_style: ScreensaverStyle,
+}
+
+/// Which of the screensaver's scenes the page shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ScreensaverStyle {
+    /// The 2D and the 3D scenes in turn.
+    #[serde(rename = "mix")]
+    Mix,
+    #[serde(rename = "2d")]
+    Flat,
+    #[serde(rename = "3d")]
+    Depth,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { sound_follows: true, touchpad_mouse: false, steam_devtools: false, online_art: true }
+        Prefs {
+            sound_follows: true,
+            touchpad_mouse: false,
+            steam_devtools: false,
+            online_art: true,
+            screensaver_minutes: 5,
+            screensaver_style: ScreensaverStyle::Mix,
+        }
     }
 }
 
@@ -54,8 +76,24 @@ pub fn change(app: &AppHandle, change: impl FnOnce(&mut Prefs)) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::{Prefs, ScreensaverStyle};
+
     #[test]
     fn the_defaults_reach_the_page_as_in_the_fixture() {
-        assert_eq!(serde_json::to_value(super::Prefs::default()).unwrap(), ipc_fixture!("prefs"));
+        assert_eq!(serde_json::to_value(Prefs::default()).unwrap(), ipc_fixture!("prefs"));
+    }
+
+    #[test]
+    fn every_screensaver_style_is_one_the_page_knows() {
+        let all = [ScreensaverStyle::Mix, ScreensaverStyle::Flat, ScreensaverStyle::Depth];
+        assert_eq!(serde_json::to_value(all).unwrap(), ipc_fixture!("values")["screensaver_style"]);
+    }
+
+    #[test]
+    fn prefs_from_before_the_screensaver_get_its_defaults() {
+        let old = r#"{ "sound_follows": false, "touchpad_mouse": true, "steam_devtools": false, "online_art": true }"#;
+        let prefs: Prefs = serde_json::from_str(old).unwrap();
+        assert!(!prefs.sound_follows && prefs.touchpad_mouse);
+        assert_eq!((prefs.screensaver_minutes, prefs.screensaver_style), (5, ScreensaverStyle::Mix));
     }
 }

@@ -21,6 +21,7 @@ import {
   sectionRows,
   sectionSummary,
   stepAutoOff,
+  stepSaver,
   storeChoices,
   storeWarning,
   typed,
@@ -589,4 +590,38 @@ describe('focus in Settings', () => {
     assert.equal(focusIndex(rows, 'padoff:gone'), 1);
   });
   test('nothing to focus', () => assert.equal(focusIndex([{ heading: 'x' }, { label: 'y' }], null), -1));
+});
+
+describe('Settings > Screensaver', () => {
+  const saver = (changes) => settingsState({ prefs: prefs(changes) });
+  const shown = (state) => sectionRows('screensaver', state).filter((r) => r.kind).map((r) => [r.kind, r.value]);
+  test('the delay and the scenes, as Rust holds them', () => {
+    assert.deepEqual(shown(saver({})), [['saverafter', '5 min'], ['saverstyle', '2D and 3D'], ['savernow', '']]);
+    assert.deepEqual(shown(saver({ screensaver_minutes: 0, screensaver_style: known('screensaver_style', '3d') })).slice(0, 2), [
+      ['saverafter', 'Off'],
+      ['saverstyle', '3D'],
+    ]);
+  });
+  test("Rust's defaults until the prefs are in", () => {
+    assert.deepEqual(shown(settingsState()), shown(saver({})));
+  });
+  test('the summary names the delay and the scenes, or Off', () => {
+    assert.deepEqual(sectionSummary('screensaver', saver({ screensaver_minutes: 10 })), ['After 10 min · 2D and 3D']);
+    assert.deepEqual(sectionSummary('screensaver', saver({ screensaver_minutes: 0 })), ['Off']);
+  });
+  test('← and → step through the delays and stop at either end', () => {
+    assert.equal(stepSaver('minutes', 5, 1), 10);
+    assert.equal(stepSaver('minutes', 5, -1), 2);
+    assert.equal(stepSaver('minutes', 2, -1), 0);
+    assert.equal(stepSaver('minutes', 0, -1), 0);
+    assert.equal(stepSaver('minutes', 20, 1), 20);
+    // A delay written by hand into prefs.json steps to the nearest listed one on the side pressed.
+    assert.equal(stepSaver('minutes', 7, 1), 10);
+    assert.equal(stepSaver('minutes', 7, -1), 5);
+  });
+  test('← and → step through every style Rust knows, and stop at either end', () => {
+    const all = values.screensaver_style;
+    assert.deepEqual(all.map((s, i) => stepSaver('style', s, 1) === (all[i + 1] ?? s)), all.map(() => true));
+    assert.equal(stepSaver('style', all[0], -1), all[0]);
+  });
 });
