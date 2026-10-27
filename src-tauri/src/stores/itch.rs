@@ -10,7 +10,10 @@ use crate::files::{file_name, inside, local_app_data, on_a_drive, read_text};
 use crate::library::{Game, Launch};
 use serde::Deserialize;
 use serde_json::Value;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use winreg::RegKey;
 use winreg::enums::HKEY_CURRENT_USER;
 
@@ -42,10 +45,6 @@ pub fn games() -> Vec<Game> {
     let mut out: Vec<Game> = Vec::new();
     for cave in caves(&db) {
         let id = format!("itch:{}", cave.game_id);
-        // A game installed twice (two of its downloads) is listed once.
-        if out.iter().any(|g| g.id == id) {
-            continue;
-        }
         let name = cave.title.as_deref().map_or_else(|| prettify(&file_name(&cave.dir)), clean_name);
         if !on_a_drive(&cave.dir) || !cave.dir.is_dir() {
             log::info!("discovery itch: {name} skipped, {} is missing", cave.dir.display());
@@ -76,18 +75,33 @@ struct Cave {
     sandbox: Option<bool>,
 }
 
-/// The installs of games, from the tables caves, games and install_locations. itch.io also sells tools, assets,
-/// soundtracks and books, and the games table says which each is.
+/// The installs of games, from the tables caves, games and install_locations: one per game. itch.io also sells tools,
+/// assets, soundtracks and books, and the games table says which each is.
+///
+/// A game installed twice (two of its downloads) has two caves. `itch-setup --run-game` names only the game, and butler
+/// then launches the game's most recently used cave (cmd/launchcmd resolveCave), so Lamplit takes that one too, for
+/// every launch: the folder it watches is then the one the game runs from. Should that cave be one Lamplit can't
+/// start, the game is left out rather than started from another install.
 fn caves(db: &sqlite::Db) -> Vec<Cave> {
     let (Some(caves), Some(games), Some(locations)) =
         (db.rows("caves"), db.rows("games"), db.rows("install_locations"))
     else {
         return Vec::new();
     };
-    caves
+    let mut caves: Vec<(&sqlite::Row, Option<OffsetDateTime>)> = caves
         .iter()
-        .filter_map(|c| {
+        .map(|c| (c, used(["local_last_run_at", "last_touched_at", "installed_at"].map(|t| c.text(t)))))
+        .collect();
+    // Newest first, and among equals the database's order, as butler's stable sort leaves them.
+    caves.sort_by_key(|(_, used)| std::cmp::Reverse(*used));
+    let mut seen = HashSet::new();
+    caves
+        .into_iter()
+        .filter_map(|(c, _)| {
             let game_id = c.int("game_id")?;
+            if !seen.insert(game_id) {
+                return None;
+            }
             let game = games.iter().find(|g| g.int("id") == Some(game_id));
             if game.and_then(|g| g.text("classification")).is_some_and(|kind| kind != "game") {
                 return None;
@@ -107,6 +121,13 @@ fn caves(db: &sqlite::Db) -> Vec<Cave> {
             Some(Cave { game_id, title, dir, exes: windows_exes(&verdict), target, sandbox })
         })
         .collect()
+}
+
+/// When a cave was last used, as butler orders caves (caveFreshness): its last local run, else when the app last saw
+/// it played or touched, else when it was installed; the first of these that is set counts, not the latest. butler
+/// keeps them as RFC 3339 text, which a different time zone or number of decimals would sort wrongly as text.
+fn used(times: [Option<&str>; 3]) -> Option<OffsetDateTime> {
+    times.into_iter().flatten().find_map(|t| OffsetDateTime::parse(t, &Rfc3339).ok())
 }
 
 /// The native Windows exes in an install's verdict, the app's scan of the folder: nearest the top of the folder
@@ -294,12 +315,8 @@ mod tests {
         assert_eq!(
             caves(&db),
             vec![
-                cave(
-                    1001,
-                    "Fennel",
-                    &format!(r"{apps}\fennel"),
-                    &["Fennel.exe", r"tools\editor.exe", "UnityCrashHandler64.exe"]
-                ),
+                // Of Fennel's two downloads, the one used last, which butler launches for the game.
+                cave(1001, "Fennel", &format!(r"{apps}\fennel-beta"), &["FennelBeta.exe"]),
                 cave(1003, "Web Toy", &format!(r"{apps}\web-toy"), &[]),
                 // The player picked the play action in the app, and switched the sandbox off for it.
                 Cave {
@@ -310,7 +327,29 @@ mod tests {
                 cave(1005, "Share Game", r"\\nas\itch\share-game", &["share.exe"]),
             ]
         );
+        // The first download's scan: the game's exe first, the bigger crash handler last.
+        let rows = db.rows("caves").unwrap();
+        let first = rows.iter().find(|c| c.text("id") == Some("cave-fennel")).unwrap();
+        let verdict: Value = serde_json::from_str(first.text("verdict").unwrap()).unwrap();
+        assert_eq!(windows_exes(&verdict), ["Fennel.exe", r"tools\editor.exe", "UnityCrashHandler64.exe"]);
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn when_a_cave_was_used() {
+        let at = |t: &str| OffsetDateTime::parse(t, &Rfc3339).unwrap();
+        // The first time that is set counts, also when a later one is newer.
+        assert_eq!(
+            used([None, Some("2026-10-01T14:00:00+05:00"), Some("2026-10-25T09:00:00Z")]),
+            Some(at("2026-10-01T09:00:00Z"))
+        );
+        // As times, not as text: 10:30 UTC is after 14:00 in UTC+5.
+        assert!(
+            used([Some("2026-10-01T10:30:00.25Z"), None, None]) > used([Some("2026-10-01T14:00:00+05:00"), None, None])
+        );
+        // A time that doesn't read counts as not set, as butler reads it.
+        assert_eq!(used([Some("yesterday"), None, Some("2026-03-01T10:00:00Z")]), Some(at("2026-03-01T10:00:00Z")));
+        assert_eq!(used([None, None, None]), None);
     }
 
     /// A game's folder with these files, and its install as the app's database describes it.

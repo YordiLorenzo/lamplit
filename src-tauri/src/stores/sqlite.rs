@@ -435,7 +435,7 @@ mod tests {
         let db = Db::from_bytes(BUTLER.to_vec(), BUTLER_WAL.to_vec()).unwrap();
         let caves = db.rows("caves").unwrap();
         let ids: Vec<&str> = caves.iter().filter_map(|r| r.text("id")).collect();
-        assert_eq!(ids, ["cave-fennel", "cave-tool", "cave-web", "cave-custom", "cave-share"]);
+        assert_eq!(ids, ["cave-fennel", "cave-tool", "cave-web", "cave-custom", "cave-fennel-beta", "cave-share"]);
         // Enough games to need interior pages, and a verdict long enough to continue on overflow pages.
         let games = db.rows("games").unwrap();
         assert_eq!(games.len(), 205);
