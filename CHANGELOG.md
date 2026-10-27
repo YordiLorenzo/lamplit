@@ -31,8 +31,9 @@ Every release of Lamplit, newest first. The format follows
   in Battle.net, where you press Play.
 - The Amazon Games app: its installed games, from the app's own list. They start through the app, which Lamplit
   starts first.
-- itch.io: the games the itch app installed, from its own list. They start from their own exe, so the app doesn't
-  have to run.
+- itch.io: the games the itch app installed, from its own list. They start as the itch app would start them: the
+  exe and arguments the game's launch manifest (`.itch.toml`) names, else the exe the app found, so the app doesn't
+  have to run. Of several, the one you picked in the itch app goes first.
 - The three stores have their own choice in Find's store filter, and their apps show in Settings > Stores. Battle.net
   and itch.io games carry the store's logo; the Amazon Games app has no logo Lamplit can use, so it shows its name.
 - A game's menu (Options, or Menu on an Xbox controller) lifts the game's cover out of the row toward you, blurs the

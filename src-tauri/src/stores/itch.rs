@@ -1,12 +1,13 @@
 // itch.io: the games the itch app installed, from its database (butler.db, kept by butler, the app's helper). They
-// are DRM-free and start from their own exe, as the itch app can also start them, so the app itself never has to
-// run.
+// are DRM-free and start as the app would start them: the action the game's manifest names, else the exe the app
+// found. So the app itself never has to run.
 
 use super::installed::skip_exe;
 use super::names::{clean_name, prettify};
 use super::{Store, sqlite};
 use crate::files::{file_name, inside, local_app_data, on_a_drive, read_text};
 use crate::library::{Game, Launch};
+use serde::Deserialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use winreg::RegKey;
@@ -42,11 +43,11 @@ pub fn games() -> Vec<Game> {
             log::info!("discovery itch: {name} skipped, {} is missing", cave.dir.display());
             continue;
         }
-        let Some(exe) = cave.exes.iter().filter_map(|rel| inside(&cave.dir, rel)).find(|p| p.is_file()) else {
+        let Some(launch) = launch(&cave) else {
             log::info!("discovery itch: {name} skipped, it has no Windows exe (an HTML or Java game, say)");
             continue;
         };
-        out.push(Game::new(id, name, Some(Store::Itch), cave.dir, Launch::Exe(exe)));
+        out.push(Game::new(id, name, Some(Store::Itch), cave.dir, launch));
     }
     out
 }
@@ -59,6 +60,8 @@ struct Cave {
     dir: PathBuf,
     /// The Windows exes the app found in the folder, relative to it, best first.
     exes: Vec<String>,
+    /// What the player picked to launch in the app, when a game has several: an action's name or a path.
+    target: Option<String>,
 }
 
 /// The installs of games, from the tables caves, games and install_locations. itch.io also sells tools, assets,
@@ -86,7 +89,9 @@ fn caves(db: &sqlite::Db) -> Vec<Cave> {
             };
             let verdict: Value = serde_json::from_str(c.text("verdict")?).ok()?;
             let title = game.and_then(|g| g.text("title")).map(str::to_string);
-            Some(Cave { game_id, title, dir, exes: windows_exes(&verdict) })
+            let settings: Value = c.text("settings").and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default();
+            let target = settings["launchTarget"].as_str().filter(|t| !t.is_empty()).map(str::to_string);
+            Some(Cave { game_id, title, dir, exes: windows_exes(&verdict), target })
         })
         .collect()
 }
@@ -106,6 +111,94 @@ fn windows_exes(verdict: &Value) -> Vec<String> {
         .collect();
     list.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)).then(b.2.cmp(&a.2)));
     list.into_iter().map(|(.., path)| path).collect()
+}
+
+/// What starts a game, as butler (the app's helper) picks it: an action from the game's manifest that runs on
+/// Windows, else the exes the app found. Of several, the one the player picked in the app, else the action named
+/// "play", else the first; the app itself would ask the player.
+fn launch(cave: &Cave) -> Option<Launch> {
+    if let Some((exe, args)) = manifest_action(&cave.dir, cave.target.as_deref()) {
+        return Some(if args.is_empty() { Launch::Exe(exe) } else { Launch::ExeArgs(exe, command_line(&args)) });
+    }
+    let picked = cave.target.as_deref().and_then(|t| cave.exes.iter().find(|e| same_path(e, t)));
+    picked.into_iter().chain(&cave.exes).filter_map(|rel| inside(&cave.dir, rel)).find(|p| p.is_file()).map(Launch::Exe)
+}
+
+/// A game's `.itch.toml`, at the top of its folder (https://itch.io/docs/itch/integrating/manifest.html). Lamplit
+/// reads the actions' name, path, args and platform; the rest (sandbox, API scope, prerequisites) is the app's.
+#[derive(Deserialize)]
+struct Manifest {
+    #[serde(default)]
+    actions: Vec<Action>,
+}
+
+#[derive(Deserialize)]
+struct Action {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    path: String,
+    #[serde(default)]
+    args: Vec<String>,
+    platform: Option<String>,
+}
+
+/// The exe and arguments of the manifest's action for this game, if it ships a manifest with one that runs on Windows:
+/// one with no platform or `windows`, whose path (`{{EXT}}` standing for `.exe`) is an exe in the game's folder. URLs,
+/// folders and other platforms' files are left out, as butler leaves them out on Windows.
+fn manifest_action(dir: &Path, picked: Option<&str>) -> Option<(PathBuf, Vec<String>)> {
+    let text = read_text(&dir.join(".itch.toml"))?;
+    let manifest: Manifest = toml::from_str(&text)
+        .map_err(|e| log::info!("discovery itch: {} has a manifest Lamplit can't read: {e}", dir.display()))
+        .ok()?;
+    let actions: Vec<(&Action, String, PathBuf)> = manifest
+        .actions
+        .iter()
+        .filter(|a| a.platform.as_deref().is_none_or(|p| p == "windows"))
+        .filter_map(|a| {
+            let path = a.path.replacen("{{EXT}}", ".exe", 1);
+            let exe = inside(dir, &path.replace('/', "\\"))?;
+            (exe.extension().is_some_and(|x| x.eq_ignore_ascii_case("exe")) && exe.is_file()).then_some((a, path, exe))
+        })
+        .collect();
+    let named = |name: &str| actions.iter().find(|(a, ..)| a.name == name);
+    // A pick by path may spell `{{EXT}}` out or not.
+    let at = |t: &str| actions.iter().find(|(a, path, _)| same_path(&a.path, t) || same_path(path, t));
+    let (action, _, exe) =
+        picked.and_then(|t| named(t).or_else(|| at(t))).or_else(|| named("play")).or(actions.first())?;
+    Some((exe.clone(), action.args.clone()))
+}
+
+/// Two paths relative to a game's folder, in either slash and with or without `./`, are the same.
+fn same_path(a: &str, b: &str) -> bool {
+    let plain = |p: &str| p.replace('\\', "/").trim_start_matches("./").to_lowercase();
+    plain(a) == plain(b)
+}
+
+/// Arguments as one Windows command line, quoted so the program splits it back the same way (CommandLineToArgvW and
+/// the C runtime: backslashes count double only before a quote).
+fn command_line(args: &[String]) -> String {
+    let quote = |arg: &String| {
+        if !arg.is_empty() && !arg.contains([' ', '\t', '\n', '\x0B', '"']) {
+            return arg.clone();
+        }
+        let mut out = String::from('"');
+        let mut slashes = 0;
+        for c in arg.chars() {
+            if c == '\\' {
+                slashes += 1;
+                continue;
+            }
+            let n = if c == '"' { slashes * 2 + 1 } else { slashes };
+            out.extend(std::iter::repeat_n('\\', n));
+            out.push(c);
+            slashes = 0;
+        }
+        out.extend(std::iter::repeat_n('\\', slashes * 2));
+        out.push('"');
+        out
+    };
+    args.iter().map(quote).collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
@@ -133,6 +226,7 @@ mod tests {
             title: Some(title.into()),
             dir: PathBuf::from(dir),
             exes: exes.iter().map(|e| (*e).to_string()).collect(),
+            target: None,
         };
         // Not the tool. The HTML game is there, with no exe to start (games() leaves it out), and so is the one on a
         // share (games() never follows it).
@@ -146,11 +240,124 @@ mod tests {
                     &["Fennel.exe", r"tools\editor.exe", "UnityCrashHandler64.exe"]
                 ),
                 cave(1003, "Web Toy", &format!(r"{apps}\web-toy"), &[]),
-                cave(1004, "Clover™", r"D:\Games\Clover", &[r"bin\clover.exe"]),
+                // The player picked the play action in the app.
+                Cave {
+                    target: Some("play".into()), ..cave(1004, "Clover™", r"D:\Games\Clover", &[r"bin\clover.exe"])
+                },
                 cave(1005, "Share Game", r"\\nas\itch\share-game", &["share.exe"]),
             ]
         );
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A game's folder with these files, and its install as the app's database describes it.
+    fn install(name: &str, files: &[&str], exes: &[&str]) -> (PathBuf, impl Fn(Option<&str>) -> Cave) {
+        let dir = scratch(name);
+        for f in files {
+            let path = dir.join(f);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, [0u8; 16]).unwrap();
+        }
+        let exes: Vec<String> = exes.iter().map(|e| (*e).to_string()).collect();
+        let cave_dir = dir.clone();
+        let cave = move |target: Option<&str>| Cave {
+            game_id: 1,
+            title: None,
+            dir: cave_dir.clone(),
+            exes: exes.clone(),
+            target: target.map(str::to_string),
+        };
+        (dir, cave)
+    }
+
+    #[test]
+    fn starts_what_the_manifest_names() {
+        // The app's scan puts the biggest exe first, which isn't the game; the manifest names the game and how to
+        // start it.
+        let (dir, cave) = install(
+            "manifest",
+            &["Launcher.exe", r"bin\Game.exe", r"bin\editor.exe", r"tools\big.exe", r"docs\manual.html"],
+            &[r"tools\big.exe", "Launcher.exe", r"bin\Game.exe"],
+        );
+        let manifest = r#"
+[[actions]]
+name = "editor"
+path = "bin/editor{{EXT}}"
+
+[[actions]]
+name = "play"
+path = "bin/Game.exe"
+platform = "windows"
+args = ["--fullscreen", "--save", "C:\\Saved Games\\Fennel\\", 'say "hi"']
+sandbox = true
+
+[[actions.locales.fr]]
+name = "Jouer"
+
+[[actions]]
+name = "play"
+path = "Game.x86_64"
+platform = "linux"
+
+[[actions]]
+name = "forums"
+path = "https://example.itch.io/fennel/community"
+
+[[actions]]
+name = "manual"
+path = "docs/"
+
+[[prereqs]]
+name = "vcredist-2015-x64"
+"#;
+        let write = |text: &str| fs::write(dir.join(".itch.toml"), text).unwrap();
+        write(manifest);
+        let play = Launch::ExeArgs(
+            dir.join(r"bin\Game.exe"),
+            r#"--fullscreen --save "C:\Saved Games\Fennel\\" "say \"hi\"""#.into(),
+        );
+        assert_eq!(launch(&cave(None)), Some(play.clone()));
+        // What the player picked in the app, by action name or by path; a pick an update left behind counts for
+        // nothing.
+        let editor = Launch::Exe(dir.join(r"bin\editor.exe"));
+        assert_eq!(launch(&cave(Some("editor"))), Some(editor.clone()));
+        assert_eq!(launch(&cave(Some("./bin/editor.exe"))), Some(editor.clone()));
+        assert_eq!(launch(&cave(Some("Old.exe"))), Some(play));
+        // Without a play action for Windows, the first action that has an exe.
+        write(
+            "[[actions]]\nname = 'web'\npath = 'https://example.itch.io'\n[[actions]]\nname = 'editor'\npath = 'bin/editor.exe'",
+        );
+        assert_eq!(launch(&cave(None)), Some(editor));
+        // A manifest with nothing for Windows, or one that doesn't read, leaves the exes the app found.
+        let found = Some(Launch::Exe(dir.join(r"tools\big.exe")));
+        write("[[actions]]\nname = 'play'\npath = 'Game.x86_64'\nplatform = 'linux'");
+        assert_eq!(launch(&cave(None)), found);
+        write("[[actions]\nname = ");
+        assert_eq!(launch(&cave(None)), found);
+        // No manifest: the exes the app found, the player's pick among them first.
+        fs::remove_file(dir.join(".itch.toml")).unwrap();
+        assert_eq!(launch(&cave(None)), found);
+        assert_eq!(launch(&cave(Some("Launcher.exe"))), Some(Launch::Exe(dir.join("Launcher.exe"))));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_manifest_path_stays_in_the_games_folder() {
+        let (dir, cave) = install("outside", &["Game.exe"], &["Game.exe"]);
+        fs::write(dir.join(".itch.toml"), "[[actions]]\nname = 'play'\npath = '../other/Game.exe'").unwrap();
+        assert_eq!(launch(&cave(None)), Some(Launch::Exe(dir.join("Game.exe"))));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn command_lines() {
+        let line = |args: &[&str]| command_line(&args.iter().map(|a| (*a).to_string()).collect::<Vec<_>>());
+        assert_eq!(line(&["-w", "1920"]), "-w 1920");
+        assert_eq!(line(&["a", ""]), r#"a """#);
+        assert_eq!(line(&[r"C:\Program Files\x"]), r#""C:\Program Files\x""#);
+        // Backslashes count double only before a quote.
+        assert_eq!(line(&[r#"a\"b"#]), r#""a\\\"b""#);
+        assert_eq!(line(&[r"dir with space\"]), r#""dir with space\\""#);
     }
 
     #[test]
