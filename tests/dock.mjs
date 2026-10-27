@@ -185,12 +185,17 @@ export async function dockTests({ open, close, check, shots }) {
     await page.screenshot({ path: path.join(shots, 'dock-output.png'), omitBackground: true });
     check('Cross on the output lists the outputs, on the one in use', v.focus?.startsWith('TV') && JSON.stringify(v.outputs) === '["TVIn use","PRO X 2 headset"]', `${v.focus} ${JSON.stringify(v.outputs)}`);
     const island = await page.evaluate(() => document.getElementById('island').offsetWidth);
+    const marks = () => page.evaluate(() => [...document.querySelectorAll('.output')].map((o) => `${o.className.replace('output slot', '').trim()}|${o.querySelector('.check') ? 'check' : ''}`));
+    check('the output in use has the check and its own look, apart from the focus', JSON.stringify(await marks()) === '["focus current|check","|"]', JSON.stringify(await marks()));
     let from = v.calls.length;
     await emit(page, 'dock-pad', 'down');
     await emit(page, 'dock-pad', 'ok');
     await idle(page);
     v = await view(page);
-    check('Cross on another output makes it the default, and the list closes', (await since(page, from)).includes(`sound_set_default {"id":"${headsetOut.id}"}`) && v.outputs === null && v.values.output === 'Headset', `${await since(page, from)} ${v.values.output}`);
+    check('Cross on another output moves the check to it at once, and the list stays a moment to show it', JSON.stringify(v.outputs) === '["TV","PRO X 2 headsetIn use"]' && JSON.stringify(await marks()) === '["|","focus current picked|check"]', `${JSON.stringify(v.outputs)} ${JSON.stringify(await marks())}`);
+    await page.waitForTimeout(800);
+    v = await view(page);
+    check('then that output is the default, and the list closes', (await since(page, from)).includes(`sound_set_default {"id":"${headsetOut.id}"}`) && v.outputs === null && v.values.output === 'Headset', `${await since(page, from)} ${v.values.output}`);
     check('the island keeps its width while the list shows', island === (await page.evaluate(() => document.getElementById('island').offsetWidth)), String(island));
     await emit(page, 'dock-pad', 'up');
     from = v.calls.length;
@@ -220,6 +225,15 @@ export async function dockTests({ open, close, check, shots }) {
     await idle(page);
     v = await view(page);
     check('Cross on quiet mode switches it, lights its icon, and says what had to wait', (await since(page, from)).includes('quiet_set {"on":true}') && v.values.quiet === 'Quiet|on' && v.message.includes('Ubisoft'), `${v.values.quiet} ${v.message}`);
+    // Windows' own settings were quiet before quiet mode went on, so switching it off leaves them quiet.
+    await page.evaluate(() => {
+      const s = window.__settings;
+      s.quiet_set = ({ on }) => (s.quiet = { state: 'on', active: on, notes: [] });
+    });
+    await emit(page, 'dock-pad', 'ok');
+    await idle(page);
+    v = await view(page);
+    check("Cross again switches quiet mode off, though Windows stays quiet, and says why", v.values.quiet === 'Quiet' && v.hint.includes('Turn on') && v.message.includes('already quiet'), `${v.values.quiet} ${v.hint} ${v.message}`);
     await emit(page, 'dock-pad', 'right');
     from = v.calls.length;
     await emit(page, 'dock-pad', 'ok');

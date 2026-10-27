@@ -9,6 +9,7 @@
  * @typedef {import('./api.js').Charge} Charge
  * @typedef {import('./api.js').PadKind} PadKind
  * @typedef {import('./api.js').PadBattery} PadBattery
+ * @typedef {import('./api.js').Quiet} Quiet
  * @typedef {import('./state.js').Row} Row
  * @typedef {typeof import('./state.js').state} State
  */
@@ -411,6 +412,36 @@ export function nearest(from, boxes, dir) {
   return ahead.filter((b) => b.along < next + from.height / 2).reduce((a, b) => (b.across < a.across ? b : a)).i;
 }
 
+// ---------- quiet mode ----------
+
+/**
+ * Quiet mode as the player switched it (`active`), and what Windows does (`state`). Switching it off puts back what
+ * was there before, which may have been quiet already; switched on, an app that couldn't be changed leaves some
+ * pop-ups (the notes say which).
+ * @param {Quiet | null} quiet
+ * @returns {{ on: boolean, label: string, value: string, tone: '' | 'good' | 'warn', note: string }} label names the
+ *   dock's tile, value is the Settings row's, and note tells the player who just switched it off why pop-ups stay off
+ */
+export function quietMode(quiet) {
+  if (!quiet) return { on: false, label: 'Quiet', value: '…', tone: '', note: '' };
+  if (quiet.active) {
+    return quiet.state === 'on'
+      ? { on: true, label: 'Quiet', value: 'On', tone: 'good', note: '' }
+      : { on: true, label: 'Partly quiet', value: 'On · some pop-ups still show', tone: 'warn', note: '' };
+  }
+  if (quiet.state === 'off') return { on: false, label: 'Quiet', value: 'Off', tone: '', note: '' };
+  const all = quiet.state === 'on';
+  return {
+    on: false,
+    label: 'Quiet',
+    value: all ? 'Off · Windows is quiet on its own' : 'Off · some pop-ups are off in Windows',
+    tone: '',
+    note: all
+      ? "Quiet mode is off. Windows' own settings were already quiet, so pop-ups stay off."
+      : "Quiet mode is off. Some of Windows' own settings were already quiet, so those pop-ups stay off.",
+  };
+}
+
 // ---------- the Settings screen ----------
 
 export const SECTIONS = [
@@ -626,12 +657,8 @@ export function sectionRows(key, state) {
     // An unknown state can still be switched: the overlay logs the switch, and Lamplit knows the state from then on.
     const value = on === null ? 'Unknown' : onOff(on);
     rows.push(installed ? { kind: 'stats', label, value, tone: on ? 'good' : '' } : { label, value: 'Not available' });
-    rows.push({
-      kind: 'quiet',
-      label: 'Quiet mode (no pop-ups, no Game Bar recording)',
-      value: { on: 'On', off: 'Off', partly: 'Partly on' }[state.quiet?.state] ?? '…',
-      tone: state.quiet?.state === 'on' ? 'good' : state.quiet?.state === 'partly' ? 'warn' : '',
-    });
+    const quiet = quietMode(state.quiet);
+    rows.push({ kind: 'quiet', label: 'Quiet mode (no pop-ups, no Game Bar recording)', value: quiet.value, tone: quiet.tone });
     rows.push({ kind: 'dock', label: 'Dock over games (hold PS, or View and Menu)', value: onOff(prefs?.dock) });
   } else if (key === 'stores') {
     for (const s of storeApps(state)) {

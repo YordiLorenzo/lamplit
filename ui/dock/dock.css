@@ -421,8 +421,30 @@ body.pointer { cursor: default; }
   border-radius: calc(var(--u) * 1.6);
   font-size: calc(var(--u) * 2.3);
 }
-.output span:first-of-type { flex: 1; }
-.output .value { font-size: calc(var(--u) * 1.9); color: rgb(var(--lamp)); }
+/* The output in use: lit in the lamp's colour, with a check. The focus stays the white ring, which goes without its
+   amber glow here, so the two never look alike. */
+.output > span:first-of-type { flex: 1; }
+.output.current { background: rgb(var(--lamp) / .16); }
+.output.current.focus { background: rgb(var(--lamp) / .24); }
+.output.current > .icon { color: rgb(var(--lamp)); }
+.output.current > span:first-of-type { font-weight: 650; }
+.output .value { display: flex; align-items: center; gap: calc(var(--u) * .9); font-size: calc(var(--u) * 2); font-weight: 650; color: rgb(var(--lamp)); }
+.output .check {
+  display: grid;
+  place-items: center;
+  width: calc(var(--u) * 3.2);
+  height: calc(var(--u) * 3.2);
+  border-radius: 50%;
+  background: rgb(var(--lamp));
+  color: #2b1605;
+}
+.output .check .icon { width: calc(var(--u) * 2.2); height: calc(var(--u) * 2.2); }
+/* Chosen: the check springs in, and the row glows once, before the list closes. */
+.output.picked { animation: picked 650ms var(--glide); }
+.output.picked .check { animation: check-in 420ms var(--spring); }
+@keyframes picked { 25% { background: rgb(var(--lamp) / .4); } }
+@keyframes check-in { from { scale: .3; opacity: 0; } }
+#dock:has(#outputs:not([hidden])) #ring { box-shadow: 0 0 0 calc(var(--u) * .34) #fff, 0 0 calc(var(--u) * 2) rgb(255 255 255 / .18); }
 
 #message { max-width: calc(var(--u) * 90); font-size: calc(var(--u) * 2); color: var(--warn); text-align: center; }
 #message:empty { display: none; }
@@ -461,5 +483,5 @@ body.pointer { cursor: default; }
     transition-delay: 0s;
   }
   #island[data-mode='gone'] { transition: opacity 150ms ease; }
-  .tile.closing { animation: none; }
+  .tile.closing, .output.picked, .output.picked .check { animation: none; }
 }

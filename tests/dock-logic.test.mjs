@@ -34,10 +34,16 @@ describe('the tiles', () => {
   });
 
   test('quiet mode and the stats show their state by their icon, with one label each', () => {
-    const quiet = (state) => tile(data({ quiet: like(ipc('quiet'), { state: known('quiet_state', state) }) }), 'quiet');
-    assert.deepEqual([quiet('on').icon, quiet('on').on, quiet('on').label], ['quiet-on', true, 'Quiet']);
-    assert.deepEqual([quiet('off').icon, quiet('off').on], ['quiet', false]);
-    assert.deepEqual([quiet('partly').label, quiet('partly').on, quiet('partly').tone], ['Partly quiet', true, 'warn']);
+    const quiet = (state, active) => {
+      const t = tile(data({ quiet: like(ipc('quiet'), { state: known('quiet_state', state), active }) }), 'quiet');
+      return [t.icon, t.on, t.label, t.tone];
+    };
+    assert.deepEqual(quiet('on', true), ['quiet-on', true, 'Quiet', '']);
+    assert.deepEqual(quiet('off', false), ['quiet', false, 'Quiet', '']);
+    assert.deepEqual(quiet('partly', true), ['quiet-on', true, 'Partly quiet', 'warn']);
+    // The player's switch, not Windows: switched off where Windows was quiet before, it is off, quiet or not.
+    assert.deepEqual(quiet('on', false), ['quiet', false, 'Quiet', '']);
+    assert.deepEqual(quiet('partly', false), ['quiet', false, 'Quiet', '']);
     const stats = (on) => tile(data({ overlays: like(ipc('overlays'), { nvidia_stats: on }) }), 'stats');
     assert.deepEqual([stats(true).on, stats(false).on, stats(null).on, stats(null).label], [true, false, false, 'Stats']);
   });

@@ -55,6 +55,8 @@ Every release of Lamplit, newest first. The format follows
 
 ### Changed
 
+- Settings' quiet mode row shows how you switched it. Switched off where Windows' own settings were already quiet, it
+  says Off, and that Windows is quiet on its own, rather than On.
 - Games from these three stores no longer turn up as games outside any store.
 - The button hint for a game's details says Game menu.
 - Exes in Windows' cache of installers (`Package Cache`) are no longer taken for games outside any store.

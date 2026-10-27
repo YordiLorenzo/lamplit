@@ -3,7 +3,7 @@
 // played, the batteries), the button hints, and the springs it moves with. Nothing here touches the DOM or Tauri, so
 // tests/dock-logic.test.mjs runs it in Node.
 
-import { playTimeText } from '../logic.js';
+import { playTimeText, quietMode } from '../logic.js';
 
 /**
  * @typedef {import('../api.js').Sound} Sound
@@ -54,21 +54,15 @@ export const outputLabel = (device) =>
 
 /** @param {DockData} d @returns {Tile[]} */
 export function tiles(d) {
-  const quiet = d.quiet?.state;
-  const quietOn = quiet === 'on' || quiet === 'partly';
+  // As the player switched it: off can leave Windows quiet, when it was before.
+  const quiet = quietMode(d.quiet);
   const stats = d.overlays.nvidia_stats === true;
   const out = d.sound?.outputs.find((o) => o.default);
   /** @type {Tile[]} */
   const row = [
     { key: 'resume', icon: 'resume', label: 'Resume', on: false, tone: '' },
     { key: 'output', icon: outputIcon(out?.kind), label: outputLabel(out), on: false, tone: '' },
-    {
-      key: 'quiet',
-      icon: quietOn ? 'quiet-on' : 'quiet',
-      label: quiet === 'partly' ? 'Partly quiet' : 'Quiet',
-      on: quietOn,
-      tone: quiet === 'partly' ? 'warn' : '',
-    },
+    { key: 'quiet', icon: quiet.on ? 'quiet-on' : 'quiet', label: quiet.label, on: quiet.on, tone: quiet.tone === 'warn' ? 'warn' : '' },
   ];
   // An unknown state can still be switched: NVIDIA's overlay logs the switch.
   if (d.overlays.nvidia_overlay) row.push({ key: 'stats', icon: 'stats', label: 'Stats', on: stats, tone: '' });
