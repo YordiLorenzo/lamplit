@@ -49,13 +49,9 @@ function game(i, { noArt: none, ...extra } = {}) {
 
 /** What the page hears about a launched game. @param {string} state @param {string} id */
 const play = (state, id, changes = {}) => like(ipc('play').find((p) => p.state === state), { id, ...changes });
-/**
- * Rust's news that a game runs. The game being started gets the screen once the starting screen has faded to black
- * (launch.js handOver), so the starting screen ends a moment later.
- */
+/** Rust's news that a game runs: the game being started has the screen, and its starting screen ends. */
 async function running(page, id) {
   await emit(page, 'play', play('running', id));
-  await page.waitForTimeout(350);
 }
 /** One line of the starting screen, in one of the states Rust sends. */
 const step = (changes) => like(ipc('launch-step'), { ...changes, state: known('step_state', changes.state) });
@@ -2123,7 +2119,8 @@ await dockTests({ open, close, check, shots });
 }
 
 // 33. Starting a game: a window that may need the player gets a line of its own, and ✕ shows it; once the game's
-// window is up, the starting screen fades to black before it ends, and the black lifts once the game has the screen.
+// window is up, the starting screen fades to black, ends once the window has the screen, and the black lifts. A
+// window that goes during the fade (a game that replaces its window) leaves the starting screen as it was.
 {
   const page = await open({ games: [game(1), game(2)] });
   await page.keyboard.press('Enter');
@@ -2141,24 +2138,78 @@ await dockTests({ open, close, check, shots });
       curtain: getComputedStyle(document.getElementById('curtain')).opacity,
       overlay: document.getElementById('overlay').classList.contains('on'),
     }));
-  await emit(page, 'play', play('running', 'pc:1'));
+  await emit(page, 'play', play('up', 'pc:1'));
   await page.waitForTimeout(150);
   let v = await look();
   check('the game\'s window up: the starting screen fades to black first', v.overlay && Number(v.curtain) > 0.2, JSON.stringify(v));
   await page.waitForTimeout(400);
   v = await look();
-  check('under the black the starting screen ends', !v.overlay && v.curtain === '1', JSON.stringify(v));
-  await page.waitForTimeout(1600);
+  check('under the black the launch goes on until the window has the screen', v.overlay && v.curtain === '1', JSON.stringify(v));
+  await running(page, 'pc:1');
+  v = await look();
+  check('once it has, the starting screen ends under the black', !v.overlay && v.curtain === '1', JSON.stringify(v));
+  await page.waitForTimeout(1500);
   v = await look();
   check('then the black lifts, the home screen ready behind the game', v.curtain === '0', JSON.stringify(v));
   // News of another game, while one starts, doesn't fade the screen.
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Enter');
   await idle(page);
-  await emit(page, 'play', play('running', 'pc:1'));
+  await emit(page, 'play', play('up', 'pc:1'));
+  await running(page, 'pc:1');
   await page.waitForTimeout(150);
   v = await look();
   check('another game running leaves the starting screen as it is', v.overlay && v.curtain === '0', JSON.stringify(v));
+  // The window of the game being started goes during the fade, and no other is up yet: no news that it runs.
+  await emit(page, 'play', play('up', 'pc:2'));
+  await page.waitForTimeout(2500);
+  v = await look();
+  s = await state(page);
+  check('a window gone during the fade: the black lifts on the starting screen', v.overlay && v.curtain === '0' && s.overlayTitle === 'Starting Game 002…', JSON.stringify(v) + s.overlayTitle);
+  await emit(page, 'launch-step', step({ id: 'pc:2', key: 'window', state: 'warn', label: 'A window opened that may need you', store: null }));
+  s = await state(page);
+  check('... which still offers to show a window that may need the player', s.hint.startsWith('✕Show it'), s.hint);
+  await page.keyboard.press('Escape');
+  await idle(page);
+  s = await state(page);
+  check('... and still cancels', !s.overlay && JSON.stringify(s.lastCall) === '["launch_cancel",null]', JSON.stringify(s.lastCall));
+  await close(page);
+}
+
+// 34. A launch's news that its game has the screen ends its starting screen there and then, so nothing of that launch
+// is left to end the next one: the player starts another game straight away, or cancels during the fade and starts
+// another, and that game's starting screen stays, with no black over it.
+{
+  const page = await open({ games: [game(1), game(2), game(3)] });
+  const curtain = () => page.evaluate(() => document.body.classList.contains('curtain'));
+  await page.keyboard.press('Enter');
+  await idle(page);
+  await emit(page, 'play', play('up', 'pc:1'));
+  await running(page, 'pc:1');
+  let s = await state(page);
+  check('a game whose window has the screen ends its starting screen at once', !s.overlay, JSON.stringify(s.overlayTitle));
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  s = await state(page);
+  check('another game started straight away shows its starting screen, not black', s.overlay && !(await curtain()), `${s.overlay} ${await curtain()}`);
+  await page.keyboard.press('Escape');
+  await idle(page);
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  await emit(page, 'play', play('up', 'pc:3'));
+  await page.keyboard.press('Escape');
+  await idle(page);
+  check('cancelling during the fade lifts the black', !(await curtain()), String(await curtain()));
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  // The cancelled game's window still gets the screen behind Lamplit's.
+  await running(page, 'pc:3');
+  await page.waitForTimeout(2300);
+  s = await state(page);
+  check('the game started next keeps its starting screen, with no black over it', s.overlay && s.overlayTitle === 'Starting Game 002…' && !(await curtain()), `${s.overlay} ${s.overlayTitle} ${await curtain()}`);
   await close(page);
 }
 

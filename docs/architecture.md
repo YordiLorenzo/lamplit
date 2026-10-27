@@ -131,9 +131,11 @@ controller is read into the same buttons, by position (south is Cross or A), so 
    - Every 250 ms until then, `launch/handover.rs` judges the windows that opened since Play, and the game's own
      windows also when they were open already (a game that runs already, which the launch brings back). A window of
      the game's processes that covers the screen and answers Windows for half a second is up: a `play` event says
-     `running`, the session counts as started from then on (so its end is told even when it comes within the first
-     1.5 seconds), the page fades to black, and Lamplit places itself right behind that window and gives it the
-     foreground. It stays there, not minimised, while the game runs. Any other window that stays 5 seconds (a store
+     `up` and the page fades to black, then Lamplit places itself right behind that window and gives it the
+     foreground, and a `play` event says `running`. The session counts as started from then on (so its end is told
+     even when it comes within the first 1.5 seconds). Lamplit stays there, not minimised, while the game runs. A
+     window that goes during the fade (a game that replaces its window) leaves the launch and its starting screen
+     going until the next one is up. Any other window that stays 5 seconds (a store
      app's, also one that opens maximised, or a small window of the game's) gets a `window` line on the starting
      screen, which `launch_show` brings forward; only the player gives such a window the screen. After the game has
      run 12 seconds with only small windows of its own, the front one gets the screen.
@@ -141,7 +143,8 @@ controller is read into the same buttons, by position (south is Cross or A), so 
      wherever it runs from, leaving out Windows' own helpers (a shell, a console host) on the way, and the player's
      own programs it may open, with what they start: a browser, a store or chat app (`NOT_THE_GAME` in `watch.rs`).
      Windows tells the started process's id and start time at launch, so a launcher that starts the game and exits
-     before the first poll still leads to it.
+     before the first poll still leads to it. A program that later gets the id of one of the game's processes is not
+     the game, and neither is what it starts, also after it exits.
    - While it runs: the time between two polls that both see it counts as play time, at most 5 seconds per poll (a
      longer gap is the PC asleep). It is saved to `games.json` every minute and when the game's processes go.
    - Gone again within 20 seconds of starting: a launcher handing over to the game, or a crash at start. A `play`

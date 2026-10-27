@@ -1,4 +1,5 @@
 [
+  { "state": "up", "id": "steam:70" },
   { "state": "running", "id": "steam:70" },
   { "state": "starting", "id": "steam:70" },
   { "state": "ended", "id": "steam:70" },

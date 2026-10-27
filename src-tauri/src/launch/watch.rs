@@ -25,7 +25,7 @@ const STILL_WAITING: Duration = Duration::from_secs(45);
 /// How often the watcher looks until the game's window has the screen: soon after it is up, the screen goes to it.
 const LOOK_EVERY: Duration = Duration::from_millis(250);
 /// How long the starting screen has to fade to black before the game's window gets the screen: the page's 300 ms
-/// (ui/launch.js FADE_MS), and the moment the event takes to reach it.
+/// (`#curtain` in ui/style.css), and the moment the event takes to reach it.
 const FADE: Duration = Duration::from_millis(400);
 /// A window smaller than this either way is a helper of its program's, not something to show.
 const SMALLEST: i32 = 64;
@@ -86,7 +86,7 @@ impl Watch {
     /// before the watcher first looks, which then has nothing else to tell the game's processes by.
     fn seed(&self, pid: u32, started: u64) {
         if let Some((_, lineage)) = &self.launched {
-            lineage.lock().0.insert((pid, started));
+            lineage.lock().game.insert((pid, started));
         }
     }
 
@@ -142,35 +142,46 @@ const NOT_THE_GAME: &[&str] = &[
 /// The processes that came from a game's exe, by id and start time, kept from poll to poll: a launcher that starts the
 /// game and exits leaves the game its own. The start time tells a process from a later one that got the same id.
 #[derive(Default)]
-pub struct Lineage(HashSet<(u32, u64)>);
+pub struct Lineage {
+    game: HashSet<(u32, u64)>,
+    /// Processes seen with an id one of the game's had before them, which aren't the game's: what they start isn't
+    /// the game's either, also once they have exited.
+    others: HashSet<(u32, u64)>,
+}
 
 impl Lineage {
     /// Adds the processes running `exe` (a `folder_key`) and every process one of the game's started, other than the
     /// programs in NOT_THE_GAME, and returns those that run now.
     fn update(&mut self, exe: &str, procs: &[Proc]) -> HashSet<u32> {
-        self.0.extend(procs.iter().filter(|p| p.exe.is_some_and(|e| folder_key(e) == exe)).map(|p| (p.pid, p.started)));
+        let game = procs.iter().filter(|p| p.exe.is_some_and(|e| folder_key(e) == exe));
+        self.game.extend(game.map(|p| (p.pid, p.started)));
         let not_the_game = |p: &Proc| NOT_THE_GAME.iter().any(|n| p.name.eq_ignore_ascii_case(n));
         loop {
             let found: Vec<(u32, u64)> = procs
                 .iter()
-                .filter(|p| !self.0.contains(&(p.pid, p.started)) && !not_the_game(p))
+                .filter(|p| !self.game.contains(&(p.pid, p.started)) && !not_the_game(p))
                 .filter(|p| p.parent.is_some_and(|parent| self.started_by_game(parent, p.started, procs)))
                 .map(|p| (p.pid, p.started))
                 .collect();
             if found.is_empty() {
                 break;
             }
-            self.0.extend(found);
+            self.game.extend(found);
         }
-        procs.iter().filter(|p| self.0.contains(&(p.pid, p.started))).map(|p| p.pid).collect()
+        let reused = procs.iter().filter(|p| {
+            !self.game.contains(&(p.pid, p.started))
+                && self.game.iter().any(|&(pid, started)| pid == p.pid && started < p.started)
+        });
+        self.others.extend(reused.map(|p| (p.pid, p.started)));
+        procs.iter().filter(|p| self.game.contains(&(p.pid, p.started))).map(|p| p.pid).collect()
     }
 
     /// Whether the process with id `parent` that started a process at `at` is one of the game's: of the processes
-    /// that had that id by then, running now or ended, the latest.
+    /// that had that id by then, running now or seen before, the latest.
     fn started_by_game(&self, parent: u32, at: u64, procs: &[Proc]) -> bool {
-        let running = procs.iter().find(|q| q.pid == parent).map(|q| q.started).filter(|&s| s <= at);
-        let game = self.0.iter().filter(|&&(pid, s)| pid == parent && s <= at).map(|&(_, s)| s).max();
-        game.is_some_and(|g| running.is_none_or(|r| g >= r))
+        let running = procs.iter().filter(|q| q.pid == parent).map(|q| q.started);
+        let seen = self.game.iter().chain(&self.others).filter(|&&(pid, _)| pid == parent).map(|&(_, s)| s);
+        running.chain(seen).filter(|&s| s <= at).max().is_some_and(|s| self.game.contains(&(parent, s)))
     }
 }
 
@@ -339,11 +350,8 @@ impl Looking<'_> {
         match self.handover.poll(&seen_windows(self.before, procs, pids, watch), !pids.is_empty(), Instant::now()) {
             Next::HandOver(to) => {
                 log::info!("{name}: its window is up; it gets the screen");
-                // The starting screen fades to black first, so nothing shows between it and the game.
-                events::emit(app, Event::Play(Play::Running { id }));
-                std::thread::sleep(FADE);
-                if !hand_over(app, self.generation, to) {
-                    // It has gone meanwhile: a game that replaces its window. The next one up gets the screen.
+                let emit = |play| events::emit(app, Event::Play(play));
+                if !give_screen(id, emit, || hand_over(app, self.generation, to)) {
                     log::info!("{name}: its window went while the screen faded; looking for the next one");
                     return false;
                 }
@@ -362,6 +370,20 @@ impl Looking<'_> {
             Next::Wait => false,
         }
     }
+}
+
+/// Gives the game's window the screen (`hand_over`). The starting screen fades to black first, so nothing shows between
+/// it and the game, and the page hears that the game runs only once its window has the screen: a game that replaces
+/// its window during the fade fails the handover, and its launch goes on, starting screen and all, until the next
+/// window is up.
+fn give_screen<'a>(id: &'a str, mut emit: impl FnMut(Play<'a>), hand_over: impl FnOnce() -> bool) -> bool {
+    emit(Play::Up { id });
+    std::thread::sleep(FADE);
+    let handed = hand_over();
+    if handed {
+        emit(Play::Running { id });
+    }
+    handed
 }
 
 /// The windows already open, to tell those that open after them.
@@ -578,6 +600,18 @@ mod tests {
     }
 
     #[test]
+    fn the_page_hears_the_game_runs_only_once_its_window_has_the_screen() {
+        let told = |handed: bool| {
+            let mut told = Vec::new();
+            give_screen("pc:1", |play| told.push(serde_json::to_value(play).unwrap()["state"].clone()), || handed);
+            told
+        };
+        assert_eq!(told(true), ["up", "running"]);
+        // Its window went while the screen faded: the launch goes on, and the page keeps its starting screen.
+        assert_eq!(told(false), ["up"]);
+    }
+
+    #[test]
     fn a_game_added_by_hand_stays_its_own_after_its_launcher_exits() {
         let watch = racer(r"D:\Old Games\Racer\Launcher.exe", r"D:\Old Games\Racer");
         // The launcher starts the game.
@@ -597,5 +631,9 @@ mod tests {
             proc(3, r"D:\Old Games\Racer\tool-helper.exe", 301, Some(1)),
         ];
         assert_eq!(watch.own_pids(&reused), HashSet::from([2]));
+        // That program exits, and what it started runs on: still not the game's, so closing the game leaves it open.
+        let gone = [later[0], reused[2]];
+        assert_eq!(watch.own_pids(&gone), HashSet::from([2]));
+        assert_eq!(watch.pids(&gone), HashSet::from([2]));
     }
 }
