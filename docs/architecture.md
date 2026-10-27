@@ -129,8 +129,8 @@ controller is read into the same buttons, by position (south is Cross or A), so 
 4. For a Steam game, a line says whether an update is needed first.
 5. Lamplit opens the game: the store's link (`steam://rungameid/<appid>` for Steam), the store app told which game
    to start (`Battle.net.exe --exec="launch <code>"`), or the game's exe.
-6. `launch/watch.rs` reads the process list once a second. A process counts as the game when its exe is inside the
-   game's folder, or has one of the game's exe names:
+6. `launch/watch.rs` reads the process list once a second. For a store's game, a process counts as the game when its
+   exe is inside the game's folder, or has one of the game's exe names:
    - Seen for 1.5 seconds: the game runs, and Lamplit records the time in `games.json`.
    - Every 250 ms until then, `launch/handover.rs` judges the windows that opened since Play, and the game's own
      windows also when they were open already (a game that runs already, which the launch brings back). A window of
@@ -145,13 +145,14 @@ controller is read into the same buttons, by position (south is Cross or A), so 
      and once it goes, the one before it again. With none left, the line says the window has closed, and Cross goes
      back to a store app that may still need the player. Only the player gives such a window the screen. After the
      game has run 12 seconds with only small windows of its own, the front one gets the screen.
-   - For a game added by hand, the game's processes are the exe Lamplit started and every process that came from it,
-     wherever it runs from, leaving out Windows' own helpers (a shell, a console host) on the way, and the player's
-     own programs it may open, with what they start: a browser, a store or chat app (`NOT_THE_GAME` in `watch.rs`).
-     Lamplit keeps each of the game's processes open until a poll finds it gone (the exe it started, from launch on),
-     so meanwhile Windows gives its id to no other program: a process whose parent has that id came from it. A
-     launcher that starts the game and exits before the first poll still leads to it, and a program that gets a
-     launcher's id once it has gone is not the game.
+   - For a game outside any store, added by hand or found (Windows' game list may name an exe in Downloads, which
+     then counts as its folder), the game's processes are the exe Lamplit started and every process that came from
+     it, wherever it runs from, leaving out Windows' own helpers (a shell, a console host) on the way, and the
+     player's own programs it may open, with what they start: a browser, a store or chat app (`NOT_THE_GAME` in
+     `watch.rs`). Lamplit keeps each of the game's processes open until a poll finds it gone (the exe it started,
+     from launch on), so meanwhile Windows gives its id to no other program: a process whose parent has that id came
+     from it. A launcher that starts the game and exits before the first poll still leads to it, and a program that
+     gets a launcher's id once it has gone is not the game.
    - While it runs: the time between two polls that both see it counts as play time, at most 5 seconds per poll (a
      longer gap is the PC asleep). It is saved to `games.json` every minute and when the game's processes go.
    - Gone again within 20 seconds of starting: a launcher handing over to the game, or a crash at start. A `play`
