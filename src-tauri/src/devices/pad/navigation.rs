@@ -173,6 +173,12 @@ impl Navigation {
         actions
     }
 
+    /// The controller went: every button is let go, so Cross held on the dock's Close game is let go too, and the
+    /// hold it began doesn't finish without it.
+    pub fn let_go(&mut self) -> Vec<Action> {
+        self.update(Input::default(), Instant::now())
+    }
+
     /// What holding brings by `now`, between reports: a repeated direction, a summon.
     pub fn tick(&mut self, now: Instant) -> Vec<Action> {
         let mut actions = Vec::new();
@@ -276,6 +282,18 @@ mod tests {
         // Held since reading began: no press, so no letting go either.
         let mut nav = Navigation::starting_from(cross);
         assert!(nav.update(Input::default(), t).is_empty());
+    }
+
+    #[test]
+    fn a_controller_that_goes_lets_go_of_cross() {
+        let (mut nav, t) = (Navigation::default(), Instant::now());
+        nav.update(Input { south: true, dir: Some(Dir::Up), ..Input::default() }, t);
+        assert_eq!(nav.let_go(), vec![Action::Release("ok-up")]);
+        assert!(nav.let_go().is_empty());
+        // The direction it held doesn't repeat.
+        assert!(nav.tick(t + ms(1000)).is_empty());
+        // Cross held since reading began was no press, so losing the controller then is no step either.
+        assert!(Navigation::starting_from(Input { south: true, ..Input::default() }).let_go().is_empty());
     }
 
     #[test]
