@@ -4,6 +4,24 @@ Every release of Lamplit, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- Battle.net: its installed games, from Battle.net's own list. Lamplit starts Battle.net, waits until its log says it
+  has signed in, and asks it to start the game. A game too new for Lamplit's list of launch codes opens on its page
+  in Battle.net, where you press Play.
+- The Amazon Games app: its installed games, from the app's own list. They start through the app, which Lamplit
+  starts first.
+- itch.io: the games the itch app installed, from its own list. They start from their own exe, so the app doesn't
+  have to run.
+- The three stores have their own choice in Find's store filter, and their apps show in Settings > Stores. Battle.net
+  and itch.io games carry the store's logo; the Amazon Games app has no logo Lamplit can use, so it shows its name.
+
+### Changed
+
+- Games from these three stores no longer turn up as games outside any store.
+
 ## 0.2.0 - 2026-10-26
 
 ### Added

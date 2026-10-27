@@ -143,7 +143,9 @@ export function storeWarning(g, stores) {
  */
 
 /** The store filter's order, the one Rust lists its stores in (stores/mod.rs ALL), then games outside any store. */
-export const STORE_ORDER = /** @type {const} */ (['steam', 'epic', 'ea', 'ubisoft', 'rockstar', 'gog', 'xbox', 'pc']);
+export const STORE_ORDER = /** @type {const} */ ([
+  'steam', 'epic', 'ea', 'ubisoft', 'rockstar', 'battlenet', 'gog', 'amazon', 'itch', 'xbox', 'pc',
+]);
 
 /** The longest search the field shows. */
 const MAX_QUERY = 30;

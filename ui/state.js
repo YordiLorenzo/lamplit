@@ -131,11 +131,11 @@ export const storeName = (key) => state.stores.get(key)?.name;
 
 /**
  * The store's logo (a symbol in index.html) and then `text`, for replaceChildren or append; only the text when there
- * is no store.
+ * is no store, or no logo for it (the Amazon Games app: Simple Icons took Amazon's logos out, lacking permission).
  * @param {StoreKey | null | undefined} key @param {string | Node} text @returns {(string | Node)[]}
  */
 export function withStoreLogo(key, text) {
-  return key ? [icon(`store-${key}`), text] : [text];
+  return key && document.getElementById(`store-${key}`) ? [icon(`store-${key}`), text] : [text];
 }
 
 /** A symbol from index.html, sized and coloured like the text beside it. @param {string} id */

@@ -40,8 +40,8 @@ while you play. When the game closes, Lamplit is back on screen.
 ### Your library
 
 - **Every installed game in one row.** Lamplit reads what Steam, the Epic Games Launcher, GOG, the EA app, Ubisoft
-  Connect, the Rockstar Games Launcher and the Xbox app have installed, and finds games outside any store too. There
-  is nothing to import, connect or sign in to.
+  Connect, the Rockstar Games Launcher, Battle.net, the Amazon Games app, itch.io and the Xbox app have installed, and
+  finds games outside any store too. There is nothing to import, connect or sign in to.
 - **Favourites first, then last played,** then by name, so the game you're in the middle of is near the front.
 - **Favourites and hidden games.** In a game's details (Options), add it to your favourites to keep it at the front,
   or hide something Lamplit found that isn't a game. **Settings > Hidden games** shows a hidden game again.
@@ -122,15 +122,23 @@ while you play. When the game closes, Lamplit is back on screen.
 | EA app | The installer data every EA game carries | Starts the EA app, checks for a saved sign-in |
 | Ubisoft Connect | The launcher's list of installs | Starts Ubisoft Connect, checks for a saved sign-in |
 | Rockstar Games Launcher | The launcher's list of titles | Starts the launcher, checks for a saved sign-in |
+| Battle.net | Battle.net's list of installed games | Starts Battle.net, waits for it to sign in, then asks it to start the game |
 | GOG (GOG Galaxy or GOG's offline installers) | GOG's list of installed games | Nothing: GOG games start from their own exe |
+| Amazon Games app | The app's list of installed games | Starts the Amazon Games app |
+| itch.io (the itch app) | The itch app's list of installed games | Nothing: itch.io games start from their own exe |
 | Xbox app, including PC Game Pass | The Xbox games installed for your Windows account | Nothing: Xbox games start without the app |
 | No store | Folders in `<drive>:\Games`, installed programs that look like games, and games Windows' Game Bar has seen | Starts the game's exe |
 
-Only Steam says live who is signed in. For the other store apps Lamplit checks whether they keep a saved sign-in,
-and if it can't confirm one, it lets you go ahead anyway.
+Steam says live who is signed in, and Battle.net's own log says whether it has signed in. For the other store apps
+Lamplit checks whether they keep a saved sign-in, and if it can't confirm one, it lets you go ahead anyway. Lamplit
+can't tell whether the Amazon Games app is signed in, so it starts the app and then the game, and the app asks you to
+sign in if it needs to.
 
-Battle.net, the Amazon Games app, itch.io and other stores aren't read yet. Their games can still turn up as games
-outside any store, but Lamplit then starts the game's exe directly, which some of those games refuse.
+A Battle.net game starts with a code Battle.net doesn't keep on the PC, so Lamplit carries a list of them. For a game
+newer than that list, Lamplit opens Battle.net on the game's page, and you press Play there.
+
+Other stores aren't read yet. Their games can still turn up as games outside any store, but Lamplit then starts the
+game's exe directly, which some of those games refuse.
 
 ### Controllers
 
@@ -290,7 +298,7 @@ including the risk of Steam's DevTools port.
 | --- | --- | --- | --- |
 | Price and source | Free, source on GitHub (noncommercial licence) | Free, closed source | Free, MIT licence |
 | Runs on | Windows | Windows, macOS, Linux, SteamOS | Windows |
-| Games it lists | Installed games from seven stores and outside any store, found by itself | Steam games; others as shortcuts you add by hand | Games from the libraries you connect through its add-ons, and emulated games |
+| Games it lists | Installed games from ten stores and outside any store, found by itself | Steam games; others as shortcuts you add by hand | Games from the libraries you connect through its add-ons, and emulated games |
 | Before a game starts | Starts the store apps it needs, waits for sign-in, shows Steam's update progress | Steam updates its own games first | Starts the game through its store or its exe |
 | Controllers | DualSense, Xbox and other controllers Windows knows; keyboard and mouse | Most controllers, through Steam Input | Many controllers, through SDL |
 | Themes, add-ons, emulators | No | No themes or add-ons; emulators as shortcuts you add | Yes, with an add-on browser |
@@ -401,8 +409,10 @@ It is built with [Tauri](https://tauri.app). The DualSense and headset code foll
 [SDL](https://github.com/libsdl-org/SDL), [SpecialK](https://github.com/SpecialKO/SpecialK) and the Linux kernel's
 `hid-playstation` driver; [docs/accessories.md](docs/accessories.md) lists the sources. The store logos come from
 [Simple Icons](https://simpleicons.org) (CC0), and the Xbox logo from
-[Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache License 2.0).
+[Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache License 2.0). Neither has Amazon's logo, so
+the Amazon Games app shows its name alone.
 
 Lamplit is not affiliated with or endorsed by Sony, Valve, Microsoft, Logitech, NVIDIA, Epic Games, Electronic Arts,
-Ubisoft, Rockstar Games or GOG. Their names, logos and products are trademarks of their owners and appear here only
-to say what Lamplit works with. Game art in the screenshots belongs to its publishers.
+Ubisoft, Rockstar Games, GOG, Blizzard Entertainment, Amazon or itch.io. Their names, logos and products are
+trademarks of their owners and appear here only to say what Lamplit works with. Game art in the screenshots belongs
+to its publishers.

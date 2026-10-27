@@ -105,7 +105,8 @@ controller is read into the same buttons, by position (south is Cross or A), so 
 
    Each of these is a line on the starting screen, sent as a `launch-step` event.
 4. For a Steam game, a line says whether an update is needed first.
-5. Lamplit opens the game: the store's link (`steam://rungameid/<appid>` for Steam) or the game's exe.
+5. Lamplit opens the game: the store's link (`steam://rungameid/<appid>` for Steam), the store app told which game
+   to start (`Battle.net.exe --exec="launch <code>"`), or the game's exe.
 6. `launch/watch.rs` reads the process list once a second. A process counts as the game when its exe is inside the
    game's folder, or has one of the game's exe names:
    - Seen for 1.5 seconds: the game runs. A `play` event says `running`, Lamplit minimises itself and records the

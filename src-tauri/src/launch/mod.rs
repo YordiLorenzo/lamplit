@@ -253,9 +253,10 @@ fn not_installed(store: Store) -> Error {
 /// the admin prompt of an exe that asks for one). Whatever opens may take the foreground from Lamplit.
 pub fn shell_open(launch: &Launch, args: Option<&str>) -> Result<()> {
     win::window::allow_any_foreground();
-    let (file, dir) = match launch {
-        Launch::Uri(u) => (OsStr::new(u), None),
-        Launch::Exe(p) => (p.as_os_str(), p.parent()),
+    let (file, dir, args) = match launch {
+        Launch::Uri(u) => (OsStr::new(u), None, args),
+        Launch::Exe(p) => (p.as_os_str(), p.parent(), args),
+        Launch::ExeArgs(p, own) => (p.as_os_str(), p.parent(), Some(own.as_str())),
     };
     win::shell::open(file, args, dir).map_err(|code| {
         let file = file.display();
@@ -276,6 +277,7 @@ fn open_game(game: &Game) -> Result<()> {
     let target = match &game.launch {
         Launch::Uri(u) => u.clone(),
         Launch::Exe(p) => p.display().to_string(),
+        Launch::ExeArgs(p, args) => format!("{} {args}", p.display()),
     };
     log::info!("launch {} ({}) via {target}", game.name, game.id);
     Ok(())

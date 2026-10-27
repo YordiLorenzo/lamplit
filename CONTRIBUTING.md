@@ -153,14 +153,15 @@ games it shows, laid out like `%LOCALAPPDATA%\lamplit\art`; the list of games is
 1. Write `src-tauri/src/stores/<store>.rs` with:
    - `exe()`: where the store app is installed, from the registry entry its installer writes;
    - `games()`: the installed games, each a `Game` with an id of the form `<store>:<its id>`, its install folder,
-     and how to launch it (a link the store handles, or an exe);
+     and how to launch it (a link the store handles, an exe, or the store app's exe with arguments);
    - `remembered()`, if the store keeps a saved sign-in Lamplit can detect.
 2. Add a variant to `Store` in `stores/mod.rs`, fill in each of its `match`es (`key`, `name`, `games`, `exe`,
    `window` and the account check in `status`), and put it in `ALL`. A folder that two stores claim goes to the
    store that comes first in `ALL`.
 3. If the store's launcher also has to run for games bought elsewhere, teach `requirements` in `stores/mod.rs` to
    spot them by a file in their folder.
-4. Add the store's key to `StoreKey` in `ui/api.js`.
+4. Add the store's key to `StoreKey` in `ui/api.js` and to `STORE_ORDER` in `ui/logic.js`, and its logo to
+   `ui/index.html` as a `store-<key>` symbol.
 5. Test the parsing with small samples of the store's real files, written into a temporary folder the way
    `stores/loose.rs` does.
 6. Add the store to the tables in `README.md`, and to `docs/security-and-privacy.md` if Lamplit now reads or changes

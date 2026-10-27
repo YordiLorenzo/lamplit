@@ -1310,9 +1310,9 @@ const findView = (page) =>
   await close(page);
 }
 {
-  // A 4:3 screen and a game from every store: the store choices take three lines and the panel scrolls, and the
+  // A 4:3 screen and a game from every store: the store choices take several lines and the panel scrolls, and the
   // focused choice stays in view.
-  const stores = ['steam', 'epic', 'ea', 'ubisoft', 'rockstar', 'gog', 'xbox', null];
+  const stores = ['steam', 'epic', 'ea', 'ubisoft', 'rockstar', 'battlenet', 'gog', 'amazon', 'itch', 'xbox', null];
   const page = await open({ games: stores.map((store, i) => game(i + 1, { store, requires: store ? [store] : [] })) }, { width: 1440, height: 1080 });
   await emit(page, 'pad', 'square');
   for (let i = 0; i < 12; i++) await emit(page, 'pad', 'down');
@@ -1326,6 +1326,15 @@ const findView = (page) =>
     return { id: /** @type {HTMLElement} */ (focus).dataset.id, scrolls: panel.scrollHeight > panel.clientHeight, inside: f.top >= p.top + pad && f.bottom <= p.bottom - pad + 1, pageX: scrollX };
   });
   check('4:3: the panel scrolls to keep the focused choice in view, clear of its edge', seen.id.startsWith('sort:') && seen.scrolls && seen.inside && seen.pageX === 0, JSON.stringify(seen));
+  const logos = await page.evaluate(() =>
+    [...document.querySelectorAll('#find [data-id^="store:"]')].map((c) => {
+      const use = c.querySelector('svg.store-logo use');
+      // A logo drawn from a symbol that isn't there would be an empty gap.
+      return `${c.getAttribute('data-id')}=${use ? Boolean(document.querySelector(use.getAttribute('href') ?? '')) : 'none'}`;
+    })
+  );
+  const expected = ['all=none', ...stores.map((s) => (s === 'amazon' || !s ? `${s ?? 'pc'}=none` : `${s}=true`))].map((s) => `store:${s}`);
+  check('each store choice has its logo, the Amazon Games app its name alone', JSON.stringify(logos) === JSON.stringify(expected), JSON.stringify(logos));
   await page.screenshot({ path: path.join(shots, 'find-4x3.png') });
   await close(page);
 }
