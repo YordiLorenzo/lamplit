@@ -37,7 +37,7 @@ pub fn game_state(app: &AppHandle) -> Option<GameState> {
     let (id, watch) = app.state::<Launcher>().running()?;
     let name = name(app, &id);
     let procs = Processes::now();
-    let windows = launch::game_windows(&watch.own_pids(procs.iter(), &procs.parents()));
+    let windows = launch::game_windows(&watch.own_pids(&procs.list()));
     let responding = windows.iter().all(|&w| win::window::responds(w, ANSWER_WITHIN));
     let force_close = offers_force(responding, !windows.is_empty(), &id, watch.opened);
     Some(GameState { id, name, responding, force_close })
@@ -81,10 +81,11 @@ pub fn close_game(app: &AppHandle, force: bool) -> Result<()> {
     let (id, watch) = app.state::<Launcher>().running().ok_or_else(gone)?;
     let name = name(app, &id);
     let procs = Processes::now();
-    let pids = watch.own_pids(procs.iter(), &procs.parents());
+    let list = procs.list();
+    let pids = watch.own_pids(&list);
     if pids.is_empty() {
         // Running by its exe name only, from a folder that isn't the game's: maybe another program.
-        return Err(if watch.pids(procs.iter()).is_empty() {
+        return Err(if watch.pids(&list).is_empty() {
             gone()
         } else {
             Error::Player(format!(
