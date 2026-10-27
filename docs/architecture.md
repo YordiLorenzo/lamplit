@@ -22,10 +22,12 @@ src-tauri/
     library/         the game list: discovery, sorting, art, favourites, hidden games and play time
     stores/          one file per store app; loose.rs finds games outside any store
     launch/          starting a game, watching it, and Lamplit's own window
+    dock/            the in-game dock: its window over a game, the news it shows, closing the game
     devices/         controllers (pad/), the headset, sound devices, where the sound goes
     system/          quiet mode, NVIDIA's overlay, first-time setup, sleep, restart and shut down
     win/             the calls into Windows, and the only place unsafe code is allowed
   capabilities/default.json   what the page may call
+  capabilities/dock.json      the same for the in-game dock's page
   windows/installer-hooks.nsh the uninstaller's extra steps
   tauri.conf.json
 ui/
@@ -41,6 +43,8 @@ ui/
   logic.js         pure functions (the cover row's search and order, the Settings rows), tested in Node
   hints.js         the button hints and short messages
   sounds.js        interface sounds made with Web Audio
+  dock.html, dock/ the in-game dock's page: main.js draws it and acts on presses, logic.js (pure, tested in Node)
+                   works out its tiles, hints and spring, dock.css
 tests/
   ipc/             payloads both sides are tested against
   *.test.mjs       the page's tests; page.mjs serves the page with a fake Tauri
@@ -82,14 +86,16 @@ profile in `%LOCALAPPDATA%\io.github.yordilorenzo.lamplit`.
 | Other controllers | Reads XInput and Windows.Gaming.Input every 15 ms while one of their controllers is connected, and looks for new ones every 2 seconds. |
 | Upkeep | Every 10 seconds: Steam's DevTools port and PS button setting, and quiet-mode changes that had to wait. |
 | Big Picture guard | Every 2 seconds: closes Steam's Big Picture mode if it is open. |
+| Dock news | Every second: compares the headset and the controllers with a second before, for the news the folded dock shows. |
 | Shell | Opens links and exes with ShellExecute, one at a time. |
 
 A Tauri command that isn't `async` runs on the main thread, where waiting freezes the window and controller
 navigation. So every command that touches the disk, the registry, COM, HID, a socket or the process list is `async`
 and does its work on Tauri's pool for blocking work.
 
-Controller presses reach the page as `pad` events only while Lamplit's window is in front, so a game never moves the
-menu behind it. Holding PS, or View and Menu, is the exception: it brings Lamplit forward from anywhere. Each kind of
+Controller presses reach the page as `pad` events only while Lamplit's window is in front, and the dock's page as
+`dock-pad` events only while the dock is open, so a game never moves the menu behind it. Holding PS, or View and
+Menu, is the exception: over a running game it opens the dock, and anywhere else it brings Lamplit forward. Each kind of
 controller is read into the same buttons, by position (south is Cross or A), so navigation doesn't care which it is.
 
 ## How a launch works
@@ -120,6 +126,40 @@ controller is read into the same buttons, by position (south is Cross or A), so 
      3 minutes: a warning, and Lamplit keeps waiting until the player cancels. A Steam download holds this timeout
      off.
 7. A launch that can't go on ends with a `play` event that says `failed`, with a message for the player.
+
+## The in-game dock
+
+`dock/` and `ui/dock.html` make a second window, `dock`, transparent and topmost, out of the taskbar and Alt+Tab. It
+is made hidden at start while the dock is switched on, since a WebView2 page takes a moment to load, and Lamplit
+shows, places and hides it with `win/dock.rs` rather than Tauri, which can only show a window by focusing it.
+
+- **Holding PS** (`dock::summon`) opens the dock when a game runs, Lamplit isn't in front and Windows doesn't report
+  a Direct3D app in exclusive full screen (`SHQueryUserNotificationState`); otherwise Lamplit comes forward as
+  before. A second hold folds the dock. Over exclusive full screen, Windows shows no other window, and one that takes
+  the foreground makes the game leave full screen.
+- **Open**, the window spans the bottom 60% of the game's screen and takes the foreground, as the home screen does.
+  A window that left the game the foreground (`WS_EX_NOACTIVATE`) would leave the game reading every press: XInput,
+  HID and Steam Input don't say which app a press is for. Games are expected to ignore the controller while another
+  window is in front (`XInputEnable` is meant for `WM_ACTIVATEAPP`), and Steam Input switches to its desktop layout,
+  which sends keys; the page counts a press and its key once.
+- Over a game that stopped responding, taking the foreground must not wait for the game: `force_foreground` asks the
+  window in front for a reply first (`SendMessageTimeout` with `WM_NULL`, 200 ms) and attaches to its input queue
+  only when it answers. `IsHungAppWindow` alone missed a game suspended while it waited for input, and Lamplit's main
+  thread then waited with it. Should Windows still keep the foreground with the game, the controller works in the
+  open dock all the same: Lamplit reads it whatever window is in front.
+- **Folding**, the page plays the fold and Rust hides the window 450 ms later. The window that was in front when the
+  dock opened gets the foreground back, or the game's window if that one has gone. When another window takes the
+  foreground, the dock folds and leaves it there.
+- **News** (`dock/news.rs`) shows in a strip around the folded pill at the bottom centre, with `WS_EX_NOACTIVATE`
+  and `WS_EX_TRANSPARENT`: the game keeps the foreground and its clicks. Only over a running game, with Lamplit not
+  in front and no exclusive full screen.
+- **Close game** posts `WM_CLOSE` to the game's windows and gives the game the foreground, so it can ask whether to
+  quit. **Force close** ends the game's processes; the page offers it when a game window doesn't answer within a
+  second, the game has no window, or a close asked 10 seconds ago hasn't happened.
+
+The page sizes the dock in hundredths of the screen's height (`--u`, from `screen.height`), since its window covers
+only part of the screen. The island's width and height follow the face it shows, with a spring easing built as a CSS
+`linear()` curve.
 
 ## Commands
 
@@ -154,10 +194,14 @@ message is written for the player, and the page shows it.
 | `controller_turn_off` | `id` | Nothing |
 | `controller_kind` | | The kind of controller used last (`dualsense`, `playstation`, `xbox`, `other`), or `null` before any was |
 | `prefs_state` | | The prefs |
-| `prefs_set_sound_follows`, `prefs_set_touchpad_mouse`, `prefs_set_steam_devtools`, `prefs_set_online_art` | `on` | The prefs after the change |
+| `prefs_set_sound_follows`, `prefs_set_touchpad_mouse`, `prefs_set_steam_devtools`, `prefs_set_online_art`, `prefs_set_dock` | `on` | The prefs after the change |
 | `power_sleep` | | Nothing, once the PC has woken up again |
 | `power_restart`, `power_shut_down` | | Nothing, once Windows has started to restart or shut down |
 | `display_mode` | | The screen's mode, such as `3840 × 2160 at 120 Hz` |
+| `dock_state` | | The game the dock is over: `{ id, name, responding, force_close }`, or `null` |
+| `dock_resume` | | Nothing; the dock folds and the game is in front again |
+| `dock_home` | | Nothing; the home screen comes forward and the dock goes |
+| `dock_close_game` | `force` | Nothing, once Windows has the request; the game's end follows as after any game |
 
 ## Events
 
@@ -176,6 +220,8 @@ Rust sends these without being asked (`events.rs`):
 | `accessories` | `null` | The headset, a controller or a sound device changed; the page asks for the details |
 | `notice` | A short message | Something the player should know, such as where the sound went |
 | `setup` | `{ needed }` | Setup started from Settings has ended |
+| `dock` | `{ mode }`: `open`, `closed`, or `status` with `icon`, `text` and `warn` | The dock opens, folds away, or shows news |
+| `dock-pad` | The same steps as `pad` | A controller press, while the dock is in front |
 
 ## Keeping the two sides in step
 

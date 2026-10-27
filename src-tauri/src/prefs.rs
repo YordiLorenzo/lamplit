@@ -22,11 +22,13 @@ pub struct Prefs {
     /// Art Steam's library cache doesn't have comes from Steam's store, which then learns the names of the games
     /// outside Steam (art.rs).
     pub online_art: bool,
+    /// Holding PS over a game opens the dock (dock/) rather than the home screen.
+    pub dock: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { sound_follows: true, touchpad_mouse: false, steam_devtools: false, online_art: true }
+        Prefs { sound_follows: true, touchpad_mouse: false, steam_devtools: false, online_art: true, dock: true }
     }
 }
 

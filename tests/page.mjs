@@ -30,6 +30,8 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
   const values = ${JSON.stringify(values)};
   const sent = {
     pad: (step) => values.pad.includes(step),
+    'dock-pad': (step) => values.pad.includes(step),
+    dock: (show) => show.mode !== 'status' || values.dock_icon.includes(show.icon),
     'pad-kind': (kind) => values.pad_kind.includes(kind),
     'launch-step': (step) => values.step_state.includes(step.state),
     stores: (list) => list.every((s) => values.account.includes(s.account)),
@@ -89,12 +91,13 @@ const serveFile = (route, file, headers) =>
 
 /**
  * Opens the page in `uiDir` in a new tab and waits until it is ready. `opts` are the fake Tauri's (see fakeTauri),
- * plus `now`: a Date the page's clock stands still at.
+ * plus `now`: a Date the page's clock stands still at, `file`: the page to open, the dock's (dock.html) rather than
+ * index.html, and `screen`: the size of the screen, when the page's window covers only part of it (the dock's).
  * @param {import('playwright-core').Browser} browser
  * @param {string} uiDir
  */
 export async function open(browser, uiDir, opts, viewport = { width: 1920, height: 1080 }) {
-  const page = await browser.newPage({ viewport });
+  const page = await browser.newPage({ viewport, screen: opts.screen ?? viewport });
   if (opts.now) await page.clock.setFixedTime(opts.now);
   await page.route(`${pageOrigin}/**`, (route) =>
     serveFile(route, path.join(uiDir, new URL(route.request().url()).pathname), { 'Content-Security-Policy': cspHeader })
@@ -106,7 +109,7 @@ export async function open(browser, uiDir, opts, viewport = { width: 1920, heigh
     })
   );
   await page.addInitScript(fakeTauri(opts));
-  await page.goto(`${pageOrigin}/index.html`);
+  await page.goto(`${pageOrigin}/${opts.file ?? 'index.html'}`);
   await page.waitForFunction(() => window.__logs.some((line) => line.startsWith('info ready')));
   return page;
 }

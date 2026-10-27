@@ -4,6 +4,18 @@ Every release of Lamplit, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- The in-game dock: holding PS over a game (View and Menu on an Xbox controller) opens a small dock along the bottom
+  of the screen instead of the whole home screen. It holds the volume, the sound output, quiet mode, NVIDIA's stats,
+  Home and Close game, and shows the game, the batteries and the time. Close game asks the game to close, and offers
+  Force close when the game isn't responding. The folded dock also shows for a moment when the headset turns on or
+  off, a controller connects or disconnects, or a battery runs low. It is Lamplit's own window above the game, and
+  over a game in exclusive full screen holding PS brings the home screen as before. Settings > Overlay and pop-ups
+  switches it off.
+
 ## 0.2.0 - 2026-10-26
 
 ### Added

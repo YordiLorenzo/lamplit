@@ -454,6 +454,7 @@ export function sectionRows(key, state) {
       value: { on: 'On', off: 'Off', partly: 'Partly on' }[state.quiet?.state] ?? '…',
       tone: state.quiet?.state === 'on' ? 'good' : state.quiet?.state === 'partly' ? 'warn' : '',
     });
+    rows.push({ kind: 'dock', label: 'Dock over games (hold PS, or View and Menu)', value: onOff(prefs?.dock) });
   } else if (key === 'stores') {
     for (const s of storeApps(state)) {
       const [text, tone] = ACCOUNT[s.account] ?? [s.running ? 'Running' : 'Not running', ''];

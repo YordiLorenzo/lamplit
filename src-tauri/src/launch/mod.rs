@@ -6,7 +6,7 @@ mod session;
 mod watch;
 pub mod window;
 
-pub use watch::resume;
+pub use watch::{game_windows, resume};
 
 use crate::error::{Error, Result};
 use crate::events::{self, Event, LaunchStep, Play, StepState};

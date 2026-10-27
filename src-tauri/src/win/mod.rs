@@ -5,6 +5,7 @@ pub mod audio;
 pub mod bluetooth;
 mod com;
 pub mod display;
+pub mod dock;
 pub mod drives;
 pub mod input;
 pub mod power;

@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ipc, known, like, values } from './fixtures.mjs';
+import { dockTests } from './dock.mjs';
 import { commands, emit, idle, open as openPage, settled, until } from './page.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -1402,6 +1403,8 @@ const findView = (page) =>
   check('a mirrored key counts once, and the next real press after it still moves', s.focusIndex === 2, `focus ${s.focusIndex}`);
   await close(page);
 }
+
+await dockTests({ open, close, check, shots });
 
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));
