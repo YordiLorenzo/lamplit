@@ -96,8 +96,14 @@ pub fn launch_anyway(launcher: State<Launcher>) {
 }
 
 #[tauri::command]
-pub fn launch_cancel(launcher: State<Launcher>) {
-    launcher.cancel();
+pub fn launch_cancel(app: AppHandle, launcher: State<Launcher>) {
+    launcher.cancel(&app);
+}
+
+/// Shows the player what the launch may be waiting for: a window that opened, else the store app `store`.
+#[tauri::command]
+pub async fn launch_show(app: AppHandle, store: Option<Store>) -> Result<()> {
+    blocking(move || launch::show_waiting(&app, store)).await?
 }
 
 #[tauri::command]

@@ -106,6 +106,9 @@ These don't change any setting, but you may notice them:
   screen back after a Steam game.
 - It keeps the PC and the screen awake while a game is starting or Steam is updating it, and lets them sleep again
   once the game runs.
+- While a game starts, its own window stays above the other windows, the taskbar included. Once the game's window
+  covers the screen, Lamplit puts that window in front and its own right behind it. **Show it** on the starting
+  screen brings forward a window that opened during the start.
 - When you switch NVIDIA's performance stats from Settings or the in-game dock, it presses the overlay's own shortcut
   (Alt+R, or the one you set in NVIDIA's overlay).
 - The in-game dock is a window of Lamplit's own that Windows shows above the game. While it is open it is the window

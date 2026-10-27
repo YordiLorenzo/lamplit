@@ -274,6 +274,12 @@ export const launchStart = (id) => call('launch_start', { id });
 export const launchAnyway = () => call('launch_anyway');
 /** @returns {Promise<void>} */
 export const launchCancel = () => call('launch_cancel');
+/**
+ * Shows the player what the launch may be waiting for: the window a "window" step points at, else the store app's
+ * window. Lamplit stops holding the screen meanwhile.
+ * @param {StoreKey | null} store @returns {Promise<void>}
+ */
+export const launchShow = (store) => call('launch_show', { store });
 /** Brings the running game back to the front. @returns {Promise<void>} */
 export const launchResume = () => call('launch_resume');
 /** @returns {Promise<string | null>} the id of the game Lamplit waits on to close */

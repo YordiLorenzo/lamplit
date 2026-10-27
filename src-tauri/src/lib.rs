@@ -116,6 +116,7 @@ pub fn run() {
             commands::launch_start,
             commands::launch_anyway,
             commands::launch_cancel,
+            commands::launch_show,
             commands::launch_resume,
             commands::launch_running,
             commands::stores_status,

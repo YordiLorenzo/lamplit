@@ -49,6 +49,10 @@ Every release of Lamplit, newest first. The format follows
 - The button hint for a game's details says Game menu.
 - Exes in Windows' cache of installers (`Package Cache`) are no longer taken for games outside any store.
 - Bringing Lamplit over a game no longer waits on a game that stopped responding.
+- Starting a game no longer shows the desktop, store apps' windows, a game's splash or the taskbar. The starting
+  screen stays in front until the game's window covers the screen, fades to black, and hands the screen over. Lamplit
+  then waits behind the game rather than minimising, so the desktop doesn't show when the game closes either. A window
+  that may need you gets a line on the starting screen, which Cross (A) shows.
 
 ## 0.2.0 - 2026-10-26
 

@@ -48,6 +48,14 @@ function game(i, { noArt: none, ...extra } = {}) {
 
 /** What the page hears about a launched game. @param {string} state @param {string} id */
 const play = (state, id, changes = {}) => like(ipc('play').find((p) => p.state === state), { id, ...changes });
+/**
+ * Rust's news that a game runs. The game being started gets the screen once the starting screen has faded to black
+ * (launch.js handOver), so the starting screen ends a moment later.
+ */
+async function running(page, id) {
+  await emit(page, 'play', play('running', id));
+  await page.waitForTimeout(350);
+}
 /** One line of the starting screen, in one of the states Rust sends. */
 const step = (changes) => like(ipc('launch-step'), { ...changes, state: known('step_state', changes.state) });
 
@@ -162,7 +170,7 @@ const state = (page) =>
   await page.keyboard.press('ArrowRight');
   s = await state(page);
   check('navigation is ignored while starting', s.focusIndex === 0);
-  await emit(page, 'play', play('running', 'pc:1'));
+  await running(page, 'pc:1');
   s = await state(page);
   check('running hides the overlay', !s.overlay);
   check('focused running game offers Back to game', s.hint.includes('Back to game'), s.hint);
@@ -223,13 +231,13 @@ const state = (page) =>
 {
   const page = await open({ games: [game(1), game(2), game(3)] });
   await page.keyboard.press('Enter');
-  await emit(page, 'play', play('running', 'pc:1'));
+  await running(page, 'pc:1');
   await emit(page, 'play', play('starting', 'pc:1'));
   let s = await state(page);
   check('restarting shows the waiting overlay', s.overlay && s.overlaySub.startsWith('Waiting'), s.overlaySub);
   await page.keyboard.press('Escape');
   // Game 1 runs; summon Lamplit, start game 2, then game 1 closes while 2 is starting.
-  await emit(page, 'play', play('running', 'pc:1'));
+  await running(page, 'pc:1');
   await emit(page, 'summoned', 'pc:1');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Enter');
@@ -239,7 +247,7 @@ const state = (page) =>
   await emit(page, 'play', play('starting', 'pc:1'));
   s = await state(page);
   check("another game's restart keeps the starting overlay", s.overlay && s.overlayTitle.includes('Game 002'), s.overlayTitle);
-  await emit(page, 'play', play('running', 'pc:2'));
+  await running(page, 'pc:2');
   s = await state(page);
   check('the launched game still clears its overlay', !s.overlay);
   // Game 2 runs; summon Lamplit, start game 1, then game 2 closes to restart while 1 is starting, and 1 fails.
@@ -262,7 +270,7 @@ const state = (page) =>
 {
   const page = await open({ games: [game(1), game(2), game(3)] });
   await page.keyboard.press('Enter');
-  await emit(page, 'play', play('running', 'pc:1'));
+  await running(page, 'pc:1');
   await emit(page, 'summoned', 'pc:1');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('i');
@@ -288,11 +296,12 @@ const state = (page) =>
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Enter'); // game 3
-  await emit(page, 'play', play('running', 'pc:3'));
+  await running(page, 'pc:3');
   await emit(page, 'play', play('ended', 'pc:3'));
   let s = await state(page);
   check('ended game moves to the front and keeps focus', s.focusIndex === 0, `focus ${s.focusIndex}`);
-  // Click the cover that is now second (game 1).
+  // Click the cover that is now second (game 1), once the row has slid there.
+  await settled(page);
   const second = await page.evaluate(() => {
     const r = [...document.querySelectorAll('#track .cover')][1].getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
@@ -678,7 +687,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('Enter');
   await idle(page);
   s = await state(page);
-  check('✕ opens the store app that waits', s.lastCall?.[0] === 'stores_open' && s.lastCall[1].store === 'ea', JSON.stringify(s.lastCall));
+  check('✕ opens the store app that waits', s.lastCall?.[0] === 'launch_show' && s.lastCall[1].store === 'ea', JSON.stringify(s.lastCall));
   await page.keyboard.press('c');
   await idle(page);
   s = await state(page);
@@ -703,7 +712,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
 {
   const page = await open({ games: [game(1), game(2), game(3)] });
   await page.keyboard.press('Enter');
-  await emit(page, 'play', play('running', 'pc:1'));
+  await running(page, 'pc:1');
   await page.keyboard.press('ArrowRight');
   await emit(page, 'summoned', 'pc:1');
   let s = await state(page);
@@ -1124,7 +1133,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Enter');
-  await emit(page, 'play', play('running', 'pc:3'));
+  await running(page, 'pc:3');
   await emit(page, 'play', play('ended', 'pc:3'));
   const order = await page.evaluate(() => [...document.querySelectorAll('#track .cover')].map((c) => c.textContent));
   const s = await state(page);
@@ -1255,11 +1264,11 @@ const findView = (page) =>
   await pick('sort:played');
   await pick('store:steam');
   await pad('back');
-  await emit(page, 'play', play('running', 'pc:2'));
+  await running(page, 'pc:2');
   await emit(page, 'play', play('ended', 'pc:2'));
   v = await seen();
   check('a game the store filter hides gets focus when it ends, with every game back', v.focused === 'Cyberpunk 2077' && v.row.length === 6 && v.filters === '', `${v.focused} ${v.filters}`);
-  await emit(page, 'play', play('running', 'pc:1'));
+  await running(page, 'pc:1');
   await pad('square');
   for (const key of 'portal') await pick(key);
   await emit(page, 'summoned', 'pc:1');
@@ -1496,7 +1505,7 @@ const saverOn = (page) => until(page, () => document.querySelector('#saver.on'))
   check('a click ends the screensaver, and the cover under it starts nothing', !v.on && !v.starting && !v.calls.includes('launch_start'), JSON.stringify(v));
 
   await page.clock.runFor(600);
-  await emit(page, 'play', play('running', 'pc:2'));
+  await running(page, 'pc:2');
   await page.clock.fastForward('10:00');
   await page.waitForTimeout(200);
   v = await saverView(page);
@@ -1504,7 +1513,7 @@ const saverOn = (page) => until(page, () => document.querySelector('#saver.on'))
   await emit(page, 'play', play('ended', 'pc:2'));
   await page.clock.fastForward('05:05');
   await saverOn(page);
-  await emit(page, 'play', play('running', 'pc:2'));
+  await running(page, 'pc:2');
   await until(page, () => !document.querySelector('#saver.on'));
   v = await saverView(page);
   check('a game that starts ends the screensaver', !v.on, JSON.stringify(v));
@@ -2057,6 +2066,46 @@ await dockTests({ open, close, check, shots });
   await openAdd();
   await emit(page, 'summoned', null);
   check('a controller bringing Lamplit forward closes Add a game too', !(await panel()), String(await panel()));
+  await close(page);
+}
+
+// 32. Starting a game: a window that may need the player gets a line of its own, and ✕ shows it; once the game's
+// window is up, the starting screen fades to black before it ends, and the black lifts once the game has the screen.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.keyboard.press('Enter');
+  await idle(page);
+  await emit(page, 'launch-step', step({ id: 'pc:1', key: 'window', state: 'warn', label: 'Game 001 may need you', store: null }));
+  let s = await state(page);
+  check('a window that may need the player offers to show it', s.hint.startsWith('✕Show it'), s.hint);
+  await page.waitForTimeout(350);
+  await page.keyboard.press('Enter');
+  await idle(page);
+  s = await state(page);
+  check('✕ shows that window', JSON.stringify(s.lastCall) === '["launch_show",{"store":null}]', JSON.stringify(s.lastCall));
+  const look = () =>
+    page.evaluate(() => ({
+      curtain: getComputedStyle(document.getElementById('curtain')).opacity,
+      overlay: document.getElementById('overlay').classList.contains('on'),
+    }));
+  await emit(page, 'play', play('running', 'pc:1'));
+  await page.waitForTimeout(150);
+  let v = await look();
+  check('the game\'s window up: the starting screen fades to black first', v.overlay && Number(v.curtain) > 0.2, JSON.stringify(v));
+  await page.waitForTimeout(400);
+  v = await look();
+  check('under the black the starting screen ends', !v.overlay && v.curtain === '1', JSON.stringify(v));
+  await page.waitForTimeout(1600);
+  v = await look();
+  check('then the black lifts, the home screen ready behind the game', v.curtain === '0', JSON.stringify(v));
+  // News of another game, while one starts, doesn't fade the screen.
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  await emit(page, 'play', play('running', 'pc:1'));
+  await page.waitForTimeout(150);
+  v = await look();
+  check('another game running leaves the starting screen as it is', v.overlay && v.curtain === '0', JSON.stringify(v));
   await close(page);
 }
 

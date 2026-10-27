@@ -76,8 +76,13 @@ while you play. When the game closes, Lamplit is back on screen.
   titles. Lamplit starts each one and waits for it to sign in.
 - **Sign-in and updates on screen.** If a store app isn't signed in, Lamplit says so and can open it for you, then
   carries on once you have signed in. A Steam update shows its progress before the game starts.
-- **Out of the way while you play.** Lamplit minimises itself once the game runs and comes back when the game
-  closes. A launcher that hands over to the game a few seconds after starting doesn't fool it.
+- **No desktop in between.** From Play until the game's window covers the screen, the starting screen stays in front:
+  store apps' windows, a game's splash and Windows' taskbar stay behind it. Then it fades to black and the game gets
+  the screen. While you play, Lamplit waits behind the game, so the desktop doesn't show when the game closes either.
+  A launcher that hands over to the game a few seconds after starting doesn't fool it.
+- **Windows that may need you.** A window that opens and stays without covering the screen (a launcher with a Play
+  button, a sign-in, a licence question) gets a line on the starting screen, and Cross (A) shows it. A game's own
+  window gets the screen by itself after 12 seconds, so a game that runs in a window starts too.
 - **Hold the PS button over a game for the dock,** or View and Menu together on an Xbox controller: see
   [The in-game dock](#the-in-game-dock). With the dock switched off, Lamplit itself appears over the running game;
   press Cross (A) to return to the game.
@@ -328,12 +333,12 @@ logon task.
 Other controllers follow the same layout by position: the bottom face button plays, the right one goes back, the top
 one opens Settings and the left one opens Find.
 
-While a game starts, Cross (A) opens the store app that needs you, Triangle (Y) goes ahead without a confirmed
-sign-in, and Circle (B) cancels. In Settings, Up and Down move, Cross or Right opens a section, Left and Right change
-the volume, sidetone and auto-off timer, Circle goes back, and Triangle closes Settings. In Find, Cross types the key
-or picks the choice you're on, Square (X) deletes, Triangle (Y) adds a space, and Circle closes Find on the games it
-found. In the dock, Left and Right move along the row, Up goes to the volume, where Left and Right change it,
-Cross does what the focused tile says, and Circle goes back to the game. On a keyboard, type the name and press
+While a game starts, Cross (A) opens the store app or shows the window that needs you, Triangle (Y) goes ahead without
+a confirmed sign-in, and Circle (B) cancels. In Settings, Up and Down move, Cross or Right opens a section, Left and
+Right change the volume, sidetone and auto-off timer, Circle goes back, and Triangle closes Settings. In Find, Cross
+types the key or picks the choice you're on, Square (X) deletes, Triangle (Y) adds a space, and Circle closes Find on
+the games it found. In the dock, Left and Right move along the row, Up goes to the volume, where Left and Right change
+it, Cross does what the focused tile says, and Circle goes back to the game. On a keyboard, type the name and press
 Enter.
 
 In a game's menu, Up and Down move and Cross picks; Circle or Options closes it. **Remove from Lamplit** asks first:

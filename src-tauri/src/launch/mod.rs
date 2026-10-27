@@ -2,6 +2,7 @@
 // (or the player is asked to sign in, and Lamplit carries on once they have), a pending update is announced, then
 // the game opens and watch.rs watches it. Each step is a line on Lamplit's starting screen.
 
+mod handover;
 mod session;
 mod watch;
 pub mod window;
@@ -30,6 +31,10 @@ pub struct Launcher {
     go_anyway_for: AtomicU64,
     /// The game that runs now, and how to recognise its processes.
     running: Mutex<Option<(String, Watch)>>,
+    /// The launch whose game hasn't got the screen yet, 0 for none: summoning Lamplit holds the screen again for it.
+    starting: AtomicU64,
+    /// A window that opened during the launch and may need the player, which the starting screen offers to show.
+    waiting: Mutex<Option<isize>>,
 }
 
 impl Launcher {
@@ -42,9 +47,28 @@ impl Launcher {
         self.generation.load(Ordering::SeqCst) == generation
     }
 
-    pub fn cancel(&self) {
+    pub fn cancel(&self, app: &AppHandle) {
         self.generation.fetch_add(1, Ordering::SeqCst);
+        self.starting.store(0, Ordering::SeqCst);
+        window::release(app, None);
         log::info!("launch cancelled from Lamplit");
+    }
+
+    /// The launch whose game hasn't got the screen yet.
+    pub fn starting(&self) -> Option<u64> {
+        Some(self.starting.load(Ordering::SeqCst)).filter(|&g| g != 0 && self.is_current(g))
+    }
+
+    /// The game of launch `generation` closed right after starting (a launcher handing over), and Lamplit waits for it
+    /// again.
+    fn waiting_again(&self, generation: u64) {
+        self.starting.store(generation, Ordering::SeqCst);
+    }
+
+    /// The launch `generation` has given the screen to its game, or stopped.
+    fn started(&self, generation: u64) {
+        let _ = self.starting.compare_exchange(generation, 0, Ordering::SeqCst, Ordering::SeqCst);
+        *self.waiting.lock() = None;
     }
 
     pub fn go_anyway(&self) {
@@ -97,18 +121,27 @@ impl From<Error> for Stop {
     }
 }
 
-/// Runs the whole launch on its own thread; the UI follows it through `launch-step` and `play` events.
+/// Runs the whole launch on its own thread; the UI follows it through `launch-step` and `play` events. Lamplit holds
+/// the screen meanwhile, and hands it over once the game's window is up (watch.rs).
 pub fn start(app: &AppHandle, game: Game) {
-    let generation = app.state::<Launcher>().begin();
+    let launcher = app.state::<Launcher>();
+    let generation = launcher.begin();
+    launcher.starting.store(generation, Ordering::SeqCst);
+    *launcher.waiting.lock() = None;
+    window::hold(app, generation);
     let app = app.clone();
     std::thread::spawn(move || {
+        // The windows already open: the game's are among those that open from now on.
+        let before = watch::open_windows();
         // Store apps can take minutes to start, sign in or update; keep the PC and TV awake meanwhile.
         keep_awake(true);
         match prepare(&app, &game, generation) {
-            Ok(()) => watch::watch_game(&app, generation, &game),
+            Ok(()) => watch::watch_game(&app, generation, &game, &before),
             Err(Stop::Cancelled) => log::info!("launch of {} cancelled", game.name),
             Err(Stop::Failed(message)) => {
                 log::warn!("launch of {} stopped: {message}", game.name);
+                app.state::<Launcher>().started(generation);
+                window::release(&app, Some(generation));
                 events::emit(&app, Event::Play(Play::Failed { id: &game.id, message: &message }));
             }
         }
@@ -200,7 +233,8 @@ fn ensure_store(app: &AppHandle, game: &Game, store: Store, generation: u64) -> 
             } else {
                 line(StepState::Ok, &format!("{name}: signed in"));
             }
-            window::bring_lamplit_forward(app);
+            // The player may have opened the store app to sign in.
+            window::hold(app, generation);
         }
     }
     Ok(())
@@ -239,10 +273,27 @@ fn start_store(app: &AppHandle, store: Store) -> Result<()> {
 /// Brings a store app's window forward so the player can sign in or deal with an update, and steps Lamplit aside.
 pub fn show_store(app: &AppHandle, store: Store) -> Result<()> {
     let target = store.window().ok_or_else(|| not_installed(store))?;
+    window::release(app, None);
     shell_open(&target, None)?;
     log::info!("showing {} for the player", store.name());
     window::minimize_lamplit(app);
     Ok(())
+}
+
+/// Shows the player what a launch may be waiting for: the window the starting screen pointed at, which Lamplit stays
+/// behind, else the window of `store`, the store app the line is about.
+pub fn show_waiting(app: &AppHandle, store: Option<Store>) -> Result<()> {
+    let launcher = app.state::<Launcher>();
+    let waiting = launcher.waiting.lock().filter(|&w| win::window::is_visible(win::window::HWND(w as *mut _)));
+    if let (Some(w), Some(generation)) = (waiting, launcher.starting()) {
+        log::info!("showing the window that may need the player");
+        window::hand_over(app, generation, w);
+        return Ok(());
+    }
+    match store {
+        Some(store) => show_store(app, store),
+        None => Err(Error::Player("That window has closed.".into())),
+    }
 }
 
 fn not_installed(store: Store) -> Error {

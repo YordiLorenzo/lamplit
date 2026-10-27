@@ -320,6 +320,18 @@ body.still .hero, body:has(#lift.on) .hero { animation-play-state: paused; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 body.launching #info { opacity: 0; }
+
+/* Black over everything while the game's window takes the screen (launch.js handOver). */
+#curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms ease;
+}
+body.curtain #curtain { opacity: 1; }
 body.launching .cover:not(.focus) { opacity: .2; }
 body.launching .cover.focus { scale: 1.1; }
 

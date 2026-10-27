@@ -77,6 +77,25 @@ function endLaunch() {
   showHints();
 }
 
+/** How long the screen fades to black before Rust gives the game's window the screen (watch.rs FADE). */
+const FADE_MS = 300;
+/** By then Lamplit is behind the game's window, and the curtain lifts unseen. */
+const LIFT_AFTER_MS = 1500;
+let curtainTimer = 0;
+
+/**
+ * The game's window is up and gets the screen: the starting screen fades to black, so nothing shows between it and
+ * the game, and the home screen is ready behind the curtain for when the game closes.
+ */
+function handOver() {
+  document.body.classList.add('curtain');
+  clearTimeout(curtainTimer);
+  curtainTimer = setTimeout(() => {
+    endLaunch();
+    curtainTimer = setTimeout(() => document.body.classList.remove('curtain'), LIFT_AFTER_MS - FADE_MS);
+  }, FADE_MS);
+}
+
 export function cancelLaunch() {
   api.launchCancel();
   sfx.back();
@@ -105,7 +124,8 @@ export function onPlay(play) {
     state.running = id;
     // Only now: a launch the player cancels, or that a store check stops, isn't a play.
     if (g) g.last_played = Math.floor(Date.now() / 1000);
-    if (mine) endLaunch();
+    if (mine && state.mode === 'starting' && state.launching === id) handOver();
+    else if (mine) endLaunch();
   } else if (play.state === 'starting') {
     // Rust stops counting the game as running, also while the page starts another one.
     if (state.running === id) state.running = null;
