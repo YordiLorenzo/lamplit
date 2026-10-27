@@ -191,14 +191,7 @@ impl Lineage {
 pub fn watch_game(app: &AppHandle, generation: u64, game: &Game, before: &HashSet<isize>, started: Option<(u32, u64)>) {
     let (id, name, watch) = (game.id.as_str(), game.name.as_str(), Watch::launched(game, started));
     let launcher = app.state::<Launcher>();
-    // `start` took the wake lock for the launch.
-    let mut awake = true;
-    let mut stay_awake = |on: bool| {
-        if awake != on {
-            keep_awake(on);
-            awake = on;
-        }
-    };
+    let mut screen = Screen { handed: false, awake: true };
     let mut procs = Processes::now();
     let mut tracker = Tracker::new(Instant::now());
     let mut clock = PlayClock::default();
@@ -214,10 +207,8 @@ pub fn watch_game(app: &AppHandle, generation: u64, game: &Game, before: &HashSe
     let mut hinted = false;
     let mut reminded = false;
     let mut looking = Looking { app, generation, id, name, before, handover: Handover::default() };
-    // The game has the screen: its window got it, or the player stopped the launch once the game ran.
-    let mut handed = false;
     loop {
-        std::thread::sleep(if handed { Duration::from_secs(1) } else { LOOK_EVERY });
+        std::thread::sleep(if screen.handed { Duration::from_secs(1) } else { LOOK_EVERY });
         if tracker.waiting() {
             if !launcher.is_current(generation) {
                 return; // cancelled, or another launch replaced this one
@@ -226,7 +217,7 @@ pub fn watch_game(app: &AppHandle, generation: u64, game: &Game, before: &HashSe
             let update = game.steam_appid.and_then(|a| steam::update(&game.dir, a)).filter(|u| u.downloading);
             if let Some(update) = &update {
                 // The player may be watching the progress, so the screen stays on even after a timeout.
-                stay_awake(true);
+                screen.stay_awake(true);
                 tracker.hold_off_timeout(Instant::now());
                 let progress = update_text(update);
                 if last_progress.as_ref() != Some(&progress) {
@@ -242,12 +233,12 @@ pub fn watch_game(app: &AppHandle, generation: u64, game: &Game, before: &HashSe
                 let label = format!("Still waiting: {} may need you", store.name());
                 step(app, id, "hint", StepState::Warn, &label, Some(store));
             }
-        } else if !handed && !launcher.is_current(generation) {
+        } else if !screen.handed && !launcher.is_current(generation) {
             // Cancelled, or another game started, while this one loads: it takes the screen when its window is up.
             log::info!("{name}: no longer waiting for its window");
-            handed = true;
+            screen.hand();
             events::emit(app, Event::Play(Play::Running { id }));
-        } else if handed && launcher.running_id().as_deref() != Some(id) {
+        } else if screen.handed && launcher.running_id().as_deref() != Some(id) {
             log::info!("{name}: another game took over, no longer watching it");
             save_play(false);
             return;
@@ -256,9 +247,8 @@ pub fn watch_game(app: &AppHandle, generation: u64, game: &Game, before: &HashSe
         let list = procs.list();
         let pids = watch.pids(&list);
         save_play(!pids.is_empty());
-        if !handed && launcher.is_current(generation) && looking.look(&list, &pids, &watch) {
-            stay_awake(false);
-            handed = true;
+        if !screen.handed && launcher.is_current(generation) && looking.look(&list, &pids, &watch) {
+            screen.hand();
             // Its window may get the screen before the tracker counts the game as started. From now on it has, so the
             // page, which now shows it running, hears of its end too.
             if tracker.announce(Instant::now()) {
@@ -280,26 +270,53 @@ pub fn watch_game(app: &AppHandle, generation: u64, game: &Game, before: &HashSe
             }
             Step::Restarting => {
                 log::info!("{name} closed within {} s; waiting for it to come back", STUB_RUN.as_secs());
-                stay_awake(true);
+                screen.waits_again();
                 launcher.clear_running(id);
                 launcher.waiting_again(generation);
                 events::emit(app, Event::Play(Play::Starting { id }));
                 hold(app, generation);
                 looking.handover = Handover::default();
-                handed = false;
             }
             Step::Ended => return ended(app, generation, game),
             Step::TimedOut => {
                 log::warn!("{name} hasn't started after {} s; still waiting", opened.elapsed().as_secs());
                 // Lamplit keeps waiting until the player cancels, which may be never, so the PC and TV may sleep now.
                 // A download can't be running: it holds the timeout off.
-                stay_awake(false);
+                screen.stay_awake(false);
                 step(app, id, "timeout", StepState::Warn, &format!("{name} hasn't started yet"), blocker);
-                if !handed && !std::mem::replace(&mut reminded, true) {
+                if !screen.handed && !std::mem::replace(&mut reminded, true) {
                     bring_lamplit_forward(app);
                 }
             }
         }
+    }
+}
+
+/// Whether the game has the screen: its window got it, or the launch stopped waiting for it. Until then the PC and
+/// screen stay awake (`start` took the wake lock for the launch), unless the game is long in coming.
+struct Screen {
+    handed: bool,
+    awake: bool,
+}
+
+impl Screen {
+    fn stay_awake(&mut self, on: bool) {
+        if self.awake != on {
+            keep_awake(on);
+            self.awake = on;
+        }
+    }
+
+    /// The game has the screen, or the launch no longer waits for it: the PC and screen may sleep.
+    fn hand(&mut self) {
+        self.handed = true;
+        self.stay_awake(false);
+    }
+
+    /// The game closed right after starting: the launch waits for it to come back, and keeps the PC awake meanwhile.
+    fn waits_again(&mut self) {
+        self.handed = false;
+        self.stay_awake(true);
     }
 }
 
@@ -352,7 +369,7 @@ impl Looking<'_> {
                 log::info!("{name}: its window is up; it gets the screen");
                 let emit = |play| events::emit(app, Event::Play(play));
                 if !give_screen(id, emit, || hand_over(app, self.generation, to)) {
-                    log::info!("{name}: its window went while the screen faded; looking for the next one");
+                    log::info!("{name}: its window went, or the launch stopped, while the screen faded");
                     return false;
                 }
                 app.state::<Launcher>().started(self.generation);
@@ -597,6 +614,18 @@ mod tests {
         let later = [start[1]];
         assert_eq!(watch.pids(&later), HashSet::from([2]));
         assert_eq!(watch.own_pids(&later), HashSet::from([2]));
+    }
+
+    #[test]
+    fn the_pc_may_sleep_once_the_launch_no_longer_waits_for_the_window() {
+        // Cancelled after the game started but before its window got the screen, which may be never: a launcher that
+        // stays open.
+        let mut screen = Screen { handed: false, awake: true };
+        screen.hand();
+        assert!(screen.handed && !screen.awake, "the PC and TV would stay awake until the game closes");
+        screen.waits_again();
+        assert!(!screen.handed && screen.awake);
+        screen.stay_awake(false);
     }
 
     #[test]

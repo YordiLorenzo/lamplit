@@ -230,7 +230,7 @@ pub fn full_screen_app_in_front() -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use windows::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DestroyWindow, GW_HWNDNEXT, WINDOW_EX_STYLE, WS_POPUP,
@@ -238,13 +238,25 @@ mod tests {
     use windows::core::w;
 
     /// A hidden top-level window of this thread, topmost or not: the system's STATIC class needs no registering.
-    fn window(topmost: bool) -> HWND {
+    pub fn window(topmost: bool) -> HWND {
         let style = if topmost { WS_EX_TOPMOST } else { WINDOW_EX_STYLE(0) };
         // SAFETY: the class and title are constant strings; the window has no parent, menu or data.
         unsafe {
             CreateWindowExW(style, w!("STATIC"), w!("lamplit test"), WS_POPUP, 0, 0, 64, 64, None, None, None, None)
         }
         .unwrap()
+    }
+
+    /// The window right behind `window` in the z-order.
+    pub fn next(window: HWND) -> Option<HWND> {
+        // SAFETY: only reads the z-order.
+        unsafe { GetWindow(window, GW_HWNDNEXT) }.ok()
+    }
+
+    /// Closes a window `window(..)` made on this thread.
+    pub fn destroy(window: HWND) {
+        // SAFETY: the caller made the window on this thread.
+        unsafe { DestroyWindow(window) }.unwrap();
     }
 
     #[test]
