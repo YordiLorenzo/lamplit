@@ -388,9 +388,11 @@ vec3 normalAt(vec3 p) {
   vec2 k = vec2(1, -1) * .0015;
   return normalize(k.xyy * map(p + k.xyy) + k.yyx * map(p + k.yyx) + k.yxy * map(p + k.yxy) + k.xxx * map(p + k.xxx));
 }
-// The light behind the glass: the deep tone, three slow pools of colour and one thin bright line, far away.
+// The light behind the glass: the deep tone, three slow pools of colour and one thin bright line, far away. Directions
+// map onto it stereographically, which is smooth for any direction the glass bends the light into (a division by z,
+// clamped, would draw a hard outline where the clamp starts).
 vec3 backdrop(vec3 rd) {
-  vec2 q = rd.xy / max(rd.z, .25);
+  vec2 q = 2. * rd.xy / (1. + max(rd.z, -.9));
   vec3 col = uPal[0] * mix(1.1, .35, smoothstep(-.7, .9, q.y));
   for (int i = 0; i < 3; i++) {
     float fi = float(i);
@@ -403,40 +405,31 @@ vec3 backdrop(vec3 rd) {
 }
 // What the glass mirrors: the backdrop, and two soft studio lights.
 vec3 room(vec3 r) {
-  return backdrop(r) * .6 + uPal[4] * (pow(max(dot(r, normalize(vec3(-.5, .7, -.5))), 0.), 40.) * 2.2
-                                      + pow(max(dot(r, normalize(vec3(.8, .3, -.4))), 0.), 14.) * .5);
+  return backdrop(r) * .6 + uPal[4] * (pow(max(dot(r, normalize(vec3(-.5, .7, -.5))), 0.), 60.) * 6.
+                                      + pow(max(dot(r, normalize(vec3(.8, .3, -.4))), 0.), 16.) * .9);
 }
-// The glass at p, seen along rd.
+// The glass at p, seen along rd, as thick glass: the light behind is bent by the front surface alone, by more than
+// one thin surface would bend it, and each colour a little differently. The front surface is smooth everywhere, so the
+// bending is too: following the light out through the back would show the back's bevels as a second, offset form,
+// and where light can't leave (total internal reflection) the picture would jump.
 vec3 glassAt(vec3 p, vec3 rd) {
   vec3 n = normalAt(p);
   // Never quite edge-on: at a grazing angle the normal changes from one pixel to the next and the rim would sparkle.
   float ndv = clamp(dot(n, -rd), .08, 1.);
   float fres = .04 + .96 * pow(1. - ndv, 5.);
-  // Through the form: in, across, and out, each colour bent a little differently.
-  vec3 r1 = refract(rd, n, 1. / 1.45);
-  vec3 q = p - n * .01;
-  float s = .02;
-  for (int i = 0; i < 40; i++) {
-    float d = -map(q + r1 * s);
-    if (d < .001) break;
-    s += max(d, .01);
-    if (s > 4.) break;
-  }
+  vec3 bend = (refract(rd, n, 1. / 1.45) - rd) * 2.4;
   vec3 through;
-  if (s > 4.) through = backdrop(r1);
-  else {
-    vec3 n2 = -normalAt(q + r1 * s);
-    for (int c = 0; c < 3; c++) {
-      // Light that can't leave (total internal reflection) is taken as leaving straight on.
-      vec3 r2 = refract(r1, n2, 1.45 + (float(c) - 1.) * .03);
-      through[c] = backdrop(dot(r2, r2) < .01 ? r1 : r2)[c];
-    }
-  }
-  // Thicker glass holds back a little more light, towards the palette's light colour.
-  through *= exp(-s * (1. - uPal[4]) * .4) * 1.1;
+  for (int c = 0; c < 3; c++) through[c] = backdrop(normalize(rd + bend * (1. + (float(c) - 1.) * .025)))[c];
+  // Light crossing more glass (seen face on) is tinted a little more, towards the palette's light colour; towards the
+  // edges, where the light travels furthest through the glass, a little less of it gets through.
+  through *= mix(vec3(1), uPal[4] * 1.15, .25 * ndv) * mix(.55, 1.1, smoothstep(.12, .7, ndv));
   vec3 film = grad(ndv * 1.7 + T * .04);
-  vec3 col = mix(through, room(reflect(rd, n)) * mix(vec3(1), film * 1.5, .55), fres);
-  return col + film * pow(1. - ndv, 3.) * .12;
+  vec3 r = reflect(rd, n);
+  vec3 col = mix(through, room(r) * mix(vec3(1), film * 1.5, .55), fres);
+  // The studio's key light, mirrored on the glass at any angle.
+  col += uPal[4] * pow(max(dot(r, normalize(vec3(-.5, .7, -.5))), 0.), 90.) * 1.2;
+  // A soft bright edge where the glass turns away, as light gathers in the thickness of a rim.
+  return col + mix(film, uPal[4], .5) * pow(1. - ndv, 2.5) * .16;
 }
 vec3 scene(vec2 frag) {
   vec2 uv = (frag - .5 * uRes) / uRes.y;
