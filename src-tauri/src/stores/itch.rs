@@ -1,6 +1,7 @@
 // itch.io: the games the itch app installed, from its database (butler.db, kept by butler, the app's helper). They
 // are DRM-free and start as the app would start them: the action the game's manifest names, else the exe the app
-// found. So the app itself never has to run.
+// found. So the app itself never has to run, except for a game it runs in its sandbox: that one goes to the app's
+// own launcher, never straight to its exe.
 
 use super::installed::skip_exe;
 use super::names::{clean_name, prettify};
@@ -14,13 +15,17 @@ use winreg::RegKey;
 use winreg::enums::HKEY_CURRENT_USER;
 
 /// The app's installer, itch-setup, puts it in the folder its uninstall entry names (`%LOCALAPPDATA%\itch` unless the
-/// player chose another), with each version in its own folder and the current one named in state.json.
-pub fn exe() -> Option<PathBuf> {
-    let base = RegKey::predef(HKEY_CURRENT_USER)
+/// player chose another), with each version in its own folder and the current one named in state.json. It leaves a
+/// copy of itself there too, which also starts games (see `launch`).
+fn base() -> PathBuf {
+    RegKey::predef(HKEY_CURRENT_USER)
         .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\itch")
         .and_then(|k| k.get_value::<String, _>("InstallLocation"))
-        .map_or_else(|_| local_app_data().join("itch"), PathBuf::from);
-    app_exe(&base)
+        .map_or_else(|_| local_app_data().join("itch"), PathBuf::from)
+}
+
+pub fn exe() -> Option<PathBuf> {
+    app_exe(&base())
 }
 
 fn app_exe(base: &Path) -> Option<PathBuf> {
@@ -30,7 +35,10 @@ fn app_exe(base: &Path) -> Option<PathBuf> {
 
 pub fn games() -> Vec<Game> {
     let Some(roaming) = std::env::var_os("APPDATA") else { return Vec::new() };
-    let Some(db) = sqlite::Db::open(&Path::new(&roaming).join(r"itch\db\butler.db")) else { return Vec::new() };
+    let user_data = Path::new(&roaming).join("itch");
+    let Some(db) = sqlite::Db::open(&user_data.join(r"db\butler.db")) else { return Vec::new() };
+    let isolate_apps = isolate_apps(&user_data.join("preferences.json"));
+    let setup = base().join("itch-setup.exe");
     let mut out: Vec<Game> = Vec::new();
     for cave in caves(&db) {
         let id = format!("itch:{}", cave.game_id);
@@ -43,11 +51,13 @@ pub fn games() -> Vec<Game> {
             log::info!("discovery itch: {name} skipped, {} is missing", cave.dir.display());
             continue;
         }
-        let Some(launch) = launch(&cave) else {
+        let Some((start, exe_names)) = launch(&cave, isolate_apps, &setup) else {
             log::info!("discovery itch: {name} skipped, it has no Windows exe (an HTML or Java game, say)");
             continue;
         };
-        out.push(Game::new(id, name, Some(Store::Itch), cave.dir, launch));
+        let mut game = Game::new(id, name, Some(Store::Itch), cave.dir, start);
+        game.exe_names = exe_names;
+        out.push(game);
     }
     out
 }
@@ -62,6 +72,8 @@ struct Cave {
     exes: Vec<String>,
     /// What the player picked to launch in the app, when a game has several: an action's name or a path.
     target: Option<String>,
+    /// The game's own sandbox setting in the app, when the player set one.
+    sandbox: Option<bool>,
 }
 
 /// The installs of games, from the tables caves, games and install_locations. itch.io also sells tools, assets,
@@ -91,7 +103,8 @@ fn caves(db: &sqlite::Db) -> Vec<Cave> {
             let title = game.and_then(|g| g.text("title")).map(str::to_string);
             let settings: Value = c.text("settings").and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default();
             let target = settings["launchTarget"].as_str().filter(|t| !t.is_empty()).map(str::to_string);
-            Some(Cave { game_id, title, dir, exes: windows_exes(&verdict), target })
+            let sandbox = settings["sandbox"].as_bool();
+            Some(Cave { game_id, title, dir, exes: windows_exes(&verdict), target, sandbox })
         })
         .collect()
 }
@@ -113,19 +126,39 @@ fn windows_exes(verdict: &Value) -> Vec<String> {
     list.into_iter().map(|(.., path)| path).collect()
 }
 
-/// What starts a game, as butler (the app's helper) picks it: an action from the game's manifest that runs on
-/// Windows, else the exes the app found. Of several, the one the player picked in the app, else the action named
-/// "play", else the first; the app itself would ask the player.
-fn launch(cave: &Cave) -> Option<Launch> {
-    if let Some((exe, args)) = manifest_action(&cave.dir, cave.target.as_deref()) {
-        return Some(if args.is_empty() { Launch::Exe(exe) } else { Launch::ExeArgs(exe, command_line(&args)) });
+/// What starts a game, and the names of its exes when Lamplit can know the game only by them. The game's own start
+/// is picked as butler (the app's helper) picks it: an action from the game's manifest that runs on Windows, else the
+/// exes the app found; of several, the one the player picked in the app, else the action named "play", else the
+/// first (the app itself would ask the player).
+///
+/// The app runs a game in its sandbox, a Windows account of its own with less access than the player's, when the
+/// game's own setting says so, or, without one, when the app's preference (`isolate_apps`) or the manifest's action
+/// asks for it (perform-launch.ts in the app). Such a game goes to the app's launcher, `itch-setup --run-game`
+/// (itch 26.20 and later), which starts it through butler in the sandbox. Started from its exe, it would run with all
+/// the player's access. Its processes then belong to the sandbox's account, so Lamplit also knows them by name.
+fn launch(cave: &Cave, isolate_apps: bool, setup: &Path) -> Option<(Launch, Vec<String>)> {
+    let scanned = || {
+        let picked = cave.target.as_deref().and_then(|t| cave.exes.iter().find(|e| same_path(e, t)));
+        let exe = picked.into_iter().chain(&cave.exes).filter_map(|rel| inside(&cave.dir, rel)).find(|p| p.is_file());
+        exe.map(|exe| (exe, Vec::new(), false))
+    };
+    let (exe, args, opt_in) = manifest_action(&cave.dir, cave.target.as_deref()).or_else(scanned)?;
+    if cave.sandbox.unwrap_or(isolate_apps || opt_in) {
+        let run = format!("--appname itch --run-game {}", cave.game_id);
+        return Some((Launch::ExeArgs(setup.to_path_buf(), run), vec![file_name(&exe).to_lowercase()]));
     }
-    let picked = cave.target.as_deref().and_then(|t| cave.exes.iter().find(|e| same_path(e, t)));
-    picked.into_iter().chain(&cave.exes).filter_map(|rel| inside(&cave.dir, rel)).find(|p| p.is_file()).map(Launch::Exe)
+    let launch = if args.is_empty() { Launch::Exe(exe) } else { Launch::ExeArgs(exe, command_line(&args)) };
+    Some((launch, Vec::new()))
+}
+
+/// Whether the app's preference to run every game in its sandbox is on (preferences.json in the app's data folder).
+fn isolate_apps(preferences: &Path) -> bool {
+    let prefs: Option<Value> = read_text(preferences).and_then(|t| serde_json::from_str(&t).ok());
+    prefs.is_some_and(|p| p["isolateApps"].as_bool() == Some(true))
 }
 
 /// A game's `.itch.toml`, at the top of its folder (https://itch.io/docs/itch/integrating/manifest.html). Lamplit
-/// reads the actions' name, path, args and platform; the rest (sandbox, API scope, prerequisites) is the app's.
+/// reads the actions' name, path, args, platform and sandbox opt-in; the rest (API scope, prerequisites) is the app's.
 #[derive(Deserialize)]
 struct Manifest {
     #[serde(default)]
@@ -141,12 +174,14 @@ struct Action {
     #[serde(default)]
     args: Vec<String>,
     platform: Option<String>,
+    #[serde(default)]
+    sandbox: bool,
 }
 
-/// The exe and arguments of the manifest's action for this game, if it ships a manifest with one that runs on Windows:
-/// one with no platform or `windows`, whose path (`{{EXT}}` standing for `.exe`) is an exe in the game's folder. URLs,
-/// folders and other platforms' files are left out, as butler leaves them out on Windows.
-fn manifest_action(dir: &Path, picked: Option<&str>) -> Option<(PathBuf, Vec<String>)> {
+/// The exe, arguments and sandbox opt-in of the manifest's action for this game, if it ships a manifest with one that
+/// runs on Windows: one with no platform or `windows`, whose path (`{{EXT}}` standing for `.exe`) is an exe in the
+/// game's folder. URLs, folders and other platforms' files are left out, as butler leaves them out on Windows.
+fn manifest_action(dir: &Path, picked: Option<&str>) -> Option<(PathBuf, Vec<String>, bool)> {
     let text = read_text(&dir.join(".itch.toml"))?;
     let manifest: Manifest = toml::from_str(&text)
         .map_err(|e| log::info!("discovery itch: {} has a manifest Lamplit can't read: {e}", dir.display()))
@@ -166,7 +201,7 @@ fn manifest_action(dir: &Path, picked: Option<&str>) -> Option<(PathBuf, Vec<Str
     let at = |t: &str| actions.iter().find(|(a, path, _)| same_path(&a.path, t) || same_path(path, t));
     let (action, _, exe) =
         picked.and_then(|t| named(t).or_else(|| at(t))).or_else(|| named("play")).or(actions.first())?;
-    Some((exe.clone(), action.args.clone()))
+    Some((exe.clone(), action.args.clone(), action.sandbox))
 }
 
 /// Two paths relative to a game's folder, in either slash and with or without `./`, are the same.
@@ -227,6 +262,7 @@ mod tests {
             dir: PathBuf::from(dir),
             exes: exes.iter().map(|e| (*e).to_string()).collect(),
             target: None,
+            sandbox: None,
         };
         // Not the tool. The HTML game is there, with no exe to start (games() leaves it out), and so is the one on a
         // share (games() never follows it).
@@ -240,9 +276,11 @@ mod tests {
                     &["Fennel.exe", r"tools\editor.exe", "UnityCrashHandler64.exe"]
                 ),
                 cave(1003, "Web Toy", &format!(r"{apps}\web-toy"), &[]),
-                // The player picked the play action in the app.
+                // The player picked the play action in the app, and switched the sandbox off for it.
                 Cave {
-                    target: Some("play".into()), ..cave(1004, "Clover™", r"D:\Games\Clover", &[r"bin\clover.exe"])
+                    target: Some("play".into()),
+                    sandbox: Some(false),
+                    ..cave(1004, "Clover™", r"D:\Games\Clover", &[r"bin\clover.exe"])
                 },
                 cave(1005, "Share Game", r"\\nas\itch\share-game", &["share.exe"]),
             ]
@@ -266,8 +304,14 @@ mod tests {
             dir: cave_dir.clone(),
             exes: exes.clone(),
             target: target.map(str::to_string),
+            sandbox: None,
         };
         (dir, cave)
+    }
+
+    /// How a game outside the sandbox starts.
+    fn direct(cave: &Cave) -> Option<Launch> {
+        launch(cave, false, Path::new("itch-setup.exe")).map(|(launch, _)| launch)
     }
 
     #[test]
@@ -289,7 +333,6 @@ name = "play"
 path = "bin/Game.exe"
 platform = "windows"
 args = ["--fullscreen", "--save", "C:\\Saved Games\\Fennel\\", 'say "hi"']
-sandbox = true
 
 [[actions.locales.fr]]
 name = "Jouer"
@@ -316,28 +359,61 @@ name = "vcredist-2015-x64"
             dir.join(r"bin\Game.exe"),
             r#"--fullscreen --save "C:\Saved Games\Fennel\\" "say \"hi\"""#.into(),
         );
-        assert_eq!(launch(&cave(None)), Some(play.clone()));
+        assert_eq!(direct(&cave(None)), Some(play.clone()));
         // What the player picked in the app, by action name or by path; a pick an update left behind counts for
         // nothing.
         let editor = Launch::Exe(dir.join(r"bin\editor.exe"));
-        assert_eq!(launch(&cave(Some("editor"))), Some(editor.clone()));
-        assert_eq!(launch(&cave(Some("./bin/editor.exe"))), Some(editor.clone()));
-        assert_eq!(launch(&cave(Some("Old.exe"))), Some(play));
+        assert_eq!(direct(&cave(Some("editor"))), Some(editor.clone()));
+        assert_eq!(direct(&cave(Some("./bin/editor.exe"))), Some(editor.clone()));
+        assert_eq!(direct(&cave(Some("Old.exe"))), Some(play));
         // Without a play action for Windows, the first action that has an exe.
         write(
             "[[actions]]\nname = 'web'\npath = 'https://example.itch.io'\n[[actions]]\nname = 'editor'\npath = 'bin/editor.exe'",
         );
-        assert_eq!(launch(&cave(None)), Some(editor));
+        assert_eq!(direct(&cave(None)), Some(editor));
         // A manifest with nothing for Windows, or one that doesn't read, leaves the exes the app found.
         let found = Some(Launch::Exe(dir.join(r"tools\big.exe")));
         write("[[actions]]\nname = 'play'\npath = 'Game.x86_64'\nplatform = 'linux'");
-        assert_eq!(launch(&cave(None)), found);
+        assert_eq!(direct(&cave(None)), found);
         write("[[actions]\nname = ");
-        assert_eq!(launch(&cave(None)), found);
+        assert_eq!(direct(&cave(None)), found);
         // No manifest: the exes the app found, the player's pick among them first.
         fs::remove_file(dir.join(".itch.toml")).unwrap();
-        assert_eq!(launch(&cave(None)), found);
-        assert_eq!(launch(&cave(Some("Launcher.exe"))), Some(Launch::Exe(dir.join("Launcher.exe"))));
+        assert_eq!(direct(&cave(None)), found);
+        assert_eq!(direct(&cave(Some("Launcher.exe"))), Some(Launch::Exe(dir.join("Launcher.exe"))));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_game_in_the_sandbox_goes_to_the_apps_launcher() {
+        let (dir, cave) = install("sandbox", &[r"bin\Game.exe"], &[r"bin\Game.exe"]);
+        let setup = Path::new(r"C:\Users\player\AppData\Local\itch\itch-setup.exe");
+        let run = "--appname itch --run-game 1".to_string();
+        let handed = Some((Launch::ExeArgs(setup.to_path_buf(), run), vec!["game.exe".to_string()]));
+        let from_exe = Some((Launch::Exe(dir.join(r"bin\Game.exe")), Vec::new()));
+        // The app's preference to run every game in the sandbox.
+        assert_eq!(launch(&cave(None), true, setup), handed);
+        assert_eq!(launch(&cave(None), false, setup), from_exe);
+        // The manifest's action asks for it.
+        fs::write(dir.join(".itch.toml"), "[[actions]]\nname = 'play'\npath = 'bin/Game.exe'\nsandbox = true").unwrap();
+        assert_eq!(launch(&cave(None), false, setup), handed);
+        // The game's own setting in the app wins either way, as it does in the app.
+        let set = |sandbox| Cave { sandbox: Some(sandbox), ..cave(None) };
+        assert_eq!(launch(&set(false), true, setup), from_exe);
+        fs::remove_file(dir.join(".itch.toml")).unwrap();
+        assert_eq!(launch(&set(true), false, setup), handed);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_apps_sandbox_preference() {
+        let dir = scratch("prefs");
+        let prefs = dir.join("preferences.json");
+        assert!(!isolate_apps(&prefs));
+        fs::write(&prefs, r#"{"isolateApps":true,"openAtLogin":false}"#).unwrap();
+        assert!(isolate_apps(&prefs));
+        fs::write(&prefs, r#"{"isolateApps":false}"#).unwrap();
+        assert!(!isolate_apps(&prefs));
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -345,7 +421,7 @@ name = "vcredist-2015-x64"
     fn a_manifest_path_stays_in_the_games_folder() {
         let (dir, cave) = install("outside", &["Game.exe"], &["Game.exe"]);
         fs::write(dir.join(".itch.toml"), "[[actions]]\nname = 'play'\npath = '../other/Game.exe'").unwrap();
-        assert_eq!(launch(&cave(None)), Some(Launch::Exe(dir.join("Game.exe"))));
+        assert_eq!(direct(&cave(None)), Some(Launch::Exe(dir.join("Game.exe"))));
         fs::remove_dir_all(&dir).unwrap();
     }
 
