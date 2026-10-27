@@ -2588,6 +2588,25 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await close(page);
 }
 
+// 38. Find with every store fits a 16:9 screen: with focus on Sort, below three rows of store choices, the panel
+// doesn't scroll. A Find closed while scrolled, after a sort, took the GPU 17 to 29 ms a frame on a 4K TV.
+for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2194, height: 1234 }, 1.75]]) {
+  const stores = ['steam', 'epic', 'ea', 'ubisoft', 'rockstar', 'xbox', 'battlenet', 'gog', 'itch', 'amazon', null];
+  const games = stores.map((store, i) => game(i + 1, { store, requires: store ? [store] : [] }));
+  const page = await open({ games, screen: viewport, scale }, viewport);
+  await page.keyboard.press('f');
+  await idle(page);
+  await page.evaluate(() => document.querySelector('[data-id="sort:name"]').click());
+  await idle(page);
+  await page.waitForTimeout(100);
+  const f = await page.evaluate(() => {
+    const find = document.getElementById('find');
+    return { scrolled: find.scrollTop, over: find.scrollHeight - find.clientHeight, stores: document.querySelectorAll('#findStores .choice').length };
+  });
+  check(`${viewport.width}x${viewport.height}: Find with every store fits, and Sort needs no scrolling`, f.stores === 12 && f.scrolled === 0 && f.over <= 0, JSON.stringify(f));
+  await close(page);
+}
+
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));
 check('every command Rust registers is called by a test', untested.length === 0, untested.join(', '));

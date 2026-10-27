@@ -702,11 +702,14 @@ body.launching .cover.focus { scale: 1.1; }
 
 /* ---------- find ---------- */
 
-/* Wider than Settings for a keyboard ten keys across; the row's first covers stay in view beside it. */
-#find { width: 46vw; padding: 4.4vh 4vh; overflow-y: auto; scroll-padding: 4.4vh 0; scrollbar-width: none; }
+/* Wider than Settings for a keyboard ten keys across; the row's first covers stay in view beside it. With every store
+   it fits a 16:9 screen without scrolling: one closed while scrolled took the GPU most of a frame and more on a 4K
+   TV. On a 4:3 screen it scrolls. */
+#find { width: 46vw; padding: 3.6vh 4vh; overflow-y: auto; scroll-padding: 3.6vh 0; scrollbar-width: none; }
 #find.on { pointer-events: auto; }
-#find h2 { margin-bottom: 2.4vh; }
-#find h3 { margin: 2.4vh 0 1.2vh; }
+#find h2 { margin-bottom: 2vh; }
+#find h3 { margin: 2vh 0 1vh; }
+#findKeys .key { height: 4.8vh; }
 
 #findField, .field {
   display: flex;
