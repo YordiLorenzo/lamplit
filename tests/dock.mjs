@@ -119,7 +119,9 @@ const ringOn = (page) =>
 export async function dockTests({ open, close, check, shots }) {
   const openDock = async (data = {}, viewport = OPEN, screen = SCREEN) => {
     const page = await open({ games: [], file: 'dock.html', screen }, viewport);
-    await answers(page, { game, sound, accessories: ipc('accessories'), quiet: ipc('quiet'), overlays: ipc('overlays'), ...data });
+    // The session started 72 minutes before this dock opens, however long the suite has run by now.
+    const playing = { ...game, started: Math.floor(Date.now() / 1000) - 72 * 60 };
+    await answers(page, { game: playing, sound, accessories: ipc('accessories'), quiet: ipc('quiet'), overlays: ipc('overlays'), ...data });
     await emit(page, 'dock', opened);
     await idle(page);
     await settled(page);
