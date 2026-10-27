@@ -88,14 +88,17 @@ while you play. When the game closes, Lamplit is back on screen.
 
 ### The in-game dock
 
-- **Hold PS while you play** (or View and Menu on an Xbox controller) and a small dock opens along the bottom of the
-  screen, over the game, rather than the whole home screen. It opens on Resume, so Cross (A) goes straight back.
-- **What it holds:** the volume (Up, then Left and Right; Cross mutes), the sound output, quiet mode, NVIDIA's
-  performance stats when NVIDIA's overlay is installed, Home for the whole home screen, and Close game. Its top line
-  shows the game, each controller's battery and the headset's, and the time.
-- **Close game** asks once more, then asks the game to close, as its own close button does, so the game can save or
-  ask you first. A game that isn't responding, or still runs 10 seconds after you asked, gets **Force close**
-  instead, which ends it as Task Manager's End task does. Unsaved progress is lost.
+- **Hold PS while you play** (or View and Menu on an Xbox controller) and a small dock rises from the bottom edge of
+  the screen, over the game, rather than the whole home screen. It opens on Resume, so Cross (A) goes straight back.
+- **What it holds:** Resume, the sound output, quiet mode, NVIDIA's performance stats when NVIDIA's overlay is
+  installed, Home for the whole home screen, and Close game. Quiet mode and the stats light up when they are on. Above
+  them are the game with its cover and how long you have been playing, the volume, each controller's battery and the
+  headset's, and the time. Up goes to the volume, which opens into a slider: Left and Right change it, Cross mutes.
+  The dock takes its colours from the game's art.
+- **Close game:** hold Cross (A) until the ring around its icon is full, about a second. The game is then asked to
+  close, as its own close button does, so it can save or ask you first. Let go earlier and nothing happens. A game
+  that isn't responding, or still runs 10 seconds after you asked, gets **Force close** instead, held the same way,
+  which ends it as Task Manager's End task does. Unsaved progress is lost.
 - Circle (B), a second hold or Resume closes the dock, and the game is in front again.
 - **News while you play:** the folded dock shows for a few seconds when the headset turns on or off, a controller
   connects or disconnects, or a battery runs low (15% or less). It doesn't take the game's focus, and clicks go
@@ -333,7 +336,7 @@ sign-in, and Circle (B) cancels. In Settings, Up and Down move, Cross or Right o
 the volume, sidetone and auto-off timer, Circle goes back, and Triangle closes Settings. In Find, Cross types the key
 or picks the choice you're on, Square (X) deletes, Triangle (Y) adds a space, and Circle closes Find on the games it
 found. In the dock, Left and Right move along the row, Up goes to the volume, where Left and Right change it,
-Cross does what the focused tile says, and Circle goes back to the game. On a keyboard, type the name and press
+Cross does what the focused tile says (held, on Close game), and Circle goes back to the game. On a keyboard, type the name and press
 Enter.
 
 In a game's menu, Up and Down move and Cross picks; Circle or Options closes it. **Remove from Lamplit** asks first:

@@ -1,10 +1,13 @@
 // @ts-check
-// What the dock shows, worked out from plain data: its tiles, the volume, the batteries in its top line, the button
-// hints, and the spring it opens with. Nothing here touches the DOM or Tauri, so tests/dock-logic.test.mjs runs it in
-// Node.
+// What the dock shows, worked out from plain data: its tiles, the volume, the top line (how long the game has been
+// played, the batteries), the button hints, and the springs it moves with. Nothing here touches the DOM or Tauri, so
+// tests/dock-logic.test.mjs runs it in Node.
+
+import { playTimeText } from '../logic.js';
 
 /**
  * @typedef {import('../api.js').Sound} Sound
+ * @typedef {import('../api.js').Device} Device
  * @typedef {import('../api.js').Accessories} Accessories
  * @typedef {import('../api.js').Quiet} Quiet
  * @typedef {import('../api.js').Overlays} Overlays
@@ -20,106 +23,134 @@
  * @property {Accessories | null} accessories
  * @property {Quiet | null} quiet
  * @property {Overlays} overlays
- * @property {boolean} confirm  Close game was pressed once, and asks for a second press
  */
 
 /** @typedef {'resume' | 'output' | 'quiet' | 'stats' | 'home' | 'close'} TileKey */
 
 /**
- * One tile in the dock's row.
+ * One tile in the dock's row: an icon that shows its state (quiet mode and the stats light up when on), and one label.
  * @typedef {object} Tile
  * @property {TileKey} key
  * @property {string} icon  a symbol in dock.html, without its "i-"
  * @property {string} label
- * @property {string} value  a line under the label: a state, a device, or what the next press does
- * @property {'' | 'good' | 'warn'} tone
+ * @property {boolean} on  a switch that is on
+ * @property {'' | 'warn'} tone  partly on, or a game to force closed
  */
 
-/** The icon of a sound output, by its kind. @param {import('../api.js').Device['kind'] | undefined} kind */
-export const outputIcon = (kind) => ({ tv: 'tv', headset: 'headset', controller: 'controller' })[kind] ?? 'speaker';
+/** How long Cross is held on Close game to close the game. */
+export const HOLD_MS = 900;
 /** A battery at this percent or below, running on its battery, is low (dock/news.rs warns at the same level). */
 const LOW = 15;
 
+/** The icon of a sound output, by its kind. @param {Device['kind'] | undefined} kind */
+export const outputIcon = (kind) => ({ tv: 'tv', headset: 'headset', controller: 'controller' })[kind] ?? 'speaker';
+
+/**
+ * A sound output's name on its tile: what kind of device it is, which fits; the list of outputs has the full names.
+ * @param {Device | undefined} device
+ */
+export const outputLabel = (device) =>
+  !device ? 'Output' : ({ tv: 'TV', headset: 'Headset', controller: 'Controller' })[device.kind] ?? device.name;
+
 /** @param {DockData} d @returns {Tile[]} */
 export function tiles(d) {
-  const out = d.sound?.outputs.find((o) => o.default);
   const quiet = d.quiet?.state;
-  const stats = d.overlays.nvidia_stats;
+  const quietOn = quiet === 'on' || quiet === 'partly';
+  const stats = d.overlays.nvidia_stats === true;
+  const out = d.sound?.outputs.find((o) => o.default);
   /** @type {Tile[]} */
   const row = [
-    { key: 'resume', icon: 'resume', label: 'Resume', value: '', tone: '' },
-    { key: 'output', icon: outputIcon(out?.kind), label: 'Output', value: out?.name ?? '…', tone: '' },
+    { key: 'resume', icon: 'resume', label: 'Resume', on: false, tone: '' },
+    { key: 'output', icon: outputIcon(out?.kind), label: outputLabel(out), on: false, tone: '' },
     {
       key: 'quiet',
-      icon: 'quiet',
-      label: 'Quiet mode',
-      value: { on: 'On', off: 'Off', partly: 'Partly on' }[quiet] ?? '…',
-      tone: quiet === 'on' ? 'good' : quiet === 'partly' ? 'warn' : '',
+      icon: quietOn ? 'quiet-on' : 'quiet',
+      label: quiet === 'partly' ? 'Partly quiet' : 'Quiet',
+      on: quietOn,
+      tone: quiet === 'partly' ? 'warn' : '',
     },
   ];
   // An unknown state can still be switched: NVIDIA's overlay logs the switch.
-  if (d.overlays.nvidia_overlay) {
-    row.push({ key: 'stats', icon: 'stats', label: 'Stats', value: stats === null ? 'Unknown' : stats ? 'On' : 'Off', tone: stats ? 'good' : '' });
-  }
-  row.push({ key: 'home', icon: 'home', label: 'Home', value: '', tone: '' });
+  if (d.overlays.nvidia_overlay) row.push({ key: 'stats', icon: 'stats', label: 'Stats', on: stats, tone: '' });
+  row.push({ key: 'home', icon: 'home', label: 'Home', on: false, tone: '' });
   if (d.game) {
-    const g = d.game;
-    const value = d.confirm ? 'Press again' : !g.responding ? 'Not responding' : '';
-    row.push({ key: 'close', icon: 'close', label: g.force_close ? 'Force close' : 'Close game', value, tone: value ? 'warn' : '' });
+    const force = d.game.force_close;
+    row.push({ key: 'close', icon: 'close', label: force ? 'Force close' : 'Close game', on: false, tone: force ? 'warn' : '' });
   }
   return row;
 }
 
-/** The volume row's level: the percent, or Muted. @param {Sound | null} sound */
+/** The volume's level: the percent, or Muted. @param {Sound | null} sound */
 export function volumeText(sound) {
   if (sound?.volume == null) return '…';
   return sound.muted ? 'Muted' : `${sound.volume}%`;
 }
 
 /**
- * The batteries in the dock's top line: each controller that reports one, then the headset while it is on.
+ * Under the game's name: how long this session has gone on, or that the game isn't responding.
+ * @param {DockGame | null} game
+ * @param {number} now  Unix seconds
+ */
+export function sessionText(game, now) {
+  if (!game) return '';
+  if (!game.responding) return 'Not responding';
+  if (!game.started) return '';
+  const minutes = Math.floor((now - game.started) / 60);
+  return minutes < 1 ? 'Just started' : `Playing for ${playTimeText(minutes, true)}`;
+}
+
+/**
+ * The batteries in the dock's top line: each controller that reports one, then the headset while it is on. `level`
+ * fills the battery's glyph; an Xbox-style controller reports only a rough one.
  * @param {Accessories | null} acc
- * @returns {{ icon: string, text: string, tone: '' | 'warn' }[]}
+ * @returns {{ icon: string, text: string, level: number, tone: '' | 'warn' }[]}
  */
 export function chips(acc) {
   if (!acc) return [];
-  const level = { empty: 'Empty', low: 'Low', medium: 'Medium', full: 'Full' };
-  const pads = acc.controllers
+  /** @type {Record<string, [string, number]>} */
+  const rough = { empty: ['Empty', 5], low: ['Low', 20], medium: ['Medium', 55], full: ['Full', 100] };
+  /** @type {{ icon: string, text: string, level: number, tone: '' | 'warn' }[]} */
+  const out = acc.controllers
     .filter((c) => c.battery)
     .map((c) => {
       const b = c.battery;
-      const low = b.percent != null ? b.percent <= LOW && b.charge !== 'charging' && b.charge !== 'full' : b.level === 'low' || b.level === 'empty';
-      return { icon: 'controller', text: b.percent != null ? `${b.percent}%` : level[b.level], tone: low ? 'warn' : '' };
+      if (b.percent == null) {
+        const [text, level] = rough[b.level];
+        return { icon: 'controller', text, level, tone: b.level === 'low' || b.level === 'empty' ? 'warn' : '' };
+      }
+      const low = b.percent <= LOW && b.charge !== 'charging' && b.charge !== 'full';
+      return { icon: 'controller', text: `${b.percent}%`, level: b.percent, tone: low ? 'warn' : '' };
     });
   const h = acc.headset;
   if (h.on && h.battery != null) {
-    pads.push({ icon: 'headset', text: `${h.battery}%`, tone: h.battery <= LOW && h.charge === 'battery' ? 'warn' : '' });
+    out.push({ icon: 'headset', text: `${h.battery}%`, level: h.battery, tone: h.battery <= LOW && h.charge === 'battery' ? 'warn' : '' });
   }
-  return /** @type {{ icon: string, text: string, tone: '' | 'warn' }[]} */ (pads);
+  return out;
 }
+
+/** A button the dock's hints name: the home screen's, and Up and Down on the d-pad. @typedef {HintButton | 'up' | 'down'} DockButton */
 
 /**
  * The hints under the dock: what the buttons do where the focus is.
  * @param {'tiles' | 'volume' | 'outputs'} row
  * @param {TileKey} tile  the focused tile
  * @param {DockData} d
- * @returns {[HintButton, string][]}
+ * @returns {[DockButton, string][]}
  */
 export function hints(row, tile, d) {
   if (row === 'outputs') return [['ok', 'Use'], ['back', 'Back']];
-  if (row === 'volume') return [['adjust', 'Volume'], ['ok', d.sound?.muted ? 'Unmute' : 'Mute'], ['back', 'Back to game']];
+  if (row === 'volume') return [['adjust', 'Volume'], ['ok', d.sound?.muted ? 'Unmute' : 'Mute'], ['down', 'Back']];
   const switched = (/** @type {boolean | null | undefined} */ on) => (on ? 'Turn off' : 'Turn on');
-  const force = d.game?.force_close;
   const ok = {
     resume: 'Resume',
     output: 'Choose',
     quiet: switched(d.quiet?.active),
     stats: switched(d.overlays.nvidia_stats),
     home: 'Home screen',
-    close: (force ? 'Force close' : 'Close game') + (d.confirm ? ' now' : ''),
+    close: d.game?.force_close ? 'Hold to force close' : 'Hold to close game',
   }[tile];
   // On Resume, ○ would say the same as ✕.
-  return tile === 'resume' ? [['ok', ok]] : [['ok', ok], ['back', 'Back to game']];
+  return tile === 'resume' ? [['ok', ok], ['up', 'Volume']] : [['ok', ok], ['up', 'Volume'], ['back', 'Back to game']];
 }
 
 /**

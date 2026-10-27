@@ -170,7 +170,13 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
 
 The page sizes the dock in hundredths of the screen's height (`--u`, from `screen.height`), since its window covers
 only part of the screen. The island's width and height follow the face it shows, with a spring easing built as a CSS
-`linear()` curve.
+`linear()` curve; one focus ring springs from tile to tile on a quicker one. Behind the faces, the game's own art is
+drawn small and blurred into a canvas, which the page scales up to the island: a blur that costs nothing while the
+island moves, where CSS `backdrop-filter` couldn't see the game behind a transparent window at all. Windows 11 can
+blur what is behind a window (Acrylic, which Tauri offers as a window effect), but it covers the whole window, and the
+dock's window is wider than the island and springs open: shaping it would take a window region redrawn on every
+frame. Close game asks for Cross held: the pad sends `dock-pad` with `ok-up` when Cross is let go after a press
+(`devices/pad/navigation.rs`), and only the open dock hears of it.
 
 ## Commands
 
@@ -211,7 +217,7 @@ message is written for the player, and the page shows it.
 | `power_sleep` | | Nothing, once the PC has woken up again |
 | `power_restart`, `power_shut_down` | | Nothing, once Windows has started to restart or shut down |
 | `display_mode` | | The screen's mode, such as `3840 × 2160 at 120 Hz` |
-| `dock_state` | | The game the dock is over: `{ id, name, responding, force_close }`, or `null` |
+| `dock_state` | | The game the dock is over: `{ id, name, art, started, responding, force_close }`, or `null` |
 | `dock_resume` | | Nothing; the dock folds and the game is in front again |
 | `dock_home` | | Nothing; the home screen comes forward and the dock goes |
 | `dock_close_game` | `force` | Nothing, once Windows has the request; the game's end follows as after any game |
@@ -234,7 +240,7 @@ Rust sends these without being asked (`events.rs`):
 | `notice` | A short message | Something the player should know, such as where the sound went |
 | `setup` | `{ needed }` | Setup started from Settings has ended |
 | `dock` | `{ mode }`: `open`, `closed`, or `status` with `icon`, `text` and `warn` | The dock opens, folds away, or shows news |
-| `dock-pad` | The same steps as `pad` | A controller press, while the dock is in front |
+| `dock-pad` | The same steps as `pad`, and `ok-up` when Cross is let go | A controller press, while the dock is open |
 
 ## Keeping the two sides in step
 

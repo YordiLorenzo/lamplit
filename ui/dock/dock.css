@@ -1,17 +1,21 @@
-/* The in-game dock (dock.html): an island along the bottom of the screen, over the running game. Its window covers
+/* The in-game dock (dock.html): an island on the bottom edge of the screen, over the running game. Its window covers
    only part of the screen, so sizes are in --u, a hundredth of the screen's height, which main.js sets: the dock is
    the same size on a 1080p and a 4K TV, and matches the home screen, which is sized in vh. */
 
 :root {
   --u: 1vh;
   --ink: #f5f5f7;
-  --ink-dim: rgb(245 245 247 / .72);
-  --accent: 140 170 255;
-  --good: #7be09a;
-  --warn: #ffc75e;
-  /* main.js puts a real spring here (logic.js spring); this curve overshoots once in its place. */
+  --ink-dim: rgb(245 245 247 / .7);
+  /* Lamplit's lamp amber: the focus glow, Resume, and a switch that is on. */
+  --lamp: 252 165 69;
+  /* The game's colour, sampled from its art (main.js); the lamp until there is art. */
+  --game: 252 165 69;
+  --warn: #ffb38a;
+  /* main.js puts real springs here (logic.js spring); these curves overshoot once in their place. */
   --spring: cubic-bezier(.34, 1.56, .64, 1);
   --spring-ms: 520ms;
+  --snap: cubic-bezier(.34, 1.3, .64, 1);
+  --snap-ms: 360ms;
   --glide: cubic-bezier(.2, .9, .25, 1);
   font-family: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   color: var(--ink);
@@ -32,23 +36,26 @@ html, body {
 body.pointer { cursor: default; }
 [hidden] { display: none !important; }
 .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.icon { flex: none; width: calc(var(--u) * 3); height: calc(var(--u) * 3); }
 
 /* ---------- the island ---------- */
 
-/* Folded, it is a pill; main.js gives it the size of the face it shows, and it springs there from wherever it was.
-   Opening, the pill appears first and springs open a moment later. */
+/* Folded, it is a pill on the bottom edge; main.js gives it the size of the face it shows, and it springs there.
+   Opening, the pill rises from the edge first and springs open a moment later. */
 #island {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--u) * 5);
-  width: calc(var(--u) * 16);
-  height: calc(var(--u) * 5);
-  border-radius: calc(var(--u) * 2.5);
+  bottom: calc(var(--u) * 3.4);
+  width: calc(var(--u) * 18);
+  height: calc(var(--u) * 5.2);
+  border-radius: calc(var(--u) * 2.6);
   overflow: hidden;
+  isolation: isolate;
+  /* Without art, and on any Windows: a dark glass of its own. */
   background: rgb(14 13 22 / .94);
   box-shadow:
-    inset 0 0 0 calc(var(--u) * .12) rgb(255 255 255 / .13),
-    0 calc(var(--u) * 1.6) calc(var(--u) * 5) rgb(0 0 0 / .55);
+    0 calc(var(--u) * 2.4) calc(var(--u) * 7) rgb(0 0 0 / .6),
+    0 0 0 calc(var(--u) * .1) rgb(0 0 0 / .35);
   translate: -50% 0;
   transform-origin: 50% 100%;
   transition:
@@ -56,136 +63,346 @@ body.pointer { cursor: default; }
     height var(--spring-ms) var(--spring) 70ms,
     border-radius var(--spring-ms) var(--spring) 70ms,
     opacity 140ms ease,
-    scale 320ms var(--spring);
+    scale 380ms var(--spring),
+    translate 380ms var(--spring);
 }
-#island[data-mode='news'] { height: calc(var(--u) * 6.4); border-radius: calc(var(--u) * 3.2); }
-#island[data-mode='open'] { border-radius: calc(var(--u) * 3.6); }
-/* Folding: back into the pill without a bounce, then gone. Rust hides the window 450 ms in (dock/mod.rs FOLD). */
+#island[data-mode='news'] { height: calc(var(--u) * 6.6); border-radius: calc(var(--u) * 3.3); }
+#island[data-mode='open'] { border-radius: calc(var(--u) * 4.8); }
+/* Folding: back into the pill and down onto the edge without a bounce, then gone. Rust hides the window 450 ms in
+   (dock/mod.rs FOLD). */
 #island[data-mode='gone'] {
   opacity: 0;
   scale: .6;
+  translate: -50% calc(var(--u) * 2.4);
   pointer-events: none;
   transition:
     width 260ms var(--glide),
     height 260ms var(--glide),
     border-radius 260ms var(--glide),
     opacity 180ms ease 160ms,
-    scale 300ms var(--glide) 100ms;
+    scale 300ms var(--glide) 100ms,
+    translate 300ms var(--glide) 100ms;
+}
+
+/* The game's art behind everything, blurred into its colours (main.js draws it small and blurred, and it is scaled
+   up here, which costs nothing while the island moves); then a tint that keeps text readable over a bright game; then
+   a thin rim of light, as on glass. */
+#backdrop, .tint, .rim { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+#backdrop { z-index: 0; opacity: 0; filter: saturate(1.35); transition: opacity 500ms ease; }
+#island.art #backdrop { opacity: .75; }
+.tint {
+  z-index: 1;
+  background:
+    radial-gradient(110% 120% at 0% 0%, rgb(var(--game) / .2), transparent 62%),
+    linear-gradient(180deg, rgb(12 10 18 / .35) 0%, rgb(10 9 16 / .58) 45%, rgb(8 7 12 / .74) 100%);
+}
+.rim {
+  z-index: 3;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 calc(var(--u) * .14) 0 rgb(255 255 255 / .2),
+    inset 0 0 0 calc(var(--u) * .1) rgb(255 255 255 / .1);
 }
 
 /* What the island shows, laid out from its bottom centre at its own size; the island reveals it as it grows. */
 .face {
   position: absolute;
+  z-index: 2;
   left: 50%;
   bottom: 0;
   width: max-content;
   translate: -50% 0;
   opacity: 0;
-  scale: .94;
   pointer-events: none;
-  transition: opacity 110ms ease, scale 110ms ease;
+  transition: opacity 110ms ease;
 }
 #island[data-mode='news'] #news,
 #island[data-mode='open'] #dock {
   opacity: 1;
-  scale: 1;
   pointer-events: auto;
-  transition: opacity 220ms ease 150ms, scale 320ms var(--glide) 120ms;
+  transition: opacity 200ms ease 140ms;
 }
-
-.icon { flex: none; width: calc(var(--u) * 3); height: calc(var(--u) * 3); }
 
 /* ---------- news ---------- */
 
 #news {
   display: flex;
   align-items: center;
-  gap: calc(var(--u) * 1.2);
-  height: calc(var(--u) * 6.4);
-  padding: 0 calc(var(--u) * 2.8) 0 calc(var(--u) * 2.2);
+  gap: calc(var(--u) * 1.4);
+  height: calc(var(--u) * 6.6);
+  padding: 0 calc(var(--u) * 3) 0 calc(var(--u) * 1);
   font-size: calc(var(--u) * 2.3);
   font-weight: 600;
   white-space: nowrap;
 }
-#news.warn .icon { color: var(--warn); }
+#news .badge {
+  display: grid;
+  place-items: center;
+  width: calc(var(--u) * 4.6);
+  height: calc(var(--u) * 4.6);
+  border-radius: 50%;
+  background: rgb(255 255 255 / .12);
+}
+#news .icon { width: calc(var(--u) * 2.7); height: calc(var(--u) * 2.7); }
+#news.warn .badge { background: rgb(var(--lamp) / .26); color: rgb(var(--lamp)); }
 #newsText { max-width: calc(var(--u) * 60); overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- the dock ---------- */
 
 #dock {
   display: grid;
-  gap: calc(var(--u) * 1.6);
-  padding: calc(var(--u) * 2.4) calc(var(--u) * 2.6) calc(var(--u) * 2.2);
+  gap: calc(var(--u) * 2.2);
+  padding: calc(var(--u) * 2.6) calc(var(--u) * 2.8) calc(var(--u) * 2.2);
+}
+/* Coming in: the top line, then the tiles one after another, then the hints (main.js numbers them in --i). */
+#top, .tile, #hint {
+  opacity: 0;
+  translate: 0 calc(var(--u) * 1.4);
+}
+#island[data-mode='open'] :is(#top, .tile, #hint) {
+  opacity: 1;
+  translate: 0 0;
+  transition:
+    opacity 260ms ease calc(120ms + var(--i, 0) * 32ms),
+    translate 520ms var(--glide) calc(120ms + var(--i, 0) * 32ms),
+    background 160ms ease;
 }
 
+/* The top line: the game's cover, its name and how long it has been played, then the volume, the batteries and the
+   time. */
 #top {
   display: flex;
   align-items: center;
-  gap: calc(var(--u) * 2.4);
-  font-size: calc(var(--u) * 2.3);
+  gap: calc(var(--u) * 2);
+  /* As wide as the row of tiles, whatever it holds: the volume opening takes room from the name, and the island keeps
+     its width. */
+  width: 0;
+  min-width: 100%;
 }
+#cover {
+  flex: none;
+  height: calc(var(--u) * 8.4);
+  aspect-ratio: 2 / 3;
+  border-radius: calc(var(--u) * 1.1);
+  object-fit: cover;
+  background: rgb(255 255 255 / .08);
+  box-shadow: 0 calc(var(--u) * .6) calc(var(--u) * 2) rgb(0 0 0 / .5), 0 0 0 calc(var(--u) * .1) rgb(255 255 255 / .14);
+}
+#title { flex: 1; min-width: 0; display: grid; gap: calc(var(--u) * .5); }
 #game {
-  flex: 1;
-  min-width: 0;
-  max-width: calc(var(--u) * 56);
+  max-width: calc(var(--u) * 52);
+  font-size: calc(var(--u) * 3.1);
   font-weight: 650;
+  letter-spacing: -.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-#chips { display: flex; gap: calc(var(--u) * 1.8); margin-left: auto; font-size: calc(var(--u) * 1.9); color: var(--ink-dim); }
-.chip { display: inline-flex; align-items: center; gap: calc(var(--u) * .5); font-variant-numeric: tabular-nums; }
-.chip svg { width: calc(var(--u) * 2.5); height: calc(var(--u) * 2.5); }
-.chip.warn { color: var(--warn); font-weight: 600; }
-#clock { font-size: calc(var(--u) * 2.1); font-weight: 500; font-variant-numeric: tabular-nums; }
-
-/* Something the player can focus: the volume row, a tile, an output. */
-.slot {
-  border-radius: calc(var(--u) * 1.6);
-  background: rgb(255 255 255 / .06);
-  transition: background 150ms ease, box-shadow 150ms ease, scale 280ms var(--spring);
+#session {
+  font-size: calc(var(--u) * 2);
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.slot.focus { background: rgb(255 255 255 / .16); box-shadow: inset 0 0 0 calc(var(--u) * .3) #fff; }
+#session:empty { display: none; }
+#session.warn { color: var(--warn); font-weight: 600; }
+#chips {
+  display: flex;
+  gap: calc(var(--u) * 2);
+  max-width: calc(var(--u) * 60);
+  overflow: hidden;
+  font-size: calc(var(--u) * 2);
+  color: var(--ink-dim);
+  transition: max-width var(--snap-ms) var(--snap), opacity 160ms ease;
+}
+/* The volume opens over the batteries' place, so the game's name keeps its room. */
+#top:has(#volume.focus) #chips { max-width: 0; opacity: 0; }
+.chip { display: inline-flex; align-items: center; gap: calc(var(--u) * .7); font-variant-numeric: tabular-nums; }
+.chip .icon { width: calc(var(--u) * 2.7); height: calc(var(--u) * 2.7); }
+.chip.warn { color: var(--warn); font-weight: 600; }
+/* A battery, filled to its level. */
+.battery {
+  position: relative;
+  width: calc(var(--u) * 3);
+  height: calc(var(--u) * 1.5);
+  border: calc(var(--u) * .2) solid currentColor;
+  border-radius: calc(var(--u) * .45);
+  opacity: .9;
+}
+.battery::before {
+  content: '';
+  position: absolute;
+  inset: calc(var(--u) * .2);
+  right: auto;
+  width: calc((100% - var(--u) * .4) * var(--level, 1));
+  border-radius: calc(var(--u) * .15);
+  background: currentColor;
+}
+.battery::after {
+  content: '';
+  position: absolute;
+  right: calc(var(--u) * -.55);
+  top: 25%;
+  width: calc(var(--u) * .3);
+  height: 50%;
+  border-radius: 0 calc(var(--u) * .15) calc(var(--u) * .15) 0;
+  background: currentColor;
+}
+#clock { font-size: calc(var(--u) * 2.8); font-weight: 600; font-variant-numeric: tabular-nums; }
 
+/* Something the player can focus: the volume, a tile, an output. */
+.slot { background: rgb(255 255 255 / .07); transition: background 160ms ease; }
+.slot.focus { background: rgb(255 255 255 / .15); }
+
+/* The volume, compact until it has the focus; then it opens into a slider. */
 #volume {
   display: flex;
   align-items: center;
-  gap: calc(var(--u) * 1.6);
-  padding: calc(var(--u) * 1.1) calc(var(--u) * 1.8);
-}
-#volume .bar {
-  flex: 1;
-  height: calc(var(--u) * .8);
+  gap: calc(var(--u) * 1.2);
+  height: calc(var(--u) * 5);
+  padding: 0 calc(var(--u) * 2) 0 calc(var(--u) * 1.6);
   border-radius: 99px;
-  background: rgb(255 255 255 / .16);
-  overflow: hidden;
+  transition: background 160ms ease, height var(--snap-ms) var(--snap), padding var(--snap-ms) var(--snap);
 }
-#volume .bar i { display: block; height: 100%; border-radius: inherit; background: rgb(var(--accent)); transition: width 160ms var(--glide); }
+#volume .icon { width: calc(var(--u) * 2.8); height: calc(var(--u) * 2.8); }
+#volume .bar {
+  width: calc(var(--u) * 8);
+  height: calc(var(--u) * .7);
+  border-radius: 99px;
+  background: rgb(255 255 255 / .18);
+  overflow: hidden;
+  transition: width var(--snap-ms) var(--snap), height var(--snap-ms) var(--snap);
+}
+#volume .bar i { display: block; height: 100%; border-radius: inherit; background: var(--ink); transition: width 180ms var(--glide); }
+/* The volume draws the focus ring itself: it changes size as it opens, which the ring couldn't follow. */
+#volume.focus {
+  height: calc(var(--u) * 6.4);
+  padding: 0 calc(var(--u) * 2.4) 0 calc(var(--u) * 2);
+  box-shadow:
+    0 0 0 calc(var(--u) * .34) #fff,
+    0 0 calc(var(--u) * 3) calc(var(--u) * .3) rgb(var(--lamp) / .5);
+}
+#volume.focus .bar { width: calc(var(--u) * 24); height: calc(var(--u) * 1.1); }
+#volume.focus .bar i { background: rgb(var(--lamp)); }
 #volume.muted .bar i { background: rgb(255 255 255 / .35); }
-#volumeText { min-width: calc(var(--u) * 8); text-align: right; font-size: calc(var(--u) * 2.1); font-variant-numeric: tabular-nums; }
+#volumeText { min-width: calc(var(--u) * 6.4); font-size: calc(var(--u) * 2.1); font-variant-numeric: tabular-nums; }
+#volume.focus #volumeText { font-size: calc(var(--u) * 2.5); font-weight: 600; }
 
-#tiles { display: flex; gap: calc(var(--u) * 1.2); }
+/* The row: Resume first and widest, then a tile per thing to do. A tile's icon shows its state; one label names it. */
+#tiles { display: flex; gap: calc(var(--u) * 1.4); }
 .tile {
+  position: relative;
   display: grid;
   justify-items: center;
   align-content: center;
-  gap: calc(var(--u) * .5);
-  width: calc(var(--u) * 15);
-  height: calc(var(--u) * 13);
-  padding: 0 calc(var(--u) * .7);
+  gap: calc(var(--u) * 1.1);
+  width: calc(var(--u) * 14.4);
+  height: calc(var(--u) * 14.4);
+  padding: 0 calc(var(--u) * .8);
+  border-radius: calc(var(--u) * 2.8);
 }
-.tile.focus { scale: 1.05; }
-.tile .icon { width: calc(var(--u) * 4.4); height: calc(var(--u) * 4.4); margin-bottom: calc(var(--u) * .4); }
-.tile .label { font-size: calc(var(--u) * 2.05); font-weight: 650; }
-.tile .label, .tile .value { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tile .value { min-height: 1.3em; font-size: calc(var(--u) * 1.75); color: var(--ink-dim); }
-.value.good { color: var(--good); }
-.value.warn { color: var(--warn); font-weight: 600; }
+.tile .glyph { position: relative; display: grid; place-items: center; }
+.tile .icon {
+  width: calc(var(--u) * 5.4);
+  height: calc(var(--u) * 5.4);
+  color: var(--ink-dim);
+  transition: color 160ms ease, scale var(--snap-ms) var(--snap), filter 200ms ease;
+}
+.tile .label {
+  max-width: 100%;
+  font-size: calc(var(--u) * 2.15);
+  font-weight: 600;
+  color: var(--ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 160ms ease;
+}
+.tile.focus .icon { color: var(--ink); scale: 1.1; }
+.tile.focus .label { color: var(--ink); }
+.tile.on .icon { color: rgb(var(--lamp)); filter: drop-shadow(0 0 calc(var(--u) * 1) rgb(var(--lamp) / .6)); }
+.tile.warn .icon { color: var(--warn); }
+.tile.warn.focus .label { color: var(--warn); }
 
-/* Choosing the sound output: a list in place of the volume and the tiles. */
-#outputs { display: grid; gap: calc(var(--u) * .8); min-width: calc(var(--u) * 56); }
-/* Six outputs fit; more scroll, with the focused one kept in view. */
-#outputList { display: grid; gap: calc(var(--u) * .8); max-height: calc(var(--u) * 37); overflow-y: auto; scrollbar-width: none; }
+/* Resume: the way back, big and lit. */
+.tile.primary {
+  width: calc(var(--u) * 31);
+  grid-auto-flow: column;
+  justify-content: center;
+  align-items: center;
+  gap: calc(var(--u) * 2.2);
+  background: linear-gradient(135deg, rgb(var(--lamp) / .26), rgb(var(--lamp) / .08));
+}
+.tile.primary.focus { background: linear-gradient(135deg, rgb(var(--lamp) / .38), rgb(var(--lamp) / .14)); }
+.tile.primary .glyph {
+  width: calc(var(--u) * 7.6);
+  height: calc(var(--u) * 7.6);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffe0ad, rgb(var(--lamp)) 55%, #cf6f16);
+  box-shadow: 0 calc(var(--u) * .6) calc(var(--u) * 2.2) rgb(var(--lamp) / .45);
+  transition: scale var(--snap-ms) var(--snap);
+}
+.tile.primary .icon { width: calc(var(--u) * 3.6); height: calc(var(--u) * 3.6); margin-left: calc(var(--u) * .4); color: #2b1605; scale: 1; }
+.tile.primary.focus .glyph { scale: 1.08; }
+.tile.primary .label { font-size: calc(var(--u) * 3.2); font-weight: 650; color: var(--ink); }
+
+/* Close game: Cross held fills a ring around the icon, and the game closes once it is full. Let go early, it drains. */
+.tile .hold {
+  position: absolute;
+  width: calc(var(--u) * 7.6);
+  height: calc(var(--u) * 7.6);
+  rotate: -90deg;
+  fill: none;
+  stroke-width: 2.2;
+  pointer-events: none;
+}
+.tile .hold .track { stroke: rgb(255 255 255 / 0); transition: stroke 160ms ease; }
+/* Empty, the fill is hidden outright: even a stroke of no length leaves a mark at its start. */
+.tile .hold .fill {
+  stroke: rgb(var(--lamp));
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  opacity: 0;
+  transition: stroke-dashoffset 240ms ease-out, opacity 0s linear 240ms;
+}
+.tile.warn .hold .fill { stroke: var(--warn); }
+.tile.focus .hold .track { stroke: rgb(255 255 255 / .16); }
+.tile.holding .hold .fill { stroke-dashoffset: 0; opacity: 1; transition: stroke-dashoffset var(--hold-ms, 900ms) linear, opacity 0s; }
+.tile.holding .icon { scale: .92; }
+.tile.closing { animation: closing 420ms var(--glide); }
+@keyframes closing { 30% { background: rgb(var(--lamp) / .35); } }
+
+/* The focus: one ring that springs from what had it to what has it (main.js places it). */
+#ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  width: var(--w, 0);
+  height: var(--h, 0);
+  border-radius: var(--r, 0);
+  translate: var(--x, 0) var(--y, 0);
+  box-shadow:
+    0 0 0 calc(var(--u) * .34) #fff,
+    0 0 calc(var(--u) * 3) calc(var(--u) * .3) rgb(var(--lamp) / .5);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    translate var(--snap-ms) var(--snap),
+    width var(--snap-ms) var(--snap),
+    height var(--snap-ms) var(--snap),
+    border-radius var(--snap-ms) var(--snap),
+    opacity 200ms ease;
+}
+#ring.on { opacity: 1; }
+#ring.instant { transition: opacity 200ms ease 260ms; }
+
+/* Choosing the sound output: a list in place of the tiles. */
+#outputs { display: grid; gap: calc(var(--u) * .8); }
+/* While the list shows, the tiles keep their width, so the island keeps its own. */
+#tiles.away { visibility: hidden; height: 0; margin-bottom: calc(var(--u) * -2.2); }
 #outputs h3 {
   margin-bottom: calc(var(--u) * .6);
   font-size: calc(var(--u) * 1.8);
@@ -194,15 +411,18 @@ body.pointer { cursor: default; }
   text-transform: uppercase;
   color: var(--ink-dim);
 }
+/* Six outputs fit; more scroll, with the focused one kept in view. */
+#outputList { display: grid; gap: calc(var(--u) * .8); max-height: calc(var(--u) * 37); overflow-y: auto; scrollbar-width: none; }
 .output {
   display: flex;
   align-items: center;
   gap: calc(var(--u) * 1.6);
-  padding: calc(var(--u) * 1.3) calc(var(--u) * 1.8);
+  padding: calc(var(--u) * 1.4) calc(var(--u) * 2);
+  border-radius: calc(var(--u) * 1.6);
   font-size: calc(var(--u) * 2.3);
 }
 .output span:first-of-type { flex: 1; }
-.output .value { font-size: calc(var(--u) * 1.9); }
+.output .value { font-size: calc(var(--u) * 1.9); color: rgb(var(--lamp)); }
 
 #message { max-width: calc(var(--u) * 90); font-size: calc(var(--u) * 2); color: var(--warn); text-align: center; }
 #message:empty { display: none; }
@@ -236,6 +456,10 @@ body.pointer { cursor: default; }
 #hint b.xbox-b { color: #ff7a7a; }
 
 @media (prefers-reduced-motion: reduce) {
-  #island, #island[data-mode='gone'], .face, .slot { transition-duration: 1ms; transition-delay: 0s; }
+  #island, #island[data-mode='gone'], .face, #ring, #island[data-mode='open'] :is(#top, .tile, #hint) {
+    transition-duration: 1ms;
+    transition-delay: 0s;
+  }
   #island[data-mode='gone'] { transition: opacity 150ms ease; }
+  .tile.closing { animation: none; }
 }

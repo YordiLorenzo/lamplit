@@ -196,11 +196,15 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @typedef {object} DockGame
  * @property {string} id
  * @property {string} name
+ * @property {Art} art  its cover, background and logo
+ * @property {number} started  when this session started, Unix seconds; 0 when Lamplit doesn't know
  * @property {boolean} responding  its window answers Windows
  * @property {boolean} force_close  the dock offers to end it: not responding, no window, or asked to close a while ago
  */
 
 /** @typedef {'headset' | 'controller'} DockIcon */
+
+/** Cross let go after a press, which only the dock hears of: its Close game asks for Cross to be held. @typedef {'ok-up'} DockRelease */
 
 /**
  * What the dock shows: open over the game, folded away, or news for a moment in the folded pill.
@@ -376,7 +380,7 @@ export const onPlay = (handle) => on('play', handle);
 export const onSummoned = (handle) => on('summoned', handle);
 /** The dock opens, folds away, or shows news. @param {(show: DockShow) => void} handle */
 export const onDock = (handle) => on('dock', handle);
-/** A controller press while the dock is in front. @param {(action: Action) => void} handle */
+/** A controller press while the dock is open, or Cross let go. @param {(action: Action | DockRelease) => void} handle */
 export const onDockPad = (handle) => on('dock-pad', handle);
 /** @param {(step: LaunchStep) => void} handle */
 export const onLaunchStep = (handle) => on('launch-step', handle);

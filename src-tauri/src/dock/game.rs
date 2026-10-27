@@ -5,7 +5,7 @@
 use crate::error::{Error, Result};
 use crate::events::{self, Event};
 use crate::launch::{self, Launcher};
-use crate::library::Library;
+use crate::library::{Art, Library};
 use crate::stores::Processes;
 use crate::win;
 use parking_lot::Mutex;
@@ -18,6 +18,10 @@ use tauri::{AppHandle, Manager};
 pub struct GameState {
     pub id: String,
     pub name: String,
+    /// Its cover, background and logo, which the dock shows it with.
+    pub art: Art,
+    /// When this session started, Unix seconds (Lamplit records it as the game's last play); 0 when unknown.
+    pub started: u64,
     /// Its window answers Windows.
     pub responding: bool,
     /// The dock offers to end the game: it isn't responding, has no window to ask, or was asked to close a while ago
@@ -35,12 +39,13 @@ const ANSWER_WITHIN: Duration = Duration::from_secs(1);
 /// The running game, None when none runs. Reads every process.
 pub fn game_state(app: &AppHandle) -> Option<GameState> {
     let (id, watch) = app.state::<Launcher>().running()?;
-    let name = name(app, &id);
+    let game = app.state::<Library>().game(&id);
+    let (name, art, started) = game.map_or_else(|| (id.clone(), Art::default(), 0), |g| (g.name, g.art, g.last_played));
     let procs = Processes::now();
     let windows = launch::game_windows(&watch.own_pids(procs.iter(), &procs.parents()));
     let responding = windows.iter().all(|&w| win::window::responds(w, ANSWER_WITHIN));
     let force_close = offers_force(responding, !windows.is_empty(), &id, watch.opened);
-    Some(GameState { id, name, responding, force_close })
+    Some(GameState { id, name, art, started, responding, force_close })
 }
 
 /// The dock offers to end the game: it isn't responding, has no window to ask, or the player asked it to close at
@@ -131,7 +136,19 @@ mod tests {
 
     #[test]
     fn reaches_the_page_as_in_its_fixture() {
-        let game = GameState { id: "steam:70".into(), name: "Half-Life".into(), responding: false, force_close: true };
+        let art = Art {
+            portrait: Some(r"C:\Users\player\AppData\Local\lamplit\art\70\portrait.jpg".into()),
+            hero: Some(r"C:\Users\player\AppData\Local\lamplit\art\70\hero.jpg".into()),
+            logo: None,
+        };
+        let game = GameState {
+            id: "steam:70".into(),
+            name: "Half-Life".into(),
+            art,
+            started: 1_761_560_000,
+            responding: false,
+            force_close: true,
+        };
         assert_eq!(serde_json::to_value(game).unwrap(), ipc_fixture!("dock-game"));
     }
 

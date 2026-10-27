@@ -1,7 +1,7 @@
 // The pure functions of the in-game dock's page (ui/dock/logic.js), in Node: `node --test tests/dock-logic.test.mjs`.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { chips, counts, hints, MIRROR_MS, PAD_KEEPS_MS, spring, tiles, volumeText } from '../ui/dock/logic.js';
+import { chips, counts, hints, MIRROR_MS, outputLabel, PAD_KEEPS_MS, sessionText, spring, tiles, volumeText } from '../ui/dock/logic.js';
 import { ipc, known, like } from './fixtures.mjs';
 
 /** What the dock knows, as Rust sends it, with some parts changed. */
@@ -11,49 +11,42 @@ const data = (changes = {}) => ({
   accessories: ipc('accessories'),
   quiet: ipc('quiet'),
   overlays: ipc('overlays'),
-  confirm: false,
   ...changes,
 });
 const keys = (d) => tiles(d).map((t) => t.key);
+const tile = (d, key) => tiles(d).find((t) => t.key === key);
 
 describe('the tiles', () => {
   test('Resume first, then output, quiet mode, stats, Home and closing the game', () => {
     assert.deepEqual(keys(data()), ['resume', 'output', 'quiet', 'stats', 'home', 'close']);
   });
 
-  test('stats only with NVIDIA\'s overlay, and no Close game without a game', () => {
+  test("stats only with NVIDIA's overlay, and no Close game without a game", () => {
     const d = data({ overlays: like(ipc('overlays'), { nvidia_overlay: false, nvidia_stats: null }), game: null });
     assert.deepEqual(keys(d), ['resume', 'output', 'quiet', 'home']);
   });
 
-  test('the output shows the device in use, with its icon', () => {
-    const output = tiles(data()).find((t) => t.key === 'output');
-    assert.equal(output.value, 'TV');
-    assert.equal(output.icon, 'tv');
-    const nothing = tiles(data({ sound: null })).find((t) => t.key === 'output');
-    assert.equal(nothing.value, '…');
-    assert.equal(nothing.icon, 'speaker');
+  test('the output names the kind of device in use, with its icon', () => {
+    assert.deepEqual([tile(data(), 'output').label, tile(data(), 'output').icon], ['TV', 'tv']);
+    assert.deepEqual([tile(data({ sound: null }), 'output').label, tile(data({ sound: null }), 'output').icon], ['Output', 'speaker']);
+    const other = like(ipc('sound').outputs[0], { name: 'Speakers (Realtek)', kind: 'other' });
+    assert.equal(outputLabel(other), 'Speakers (Realtek)');
   });
 
-  test('quiet mode and the stats say their state', () => {
-    const quiet = (state) => tiles(data({ quiet: like(ipc('quiet'), { state: known('quiet_state', state) }) })).find((t) => t.key === 'quiet');
-    assert.deepEqual([quiet('on').value, quiet('on').tone], ['On', 'good']);
-    assert.deepEqual([quiet('partly').value, quiet('partly').tone], ['Partly on', 'warn']);
-    assert.equal(quiet('off').value, 'Off');
-    const stats = (on) => tiles(data({ overlays: like(ipc('overlays'), { nvidia_stats: on }) })).find((t) => t.key === 'stats').value;
-    assert.deepEqual([stats(true), stats(false), stats(null)], ['On', 'Off', 'Unknown']);
+  test('quiet mode and the stats show their state by their icon, with one label each', () => {
+    const quiet = (state) => tile(data({ quiet: like(ipc('quiet'), { state: known('quiet_state', state) }) }), 'quiet');
+    assert.deepEqual([quiet('on').icon, quiet('on').on, quiet('on').label], ['quiet-on', true, 'Quiet']);
+    assert.deepEqual([quiet('off').icon, quiet('off').on], ['quiet', false]);
+    assert.deepEqual([quiet('partly').label, quiet('partly').on, quiet('partly').tone], ['Partly quiet', true, 'warn']);
+    const stats = (on) => tile(data({ overlays: like(ipc('overlays'), { nvidia_stats: on }) }), 'stats');
+    assert.deepEqual([stats(true).on, stats(false).on, stats(null).on, stats(null).label], [true, false, false, 'Stats']);
   });
 
-  test('closing a game: asked once, then again; a game that hangs is force closed', () => {
-    const close = (changes) => tiles(data(changes)).find((t) => t.key === 'close');
+  test('closing a game, or forcing one closed that hangs or ignored the request', () => {
     const responding = like(ipc('dock-game'), { responding: true, force_close: false });
-    assert.deepEqual([close({ game: responding }).label, close({ game: responding }).value], ['Close game', '']);
-    assert.deepEqual([close({ game: responding, confirm: true }).value, close({ game: responding, confirm: true }).tone], ['Press again', 'warn']);
+    assert.deepEqual([tile(data({ game: responding }), 'close').label, tile(data({ game: responding }), 'close').tone], ['Close game', '']);
     // The fixture's game isn't responding.
-    assert.deepEqual([close({}).label, close({}).value, close({}).tone], ['Force close', 'Not responding', 'warn']);
-    // Asked to close a while ago and still running, though it responds.
-    const stuck = like(ipc('dock-game'), { responding: true, force_close: true });
-    assert.deepEqual([close({ game: stuck }).label, close({ game: stuck }).value], ['Force close', '']);
+    assert.deepEqual([tile(data(), 'close').label, tile(data(), 'close').tone], ['Force close', 'warn']);
   });
 });
 
@@ -64,12 +57,23 @@ test('the volume reads as a percent, or Muted', () => {
   assert.equal(volumeText(like(ipc('sound'), { volume: null })), '…');
 });
 
-test('the top line has each battery, low ones marked', () => {
+test('under the name: how long the game has been played, or that it is not responding', () => {
+  const started = ipc('dock-game').started;
+  const playing = like(ipc('dock-game'), { responding: true });
+  assert.equal(sessionText(playing, started + 30), 'Just started');
+  assert.equal(sessionText(playing, started + 42 * 60), 'Playing for 42 min');
+  assert.equal(sessionText(playing, started + 72 * 60 + 59), 'Playing for 1 h 12 min');
+  assert.equal(sessionText(ipc('dock-game'), started + 60), 'Not responding');
+  assert.equal(sessionText(like(playing, { started: 0 }), started), '');
+  assert.equal(sessionText(null, started), '');
+});
+
+test('the top line has each battery with its level, low ones marked', () => {
   const acc = ipc('accessories');
   assert.deepEqual(chips(acc), [
-    { icon: 'controller', text: '60%', tone: '' },
-    { icon: 'controller', text: 'Medium', tone: '' },
-    { icon: 'headset', text: '80%', tone: '' },
+    { icon: 'controller', text: '60%', level: 60, tone: '' },
+    { icon: 'controller', text: 'Medium', level: 55, tone: '' },
+    { icon: 'headset', text: '80%', level: 80, tone: '' },
   ]);
   const [dualsense, xbox] = acc.controllers;
   const low = like(acc, {
@@ -85,16 +89,17 @@ test('the top line has each battery, low ones marked', () => {
     headset: { on: false },
     controllers: [like(dualsense, { battery: { percent: 5, level: null, charge: known('charge', 'charging') } }), like(xbox, { battery: null })],
   });
-  assert.deepEqual(chips(quiet), [{ icon: 'controller', text: '5%', tone: '' }]);
+  assert.deepEqual(chips(quiet), [{ icon: 'controller', text: '5%', level: 5, tone: '' }]);
   assert.deepEqual(chips(null), []);
 });
 
 test('the hints say what the buttons do where the focus is', () => {
   const d = data({ quiet: like(ipc('quiet'), { active: false }) });
-  assert.deepEqual(hints('tiles', 'resume', d), [['ok', 'Resume']]);
-  assert.deepEqual(hints('tiles', 'quiet', d), [['ok', 'Turn on'], ['back', 'Back to game']]);
-  assert.deepEqual(hints('tiles', 'close', data({ confirm: true }))[0], ['ok', 'Force close now']);
-  assert.deepEqual(hints('volume', 'resume', d), [['adjust', 'Volume'], ['ok', 'Mute'], ['back', 'Back to game']]);
+  assert.deepEqual(hints('tiles', 'resume', d), [['ok', 'Resume'], ['up', 'Volume']]);
+  assert.deepEqual(hints('tiles', 'quiet', d), [['ok', 'Turn on'], ['up', 'Volume'], ['back', 'Back to game']]);
+  assert.deepEqual(hints('tiles', 'close', d)[0], ['ok', 'Hold to force close']);
+  assert.deepEqual(hints('tiles', 'close', data({ game: like(ipc('dock-game'), { force_close: false }) }))[0], ['ok', 'Hold to close game']);
+  assert.deepEqual(hints('volume', 'resume', d), [['adjust', 'Volume'], ['ok', 'Mute'], ['down', 'Back']]);
   assert.deepEqual(hints('outputs', 'output', d), [['ok', 'Use'], ['back', 'Back']]);
 });
 
