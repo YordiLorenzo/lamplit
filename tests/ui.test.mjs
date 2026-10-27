@@ -13,7 +13,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ipc, known, like, values } from './fixtures.mjs';
 import { dockTests } from './dock.mjs';
-import { commands, emit, idle, open as openPage, settled, until } from './page.mjs';
+import { commands, cspHeader, emit, idle, open as openPage, pageOrigin, serveFile, settled, until } from './page.mjs';
+import { SCENES } from '../ui/screensaver/scenes.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const uiDir = process.argv[2] ?? path.join(here, '..', 'ui');
@@ -1587,7 +1588,7 @@ const saverOn = (page) => until(page, () => document.querySelector('#saver.on'))
   await emit(page, 'pad', 'ok');
   await saverOn(page);
   s = await saverView(page);
-  check("Show it now shows the screensaver in the scenes chosen, and the ✕ that asked doesn't end it", s.on && ['silk', 'waves', 'ink'].includes(s.scene), JSON.stringify(s));
+  check("Show it now shows the screensaver in the scenes chosen, and the ✕ that asked doesn't end it", s.on && SCENES.some((x) => x.kind === '2d' && x.id === s.scene), JSON.stringify(s));
   await page.clock.runFor(600);
   await page.keyboard.press('Escape');
   v = await view();
@@ -2029,6 +2030,48 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
 }
 
 await dockTests({ open, close, check, shots });
+
+// 31. Every scene compiles and draws: each one in the screensaver's preview, served the way Tauri serves the page and
+// under the same content security policy, Gallery and Drift with the covers and hero art cut from the README's
+// screenshots. Without WebGL2 in this browser, each shows the CSS gradient instead.
+{
+  const repo = path.join(here, '..');
+  const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await page.addInitScript(() =>
+    document.addEventListener('securitypolicyviolation', (e) => console.error(`CSP blocked ${e.blockedURI} (${e.violatedDirective})`))
+  );
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  await page.route(`${pageOrigin}/**`, (route) =>
+    serveFile(route, path.join(repo, new URL(route.request().url()).pathname), { 'Content-Security-Policy': cspHeader })
+  );
+  const shown = [];
+  let webgl2 = null;
+  for (const scene of SCENES) {
+    await page.goto(`${pageOrigin}/ui/screensaver/preview.html?scene=${scene.id}&hud=0`);
+    // Raymarched scenes compile slowly on a GPU that is emulated in software.
+    await page.waitForFunction(() => document.querySelector('#saver.on'), null, { timeout: 30000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const v = await page.evaluate(() => ({
+      on: !!document.querySelector('#saver.on'),
+      scene: document.getElementById('saver')?.dataset.scene,
+      mode: document.getElementById('saver')?.dataset.mode,
+      reason: window.preview?.saver.reason ?? '',
+      webgl2: !!document.createElement('canvas').getContext('webgl2'),
+    }));
+    webgl2 ??= v.webgl2;
+    shown.push(`${scene.id}:${v.on && v.scene === scene.id ? v.mode : 'not shown'}${v.reason ? ` (${v.reason})` : ''}`);
+  }
+  const want = webgl2 ? 'webgl' : 'css';
+  check(
+    `every scene draws (${want === 'webgl' ? 'with WebGL2' : 'as the CSS gradient: no WebGL2 here'})`,
+    shown.every((x) => x.endsWith(`:${want}`)),
+    shown.join(', ')
+  );
+  check('the preview and its scenes load without errors under the CSP', errors.length === 0, JSON.stringify(errors));
+  await page.close();
+}
 
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));

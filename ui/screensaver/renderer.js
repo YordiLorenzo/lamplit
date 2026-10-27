@@ -1,19 +1,22 @@
 // @ts-check
 // Draws the screensaver's scenes with WebGL2, in four steps:
 //   1. Each scene renders into its own buffer at part of the screen's resolution: linear light, and in alpha how far
-//      out of focus each pixel is (3D scenes only).
+//      out of focus each pixel is (3D scenes only). Some scenes also draw particles: tens of thousands of small quads,
+//      placed by a vertex shader, over the scene or into a trail that fades a little every frame; Flow keeps where
+//      its particles are in a texture that a pass moves on every frame.
 //   2. A mix pass holds each scene's average brightness down, blurs what is out of focus (from the buffer's
-//      mipmaps), and blends the scene handing over into the next.
+//      mipmaps), and hands one scene over to the next in one of a few ways.
 //   3. A bloom: the bright parts, halved in size four times and added back up, so highlights glow softly.
 //   4. The last pass scales up to the canvas, adds the bloom, maps the light to the screen with an AgX curve (bright
 //      colours roll off gently instead of clipping), darkens the corners a little and adds a moving grain, which also
 //      hides the banding that slow dark gradients show on an 8-bit screen.
 
 import { forMood, gradient } from './palette.js';
-import { fragmentSource } from './scenes.js';
+import { fragmentSource, particleSources, stateSource } from './scenes.js';
 
 /**
  * @typedef {import('./scenes.js').Scene} Scene
+ * @typedef {import('./scenes.js').Art} Art
  * @typedef {import('./palette.js').Palette} Palette
  * @typedef {import('./palette.js').Mood} Mood
  */
@@ -27,6 +30,7 @@ void main() {
 
 const HEAD = `#version 300 es
 precision highp float;
+precision highp sampler3D;
 out vec4 fragColor;
 float luma(vec3 c) { return dot(c, vec3(.2126, .7152, .0722)); }
 `;
@@ -34,23 +38,45 @@ float luma(vec3 c) { return dot(c, vec3(.2126, .7152, .0722)); }
 /**
  * Step 2. A scene brighter than MEAN on average is dimmed to it, from its smallest mipmap: a bright palette can't turn
  * the TV into a light panel (an OLED TV wears faster, and dims itself, under a bright full screen). Alpha says how far
- * out of focus a pixel is, and the mipmaps give the blur.
+ * out of focus a pixel is, and the mipmaps give the blur. The next scene comes in by one of four ways: a crossfade;
+ * through the darks first, as if the light went out of one picture and came up in the other; through flowing noise; or
+ * pushing in, the old scene growing and blurring away as the new one settles.
  */
 const MIX = `${HEAD}
 uniform sampler2D uA, uB;
-uniform float uLodA, uLodB, uMix, uFade;
+uniform sampler3D uNoise;
+uniform float uLodA, uLodB, uMix, uFade, uClock;
+uniform int uWay;
 uniform vec2 uRes;
 const float MEAN = .17, BLUR = 2.6;
-vec3 scene(sampler2D s, float lod, vec2 uv) {
+vec3 scene(sampler2D s, float lod, vec2 uv, float extra) {
   float mean = luma(textureLod(s, vec2(.5), lod).rgb);
   vec4 sharp = texture(s, uv);
-  vec3 c = sharp.a > .01 ? textureLod(s, uv, sharp.a * BLUR).rgb : sharp.rgb;
+  float blur = sharp.a * BLUR + extra;
+  vec3 c = blur > .03 ? textureLod(s, uv, blur).rgb : sharp.rgb;
   return c * min(1., MEAN / max(mean, 1e-4));
 }
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
-  vec3 c = scene(uA, uLodA, uv);
-  if (uMix > 0.) c = mix(c, scene(uB, uLodB, uv), uMix);
+  vec3 c;
+  if (uMix <= 0.) c = scene(uA, uLodA, uv, 0.);
+  else if (uWay == 3) {
+    vec2 k = uv - .5;
+    vec3 a = scene(uA, uLodA, .5 + k / (1. + .3 * uMix), 3. * uMix);
+    vec3 b = scene(uB, uLodB, .5 + k * (1. - .12 * (1. - uMix)), 2.5 * (1. - uMix));
+    c = mix(a, b, smoothstep(.15, .85, uMix));
+  } else {
+    vec3 a = scene(uA, uLodA, uv, 0.), b = scene(uB, uLodB, uv, 0.);
+    float m = uMix;
+    if (uWay > 0) {
+      float key = uWay == 1
+        ? sqrt(luma(a) / (luma(a) + .12))
+        : texture(uNoise, vec3(uv * vec2(uRes.x / uRes.y, 1.) * .3, uClock * .01)).r;
+      float edge = m * 1.36 - .18;
+      m = 1. - smoothstep(edge - .18, edge + .18, key);
+    }
+    c = mix(a, b, m);
+  }
   fragColor = vec4(c * uFade, 1.);
 }`;
 
@@ -92,6 +118,10 @@ void main() {
       + texture(uSrc, uv + uTexel * vec2(-1, 1)).rgb + texture(uSrc, uv + uTexel * vec2(1, 1)).rgb) * 2.;
   fragColor = vec4(c / 12., 1.);
 }`;
+
+/** A trail fades by multiplying it with the blend constant: this pass only has to cover the target. */
+const FADE = `${HEAD}
+void main() { fragColor = vec4(0., 0., 0., 1.); }`;
 
 /**
  * Step 4. AgX after Troy Sobotka, in the polynomial fit by Benjamin Wrensch (2023), with a slightly punchier look.
@@ -143,6 +173,12 @@ void main() {
 
 /** The bloom's levels: half the scene buffer's size, then halved again three times. */
 const BLOOM_LEVELS = 4;
+/** The ways one scene hands over to the next (MIX): crossfade, darks first, flowing noise, push in. */
+export const WAYS = 4;
+/** Texture units, the same in every scene's program. */
+const UNIT = { grad: 0, noise: 1, art: 2, art2: 3, trail: 4, state: 5 };
+const SAMPLERS = { uGrad: UNIT.grad, uNoise: UNIT.noise, uArt: UNIT.art, uArt2: UNIT.art2, uTrail: UNIT.trail, uState: UNIT.state };
+const SCENE_UNIFORMS = ['uRes', 'uTime', 'uSeed', 'uDt', 'uInit', 'uPal', 'uArtInfo', 'uCount', ...Object.keys(SAMPLERS)];
 
 /**
  * @typedef {object} Target  a buffer to render into
@@ -160,6 +196,66 @@ const BLOOM_LEVELS = 4;
  * @property {Record<string, WebGLUniformLocation | null>} at
  * @property {boolean} linked  checked once the driver has finished
  */
+
+/**
+ * A scene's programs: its picture, and its particles and their moving on when it has them.
+ * @typedef {{ main: Program, particles: Program | null, state: Program | null }} ScenePrograms
+ */
+
+/**
+ * What a scene with particles that move on keeps between frames: where they are (two textures, read one and write
+ * the other), and its trail.
+ * @typedef {{ state: Target[], trail: Target | null, last: number, fresh: boolean }} Sim
+ */
+
+/**
+ * Tileable value noise in a 64³ texture: two octaves on lattices of 8 and 16 cells, with quintic interpolation, so
+ * a texture lookup gives smooth noise (scenes' noise3 adds octaves). Values 0 to 255, about 128 on average.
+ */
+function noiseVolume() {
+  const N = 64;
+  const out = new Uint8Array(N * N * N);
+  /** @param {number} cells @param {number} seed */
+  const lattice = (cells, seed) => {
+    const v = new Float32Array(cells ** 3);
+    let s = seed;
+    for (let i = 0; i < v.length; i++) {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      v[i] = s / 4294967296;
+    }
+    return v;
+  };
+  const octaves = [
+    { cells: 8, v: lattice(8, 7), w: 0.65 },
+    { cells: 16, v: lattice(16, 19), w: 0.35 },
+  ];
+  const fade = (/** @type {number} */ t) => t * t * t * (t * (t * 6 - 15) + 10);
+  for (let z = 0; z < N; z++) {
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        let sum = 0;
+        for (const { cells, v, w } of octaves) {
+          const k = cells / N;
+          const [fx, fy, fz] = [x * k, y * k, z * k];
+          const [ix, iy, iz] = [Math.floor(fx), Math.floor(fy), Math.floor(fz)];
+          const [ux, uy, uz] = [fade(fx - ix), fade(fy - iy), fade(fz - iz)];
+          const at = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ c) =>
+            v[((a % cells) * cells + (b % cells)) * cells + (c % cells)];
+          const lerp = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ t) => a + (b - a) * t;
+          const x0 = lerp(lerp(at(ix, iy, iz), at(ix + 1, iy, iz), ux), lerp(at(ix, iy + 1, iz), at(ix + 1, iy + 1, iz), ux), uy);
+          const x1 = lerp(
+            lerp(at(ix, iy, iz + 1), at(ix + 1, iy, iz + 1), ux),
+            lerp(at(ix, iy + 1, iz + 1), at(ix + 1, iy + 1, iz + 1), ux),
+            uy
+          );
+          sum += lerp(x0, x1, uz) * w;
+        }
+        out[(z * N + y) * N + x] = Math.round(sum * 255);
+      }
+    }
+  }
+  return out;
+}
 
 export class Renderer {
   /**
@@ -179,46 +275,60 @@ export class Renderer {
     this.canvas = canvas;
     this.gl = gl;
     // Half floats keep the dark gradients smooth and the highlights above 1 for the bloom; without them the sRGB
-    // format still spends its bits where the eye looks.
-    this.format = gl.getExtension('EXT_color_buffer_float') ? gl.RGBA16F : gl.SRGB8_ALPHA8;
+    // format still spends its bits where the eye looks. Flow keeps its particles in floats, so it needs them.
+    this.float = !!gl.getExtension('EXT_color_buffer_float');
+    this.format = this.float ? gl.RGBA16F : gl.SRGB8_ALPHA8;
     // Lets the driver compile on its own threads, so a raymarched scene doesn't hold up a frame (Windows compiles
     // shaders through Direct3D, which takes a while for long loops).
     this.parallel = gl.getExtension('KHR_parallel_shader_compile');
+    this.anisotropy = gl.getExtension('EXT_texture_filter_anisotropic');
     this.vao = gl.createVertexArray();
-    /** @type {Map<string, Program>} */
+    /** @type {Map<string, ScenePrograms>} */
     this.programs = new Map();
     /** @type {Map<Palette, WebGLTexture>} */
     this.gradients = new Map();
     /** @type {WeakMap<Palette, Record<Mood, Palette>>} */
     this.moods = new WeakMap();
+    /** @type {Map<object, { tex: WebGLTexture, aspect: number }>} art uploaded, per image or atlas */
+    this.images = new Map();
+    /** @type {Map<string, Sim>} */
+    this.sims = new Map();
     /** @type {(Target | null)[]} the two scenes' buffers */
     this.targets = [null, null];
     /** @type {Target | null} */
     this.mixed = null;
     /** @type {Target[]} */
     this.bloom = [];
+    this.noise = this.texture3d(noiseVolume(), 64);
+    this.blank = this.blankTexture();
     const passes = {
-      mix: [MIX, ['uA', 'uB', 'uLodA', 'uLodB', 'uMix', 'uFade', 'uRes']],
+      mix: [MIX, ['uA', 'uB', 'uNoise', 'uLodA', 'uLodB', 'uMix', 'uFade', 'uClock', 'uWay', 'uRes']],
       bright: [BRIGHT, ['uSrc', 'uTexel']],
       down: [DOWN, ['uSrc', 'uTexel']],
       up: [UP, ['uSrc', 'uTexel', 'uRes']],
+      fade: [FADE, []],
       final: [FINAL, ['uMixed', 'uBloom', 'uTime', 'uRes']],
     };
     /** @type {Record<keyof passes, Program>} */
     this.pass = /** @type {any} */ (
-      Object.fromEntries(Object.entries(passes).map(([name, [source, uniforms]]) => [name, this.compile(/** @type {string} */ (source), /** @type {string[]} */ (uniforms))]))
+      Object.fromEntries(
+        Object.entries(passes).map(([name, [source, uniforms]]) => [
+          name,
+          this.compile(VERTEX, /** @type {string} */ (source), /** @type {string[]} */ (uniforms)),
+        ])
+      )
     );
   }
 
   /**
-   * @param {string} fragment
+   * @param {string} vertex @param {string} fragment
    * @param {string[]} uniforms
    * @returns {Program}
    */
-  compile(fragment, uniforms) {
+  compile(vertex, fragment, uniforms) {
     const { gl } = this;
     const program = /** @type {WebGLProgram} */ (gl.createProgram());
-    const shaders = [[gl.VERTEX_SHADER, VERTEX], [gl.FRAGMENT_SHADER, fragment]].map(([type, source]) => {
+    const shaders = [[gl.VERTEX_SHADER, vertex], [gl.FRAGMENT_SHADER, fragment]].map(([type, source]) => {
       const shader = /** @type {WebGLShader} */ (gl.createShader(/** @type {number} */ (type)));
       gl.shaderSource(shader, /** @type {string} */ (source));
       gl.compileShader(shader);
@@ -230,28 +340,36 @@ export class Renderer {
   }
 
   /**
-   * Whether the program has finished compiling. Its uniforms are looked up then; a shader that failed throws with
-   * the driver's log.
-   * @param {Program} p
+   * Whether the program has finished compiling. Its uniforms are looked up then, and its samplers pointed at their
+   * texture units; a shader that failed throws with the driver's log.
+   * @param {Program | null} p
    */
   ready(p) {
     const { gl } = this;
-    if (p.linked) return true;
+    if (!p || p.linked) return true;
     if (this.parallel && !gl.getProgramParameter(p.program, this.parallel.COMPLETION_STATUS_KHR)) return false;
     if (!gl.getProgramParameter(p.program, gl.LINK_STATUS)) {
       const log = p.shaders.map((s) => gl.getShaderInfoLog(s)).join('\n') || gl.getProgramInfoLog(p.program);
       throw new Error(`a screensaver shader failed: ${log}`);
     }
     for (const name of Object.keys(p.at)) p.at[name] = gl.getUniformLocation(p.program, name);
+    gl.useProgram(p.program);
+    for (const [name, unit] of Object.entries(SAMPLERS)) if (p.at[name]) gl.uniform1i(p.at[name], unit);
     p.linked = true;
     return true;
   }
 
-  /** Starts compiling a scene, if it isn't yet. @param {Scene} scene */
+  /** Starts compiling a scene's programs, if it isn't yet. @param {Scene} scene */
   prepare(scene) {
     let p = this.programs.get(scene.id);
     if (!p) {
-      p = this.compile(fragmentSource(scene), ['uRes', 'uTime', 'uSeed', 'uPal', 'uGrad']);
+      const parts = particleSources(scene);
+      const update = stateSource(scene);
+      p = {
+        main: this.compile(VERTEX, fragmentSource(scene), SCENE_UNIFORMS),
+        particles: parts ? this.compile(parts.vertex, parts.fragment, SCENE_UNIFORMS) : null,
+        state: update ? this.compile(VERTEX, update, SCENE_UNIFORMS) : null,
+      };
       this.programs.set(scene.id, p);
     }
     return p;
@@ -259,7 +377,8 @@ export class Renderer {
 
   /** Whether a scene, and the passes after it, can draw now. @param {Scene} scene */
   canDraw(scene) {
-    return Object.values(this.pass).every((p) => this.ready(p)) && this.ready(this.prepare(scene));
+    const p = this.prepare(scene);
+    return Object.values(this.pass).every((x) => this.ready(x)) && this.ready(p.main) && this.ready(p.particles) && this.ready(p.state);
   }
 
   /** The palette as a scene of that mood shows it (palette.js forMood), worked out once. @param {Palette} palette @param {Mood} mood */
@@ -295,25 +414,81 @@ export class Renderer {
     return tex;
   }
 
+  /** @param {Uint8Array} data @param {number} size */
+  texture3d(data, size) {
+    const { gl } = this;
+    const tex = /** @type {WebGLTexture} */ (gl.createTexture());
+    gl.bindTexture(gl.TEXTURE_3D, tex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage3D(gl.TEXTURE_3D, 0, gl.R8, size, size, size, 0, gl.RED, gl.UNSIGNED_BYTE, data);
+    for (const wrap of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, wrap, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    return tex;
+  }
+
+  /** A 1 × 1 texture for the units a program doesn't use, so no sampler reads an empty unit. */
+  blankTexture() {
+    const { gl } = this;
+    const tex = /** @type {WebGLTexture} */ (gl.createTexture());
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
+    return tex;
+  }
+
   /**
-   * A buffer, with mipmaps when asked.
-   * @param {number} width @param {number} height @param {boolean} mipmaps
+   * A game's art (a cover atlas, a hero image) as a texture, made once per image: in sRGB, so the scene reads linear
+   * light, with mipmaps for the far and the blurred.
+   * @param {TexImageSource} source
+   */
+  image(source) {
+    const { gl } = this;
+    let entry = this.images.get(source);
+    if (!entry) {
+      const tex = /** @type {WebGLTexture} */ (gl.createTexture());
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, source);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      if (this.anisotropy) gl.texParameterf(gl.TEXTURE_2D, this.anisotropy.TEXTURE_MAX_ANISOTROPY_EXT, 8);
+      const { width, height } = /** @type {{ width: number, height: number }} */ (source);
+      entry = { tex, aspect: width / height };
+      this.images.set(source, entry);
+    }
+    return entry;
+  }
+
+  /**
+   * A buffer, with mipmaps when asked, in the scene format or in 32-bit floats (Flow's particles).
+   * @param {number} width @param {number} height @param {boolean} mipmaps @param {number} [format]
    * @returns {Target}
    */
-  target(width, height, mipmaps) {
+  target(width, height, mipmaps, format = this.format) {
     const { gl } = this;
     const tex = /** @type {WebGLTexture} */ (gl.createTexture());
     gl.bindTexture(gl.TEXTURE_2D, tex);
     const levels = mipmaps ? Math.floor(Math.log2(Math.max(width, height))) + 1 : 1;
-    gl.texStorage2D(gl.TEXTURE_2D, levels, this.format, width, height);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mipmaps ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texStorage2D(gl.TEXTURE_2D, levels, format, width, height);
+    const filter = format === gl.RGBA32F ? gl.NEAREST : gl.LINEAR;
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mipmaps ? gl.LINEAR_MIPMAP_LINEAR : filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     const fbo = /** @type {WebGLFramebuffer} */ (gl.createFramebuffer());
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
     return { fbo, tex, width, height, lod: levels - 1 };
+  }
+
+  /** @param {Target | null} t */
+  dropTarget(t) {
+    if (!t) return;
+    this.gl.deleteFramebuffer(t.fbo);
+    this.gl.deleteTexture(t.tex);
   }
 
   /**
@@ -334,20 +509,27 @@ export class Renderer {
   }
 
   dropBuffers() {
-    for (const t of [...this.targets, this.mixed, ...this.bloom]) {
-      if (!t) continue;
-      this.gl.deleteFramebuffer(t.fbo);
-      this.gl.deleteTexture(t.tex);
-    }
+    for (const t of [...this.targets, this.mixed, ...this.bloom]) this.dropTarget(t);
     this.targets = [null, null];
     this.mixed = null;
     this.bloom = [];
+    for (const id of [...this.sims.keys()]) this.forget(id);
   }
 
-  /** Frees the buffers while the screensaver is away; the compiled scenes stay. */
+  /** Frees the buffers and the art while the screensaver is away; the compiled scenes stay. */
   release() {
     this.dropBuffers();
+    for (const { tex } of this.images.values()) this.gl.deleteTexture(tex);
+    this.images.clear();
     Object.assign(this.canvas, { width: 1, height: 1 });
+  }
+
+  /** Drops what a scene with moving particles kept, once it has handed over. @param {string} id */
+  forget(id) {
+    const sim = this.sims.get(id);
+    if (!sim) return;
+    [...sim.state, sim.trail].forEach((t) => this.dropTarget(t));
+    this.sims.delete(id);
   }
 
   /** Swaps the two scenes' buffers, when the scene handing over has gone. */
@@ -376,51 +558,148 @@ export class Renderer {
     this.gl.drawArrays(this.gl.TRIANGLES, 0, 3);
   }
 
+  /** @param {number} unit @param {WebGLTexture | null} tex @param {number} [kind] */
+  bind(unit, tex, kind = this.gl.TEXTURE_2D) {
+    this.gl.activeTexture(this.gl.TEXTURE0 + unit);
+    this.gl.bindTexture(kind, tex);
+  }
+
   /**
    * Draws a scene into buffer `slot` (0 or 1).
    * @param {number} slot
    * @param {Scene} scene
-   * @param {{ time: number, seed: number, palette: Palette }} look
+   * @param {{ time: number, seed: number, palette: Palette, art: Art }} look
    */
-  drawScene(slot, scene, { time, seed, palette }) {
+  drawScene(slot, scene, { time, seed, palette, art }) {
     const { gl } = this;
     const target = /** @type {Target} */ (this.targets[slot]);
     const p = this.prepare(scene);
     const colours = this.inMood(palette, scene.mood);
-    this.use(p, target);
-    gl.uniform2f(p.at.uRes, target.width, target.height);
-    gl.uniform1f(p.at.uTime, time);
-    gl.uniform1f(p.at.uSeed, seed);
-    gl.uniform3fv(p.at.uPal, colours.flatMap((rgb) => rgb.map(linear)));
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.gradientTexture(colours, scene.mood));
-    gl.uniform1i(p.at.uGrad, 0);
+    const pal = colours.flatMap((rgb) => rgb.map(linear));
+
+    // The textures every program may read: the gradient, the noise, the scene's art.
+    this.bind(UNIT.grad, this.gradientTexture(colours, scene.mood));
+    this.bind(UNIT.noise, this.noise, gl.TEXTURE_3D);
+    let info = [0, 0, 0, 0];
+    let [art1, art2] = [this.blank, this.blank];
+    if (scene.needs === 'covers' && art.atlas) {
+      art1 = this.image(art.atlas.source).tex;
+      info = [art.atlas.count, art.atlas.cols, art.atlas.rows, 0];
+    } else if (scene.needs === 'heroes' && scene.heroes && art.heroes.length > 1) {
+      const pick = scene.heroes(time, art.heroes.length);
+      const [a, b] = [this.image(art.heroes[pick.a]), this.image(art.heroes[pick.b])];
+      [art1, art2] = [a.tex, b.tex];
+      info = [pick.mix, a.aspect, b.aspect, pick.cycle];
+    }
+    this.bind(UNIT.art, art1);
+    this.bind(UNIT.art2, art2);
+
+    /** The uniforms every program of the scene shares, in the program in use. @param {Program} prog */
+    const uniforms = (prog) => {
+      gl.uniform2f(prog.at.uRes, target.width, target.height);
+      gl.uniform1f(prog.at.uTime, time);
+      gl.uniform1f(prog.at.uSeed, seed);
+      gl.uniform3fv(prog.at.uPal, pal);
+      gl.uniform4fv(prog.at.uArtInfo, info);
+    };
+
+    const sim = scene.state ? this.simFor(scene, target) : null;
+    if (sim && p.state && p.particles) {
+      // The particles move on: read where they are, write where they go.
+      const dt = sim.fresh ? 0 : Math.min(0.1, Math.max(0, time - sim.last));
+      const [from, to] = sim.state;
+      this.use(p.state, to);
+      uniforms(p.state);
+      gl.uniform1f(p.state.at.uDt, dt);
+      gl.uniform1i(p.state.at.uInit, sim.fresh ? 1 : 0);
+      this.bind(UNIT.state, from.tex);
+      this.draw();
+      sim.state.reverse();
+      sim.last = time;
+      // The trail fades a little, then takes the particles where they are now.
+      const trail = /** @type {Target} */ (sim.trail);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, trail.fbo);
+      gl.viewport(0, 0, trail.width, trail.height);
+      if (sim.fresh) {
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      sim.fresh = false;
+      gl.enable(gl.BLEND);
+      gl.blendColor(0, 0, 0, /** @type {number} */ (scene.state.decay));
+      gl.blendFunc(gl.ZERO, gl.CONSTANT_ALPHA);
+      gl.useProgram(this.pass.fade.program);
+      this.draw();
+      gl.blendFunc(gl.ONE, gl.ONE);
+      gl.useProgram(p.particles.program);
+      uniforms(p.particles);
+      gl.uniform1i(p.particles.at.uCount, scene.particles?.count ?? 0);
+      this.bind(UNIT.state, sim.state[0].tex);
+      gl.bindVertexArray(this.vao);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, scene.particles?.count ?? 0);
+      gl.disable(gl.BLEND);
+      this.bind(UNIT.trail, trail.tex);
+    } else this.bind(UNIT.trail, this.blank);
+    this.bind(UNIT.state, sim ? sim.state[0].tex : this.blank);
+
+    this.use(p.main, target);
+    uniforms(p.main);
     this.draw();
-    gl.bindTexture(gl.TEXTURE_2D, target.tex);
+    if (p.particles && !scene.state) {
+      // Particles over the picture, each a soft dot with its colour premultiplied by how much it covers.
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.useProgram(p.particles.program);
+      uniforms(p.particles);
+      gl.uniform1i(p.particles.at.uCount, scene.particles?.count ?? 0);
+      gl.bindVertexArray(this.vao);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, scene.particles?.count ?? 0);
+      gl.disable(gl.BLEND);
+    }
+    this.bind(UNIT.grad, target.tex);
     gl.generateMipmap(gl.TEXTURE_2D);
   }
 
+  /** The particles and trail of a scene that keeps them, made when it starts. @param {Scene} scene @param {Target} target */
+  simFor(scene, target) {
+    let sim = this.sims.get(scene.id);
+    const size = /** @type {NonNullable<Scene['state']>} */ (scene.state).size;
+    if (!sim) {
+      sim = {
+        state: [this.target(size, size, false, this.gl.RGBA32F), this.target(size, size, false, this.gl.RGBA32F)],
+        trail: this.target(target.width, target.height, false),
+        last: 0,
+        fresh: true,
+      };
+      this.sims.set(scene.id, sim);
+    }
+    return sim;
+  }
+
   /**
-   * Puts the scene in buffer 0 on the screen, blended towards buffer 1 by `mix`, at `fade` of full brightness.
-   * @param {{ mix: number, fade: number, time: number }} frame
+   * Puts the scene in buffer 0 on the screen, handing over to buffer 1 by `mix` in the way `way`, at `fade` of full
+   * brightness.
+   * @param {{ mix: number, way: number, fade: number, time: number }} frame
    */
-  present({ mix, fade, time }) {
+  present({ mix, way, fade, time }) {
     const { gl } = this;
     const [a, b] = /** @type {Target[]} */ (this.targets);
     const mixed = /** @type {Target} */ (this.mixed);
     const { pass } = this;
 
     this.use(pass.mix, mixed);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, a.tex);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, b.tex);
+    this.bind(0, a.tex);
+    this.bind(1, b.tex);
+    this.bind(2, this.noise, gl.TEXTURE_3D);
     gl.uniform1i(pass.mix.at.uA, 0);
     gl.uniform1i(pass.mix.at.uB, 1);
+    gl.uniform1i(pass.mix.at.uNoise, 2);
     gl.uniform1f(pass.mix.at.uLodA, a.lod);
     gl.uniform1f(pass.mix.at.uLodB, b.lod);
     gl.uniform1f(pass.mix.at.uMix, mix);
+    gl.uniform1i(pass.mix.at.uWay, way);
     gl.uniform1f(pass.mix.at.uFade, fade);
+    gl.uniform1f(pass.mix.at.uClock, time);
     gl.uniform2f(pass.mix.at.uRes, mixed.width, mixed.height);
     this.draw();
 
@@ -446,10 +725,8 @@ export class Renderer {
     gl.disable(gl.BLEND);
 
     this.use(pass.final, null);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, mixed.tex);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, this.bloom[0].tex);
+    this.bind(0, mixed.tex);
+    this.bind(1, this.bloom[0].tex);
     gl.uniform1i(pass.final.at.uMixed, 0);
     gl.uniform1i(pass.final.at.uBloom, 1);
     gl.uniform1f(pass.final.at.uTime, time);

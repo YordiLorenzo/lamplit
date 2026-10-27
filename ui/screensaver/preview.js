@@ -1,7 +1,8 @@
 // @ts-check
 // The screensaver in a normal browser, without Lamplit: every scene, coloured from the covers in the README's
 // screenshot of the home screen (docs/images/home.jpg), from Lamplit's own colours and from a grey palette, or from
-// an image dropped on the page. Serve the repository's folder (python3 -m http.server 8123) and open /ui/screensaver/preview.html.
+// an image dropped on the page. Gallery shows those covers, and Drift the hero art behind two of the README's
+// screenshots. Serve the repository's folder (python3 -m http.server 8123) and open /ui/screensaver/preview.html.
 // The address can pick what shows: ?scene=dunes&look=2&at=40&hud=0 (at: seconds into the scene), and cap=0 draws as
 // fast as the GPU can, so the frame rate in the corner says what a scene costs.
 
@@ -33,16 +34,31 @@ async function image(src) {
   return img;
 }
 
-/** One look per cover in the screenshot; none when it can't be loaded. @returns {Promise<Look[]>} */
+/** Part of an image, cut out at its own resolution. @param {number[]} box  x, y, width, height @param {HTMLImageElement} img */
+function cut(box, img) {
+  const [x, y, w, h] = box;
+  const c = Object.assign(document.createElement('canvas'), { width: Math.round(w), height: Math.round(h) });
+  /** @type {CanvasRenderingContext2D} */ (c.getContext('2d')).drawImage(img, x, y, w, h, 0, 0, c.width, c.height);
+  return c;
+}
+
+/**
+ * One look per cover in the screenshot, with the cover itself for Gallery, and for the first two games the hero art
+ * behind the home screen and the starting screen (the right part, clear of the text and the clock) for Drift. None when the
+ * screenshots can't be loaded.
+ * @returns {Promise<Look[]>}
+ */
 async function coverLooks() {
   try {
-    const img = await image('../../docs/images/home.jpg');
-    const scale = img.naturalWidth / 1920;
+    const [home, launch] = await Promise.all([image('../../docs/images/home.jpg'), image('../../docs/images/launch.jpg')]);
+    const scale = home.naturalWidth / 1920;
+    const heroes = [home, launch].map((img) => cut([760, 95, 1160, 470].map((v) => v * scale), img));
     return COVERS.map((name, k) => {
       const [x, y, w, h] = coverBox(k).map((v) => v * scale);
       // A little in from the edges: the focus ring and the rounded corners aren't the game's colours.
-      const crop = /** @type {[number, number, number, number]} */ ([x + w * 0.08, y + h * 0.06, w * 0.84, h * 0.88]);
-      return { name, palette: scenePalette(medianCut(pixelsOf(img, 24, 36, crop), 8)) };
+      const crop = [x + w * 0.04, y + h * 0.03, w * 0.92, h * 0.94];
+      const inner = /** @type {[number, number, number, number]} */ ([x + w * 0.08, y + h * 0.06, w * 0.84, h * 0.88]);
+      return { name, palette: scenePalette(medianCut(pixelsOf(home, 24, 36, inner), 8)), cover: cut(crop, home), hero: heroes[k] ?? null };
     });
   } catch {
     return [];
@@ -80,6 +96,9 @@ function show() {
 }
 
 const SPEEDS = [1, 4, 16];
+/** How the next scene comes in (renderer.js WAYS), in the order T steps through them; the last lets the show pick. */
+const WAYS = ['crossfade', 'through the darks', 'through flowing noise', 'pushing in', 'any way'];
+let way = WAYS.length - 1;
 
 window.addEventListener('keydown', (e) => {
   const n = Number(e.key);
@@ -95,6 +114,9 @@ window.addEventListener('keydown', (e) => {
   } else if (e.key === 'b') {
     scene = (scene + 1) % SCENES.length;
     saver.skip(SCENES[scene]);
+  } else if (e.key === 't') {
+    way = (way + 1) % WAYS.length;
+    saver.wayHeld = way < WAYS.length - 1 ? way : null;
   } else if (e.key === ' ') {
     saver.paused = !saver.paused;
   } else if (e.key === 's') {
@@ -115,8 +137,10 @@ window.addEventListener('drop', async (e) => {
   const file = e.dataTransfer?.files[0];
   if (!file?.type.startsWith('image/')) return;
   const bitmap = await createImageBitmap(file);
-  looks.push({ name: file.name.replace(/\.[^.]+$/, ''), palette: scenePalette(medianCut(pixelsOf(bitmap, 48, 27), 8)) });
+  const palette = scenePalette(medianCut(pixelsOf(bitmap, 48, 27), 8));
+  looks.push({ name: file.name.replace(/\.[^.]+$/, ''), palette, cover: bitmap, hero: bitmap });
   look = looks.length - 1;
+  saver.setLooks(looks.slice(look).concat(looks.slice(0, look)));
   show();
 });
 
@@ -127,5 +151,5 @@ setInterval(() => {
   const speed = saver.speed > 1 ? ` · ${saver.speed}× speed` : '';
   const paused = saver.paused ? ' · paused' : '';
   const gl = i.mode === 'webgl' ? `${i.size} (${Math.round((i.scale ?? 0) * 100)}%)` : 'CSS gradient, no WebGL2';
-  now.textContent = `${scene + 1}. ${i.scene} (${i.kind.toUpperCase()}) · ${i.look} · ${i.fps} fps · ${gl}${speed}${paused}`;
+  now.textContent = `${scene + 1}. ${i.scene} (${i.kind.toUpperCase()}) · ${i.look} · ${i.fps} fps · ${gl} · next comes in ${WAYS[way]}${speed}${paused}`;
 }, 250);

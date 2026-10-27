@@ -1,7 +1,15 @@
 // @ts-check
-// The screensaver's scenes, each a WebGL2 fragment shader that draws one frame from the time and a palette. They
-// write linear light into a buffer smaller than the screen, and how far out of focus each pixel is; renderer.js does
-// the rest (focus blur, blends between scenes, bloom, tone mapping, grain).
+// The screensaver's scenes, each a WebGL2 fragment shader that draws one frame from the time and a palette, and for
+// some, particles drawn over it. They write linear light into a buffer smaller than the screen, and how far out of
+// focus each pixel is; renderer.js does the rest (focus blur, the handover between scenes, bloom, tone mapping,
+// grain). Gallery and Drift show the player's own art: their covers, and their hero images.
+
+/**
+ * A game's art as the scenes that show it get it: the covers side by side in one image (an atlas), and hero images.
+ * @typedef {object} Art
+ * @property {{ source: TexImageSource, count: number, cols: number, rows: number } | null} atlas
+ * @property {TexImageSource[]} heroes  the scene's own game's first
+ */
 
 /**
  * @typedef {object} Scene
@@ -10,23 +18,35 @@
  * @property {'2d' | '3d'} kind
  * @property {import('./palette.js').Mood} mood  which way palette.js forMood adapts the palette
  * @property {string} source  GLSL that defines `vec3 scene(vec2 frag)`, and may set `coc`
+ * @property {string} [lib]  GLSL that the scene's picture and its particles both use
+ * @property {'covers' | 'heroes'} [needs]  art the scene can't show without (two heroes at least)
+ * @property {(time: number, count: number) => { a: number, b: number, mix: number, cycle: number }} [heroes]  which
+ *   two hero images the scene shows at `time`, and how far it has gone from the first to the second
+ * @property {{ count: number, vertex: string, fragment: string }} [particles]  instanced quads; the vertex shader
+ *   places each from gl_InstanceID and gl_VertexID
+ * @property {{ size: number, decay: number, update: string }} [state]  particles that move on: where each one is, in a
+ *   size × size float texture that `update` writes every frame, and a trail that keeps `decay` of itself each frame
  */
 
 /**
- * What every scene gets: the buffer's size in pixels, seconds since the scene began, a number from 0 to 1 that makes
- * each showing different, the palette in linear light (0 deep, 1 to 3 main, 4 light) and the main colours as a
- * looping gradient (palette.js gradient). Then hashes without sin (Dave Hoskins), which stay stable on every GPU, and
- * gradient noise.
+ * What every program gets: the buffer's size in pixels, seconds since the scene began, a number from 0 to 1 that
+ * makes each showing different, the palette in linear light (0 deep, 1 to 3 main, 4 light), the main colours as a
+ * looping gradient (palette.js gradient), smooth noise in a 3D texture, and the scene's art, trail and particle state.
+ * Then hashes without sin (Dave Hoskins), which stay stable on every GPU, and gradient noise.
  */
-export const COMMON = `#version 300 es
+const SHARED = `
 precision highp float;
 precision highp int;
+precision highp sampler2D;
+precision highp sampler3D;
 uniform vec2 uRes;
 uniform float uTime;
 uniform float uSeed;
 uniform vec3 uPal[5];
 uniform sampler2D uGrad;
-out vec4 fragColor;
+uniform sampler3D uNoise;
+uniform sampler2D uArt, uArt2, uTrail, uState;
+uniform vec4 uArtInfo;
 
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * .1031);
@@ -78,6 +98,22 @@ mat3 lookAt(vec3 ro, vec3 ta) {
   vec3 u = normalize(cross(w, vec3(0, 1, 0)));
   return mat3(u, cross(u, w), w);
 }
+// Smooth noise from the texture, about -1 to 1; one unit of p is one cell of its coarser lattice, and it repeats
+// every 8 units.
+float noise3(vec3 p) { return texture(uNoise, p * .125).r * 2. - 1.; }
+float fbm3(vec3 p, int octaves) {
+  float s = 0., a = .5;
+  for (int i = 0; i < 5; i++) {
+    if (i >= octaves) break;
+    s += a * noise3(p);
+    p = p * 2.03 + vec3(1.7, 9.2, 4.1);
+    a *= .5;
+  }
+  return s;
+}
+`;
+
+export const COMMON = `#version 300 es${SHARED}out vec4 fragColor;
 `;
 
 const MAIN = `
@@ -519,16 +555,466 @@ vec3 scene(vec2 frag) {
 }
 `;
 
+/**
+ * Ocean: open sea at the end of the day, the camera low over long swells. The sky is a cool blue overhead with thin
+ * cloud lit warm towards a low sun; the water mirrors it, glitters where the sun catches it, and glows green-blue in
+ * the crests the light passes through.
+ */
+const ocean = `
+const vec3 SUN = vec3(.33, .1, .94);
+// Narrow crests and wide troughs, as real swells have.
+float swell(float x) { return exp(sin(x) - 1.); }
+float sea(vec2 p, float t, bool detail) {
+  p += .7 * vec2(noise3(vec3(p * .04, t * .015)), noise3(vec3(p * .04 + 4.1, t * .015)));
+  float h = .5 * swell(dot(p, vec2(.94, .34)) * .3 + t * .5)
+          + .3 * swell(dot(p, vec2(.62, -.78)) * .52 - t * .65)
+          + .17 * swell(dot(p, vec2(-.2, .98)) * .9 + t * .85)
+          + .09 * swell(dot(p, vec2(.85, .52)) * 1.55 - t * 1.2);
+  if (detail) h += .05 * noise3(vec3(p * .9, t * .3)) + .025 * noise3(vec3(p * 2.2, t * .45 + 3.));
+  return h - .45;
+}
+vec3 sunLight() { return mix(uPal[4], vec3(1., .74, .48), .45) * 3.; }
+vec3 zenith() { return mix(vec3(.025, .07, .2), uPal[0], .12); }
+// The haze along the horizon: pale and cool away from the sun, an evening orange and rose towards it.
+vec3 horizon(vec3 rd) {
+  vec3 warm = mix(uPal[4], vec3(1., .5, .28), .55);
+  float toward = pow(max(dot(normalize(rd.xz), normalize(SUN.xz)), 0.), 2.);
+  return mix(vec3(.42, .52, .7), warm, toward) * .5;
+}
+vec3 sky(vec3 rd) {
+  float y = max(rd.y, 0.);
+  float s = max(dot(rd, normalize(SUN)), 0.);
+  vec3 hz = horizon(rd);
+  vec3 col = mix(hz, zenith(), pow(smoothstep(0., .24, y), .7));
+  // Thin high cloud, lit warm on the side towards the sun.
+  vec2 cp = rd.xz / max(rd.y, .04) * .6 + vec2(uTime * .015, 0.);
+  float cloud = smoothstep(.0, .5, fbm3(vec3(cp * .5, uTime * .004 + uSeed * 9.), 3) + .08) * smoothstep(.015, .12, y) * (1. - smoothstep(.3, .7, y));
+  col = mix(col, mix(hz * 1.3, sunLight() * .3, pow(s, 3.)), cloud * .55);
+  col += sunLight() * (smoothstep(.9993, .9998, s) * .7 + pow(s, 90.) * .22 + pow(s, 8.) * .08);
+  return col + hz * exp(-y * 20.) * .3;
+}
+vec3 scene(vec2 frag) {
+  vec2 uv = (frag - .5 * uRes) / uRes.y;
+  float t = uTime + uSeed * 80.;
+  float yaw = .12 * sin(uTime * .011 + uSeed * 6.) + uSeed * .3;
+  vec3 ro = vec3(uTime * .3, 2.3 + .15 * sin(uTime * .07), uTime * 1.1);
+  vec3 fwd = vec3(sin(yaw), -.04, cos(yaw));
+  vec3 rd = lookAt(ro, ro + fwd) * normalize(vec3(uv, 1.6));
+  vec3 col = sky(rd);
+  if (rd.y < .02) {
+    float d = .5, last = .5;
+    bool hit = false;
+    for (int i = 0; i < 110; i++) {
+      vec3 p = ro + rd * d;
+      float h = p.y - sea(p.xz, t, false);
+      if (h < .002 * d) { hit = true; break; }
+      last = d;
+      d += max(h * .7, .01 * d);
+      if (d > 260.) break;
+    }
+    if (hit) {
+      for (int i = 0; i < 5; i++) {
+        float m = (last + d) * .5;
+        vec3 p = ro + rd * m;
+        if (p.y - sea(p.xz, t, false) < 0.) d = m; else last = m;
+      }
+    }
+    vec3 p = ro + rd * d;
+    float e = .015 + .0025 * d;
+    float h0 = sea(p.xz, t, true);
+    vec3 n = normalize(vec3(h0 - sea(p.xz + vec2(e, 0), t, true), e, h0 - sea(p.xz + vec2(0, e), t, true)));
+    // Far off the swells are smaller than a pixel: the surface flattens towards a mirror.
+    n = normalize(mix(n, vec3(0, 1, 0), smoothstep(40., 220., d)));
+    float ndv = clamp(dot(n, -rd), 0., 1.);
+    float fres = .02 + .98 * pow(1. - ndv, 5.);
+    vec3 r = reflect(rd, n);
+    r.y = abs(r.y);
+    vec3 sun = normalize(SUN);
+    vec3 deep = mix(vec3(.002, .02, .045), uPal[0] * .2, .2);
+    float crest = clamp(p.y + .45, 0., 1.2);
+    vec3 through = vec3(.015, .09, .085) * sunLight() * crest * crest * .35 * (.4 + .6 * max(dot(rd.xz, sun.xz), 0.));
+    vec3 water = mix(deep + through, sky(r), fres);
+    water += sunLight() * pow(max(dot(r, sun), 0.), 900.) * 7.;
+    water += horizon(rd) * smoothstep(.5, .75, crest + .12 * noise3(vec3(p.xz * 1.5, t * .4))) * .18;
+    float haze = 1. - exp(-d * .006);
+    col = mix(col, mix(water, horizon(rd) * 1.05 + sunLight() * pow(max(dot(rd, sun), 0.), 10.) * .1, haze), smoothstep(.02, -.004, rd.y));
+  }
+  return col;
+}
+`;
+
+/**
+ * Nebula: drifting slowly through glowing gas, with stars far behind and a few bright young stars inside it lighting
+ * the gas around them.
+ */
+const nebula = `
+// The camera's path: the gas keeps clear of it, so the camera passes between the clouds and sees them from a distance
+// instead of flying through fog.
+vec2 path(float z) { return vec2(sin(z * .04) * 1.5, cos(z * .031) * .8); }
+// The glowing gas, in sheets and filaments (a ridged noise), and the dust that darkens it in lanes.
+float gas(vec3 p) {
+  float clearing = smoothstep(1.3, 4., length(p.xy - path(p.z)));
+  vec3 q = p + 1.8 * vec3(noise3(p * .08), noise3(p * .08 + 5.2), noise3(p * .08 + 9.1));
+  float n = fbm3(q * .26, 4);
+  float ridge = 1. - abs(n * 2.6);
+  return pow(smoothstep(.55, 1., ridge), 1.5) * smoothstep(-.2, .2, fbm3(q * .07 + 3., 2)) * clearing;
+}
+float dust(vec3 p) { return smoothstep(.05, .35, fbm3(p * .11 + 11., 3)); }
+vec3 starAt(float i) {
+  return vec3(sin(i * 1.7 + uSeed * 9.) * 3.5, cos(i * 2.3) * 2.2, i * 11. + 5.);
+}
+vec3 scene(vec2 frag) {
+  vec2 uv = (frag - .5 * uRes) / uRes.y;
+  float z = uTime * .42 + uSeed * 300.;
+  vec3 ro = vec3(path(z), z);
+  // The view wanders from straight ahead to the clouds on either side, so the clear path ahead is rarely in the middle.
+  vec3 ta = vec3(path(z + 4.) + vec2(sin(uTime * .02 + uSeed * 6.) * 2.6, cos(uTime * .016 + uSeed * 3.) * 1.3), z + 4.);
+  vec3 rd = lookAt(ro, ta) * normalize(vec3(uv, 1.3));
+  // Stars far away, beyond the gas.
+  vec2 sp = vec2(atan(rd.x, rd.z), rd.y) * 220.;
+  float sh = hash12(floor(sp));
+  float stars = sh > .985 ? smoothstep(.16, 0., length(fract(sp) - hash22(floor(sp) + 3.) * .6 - .2)) * (sh - .985) * 60. : 0.;
+  vec3 col = uPal[4] * stars * .25 + uPal[0] * .25 * (1. - abs(uv.y));
+  // Through the gas, front to back: what each step glows, dimmed by what lies in front of it.
+  vec3 glow = vec3(0);
+  float clear = 1.;
+  float d = .3 + hash12(frag) * .35;
+  for (int i = 0; i < 48; i++) {
+    vec3 p = ro + rd * d;
+    float g = gas(p), k = dust(p) * smoothstep(1.3, 4., length(p.xy - path(p.z)));
+    float dt = .32 + d * .02;
+    if (g > .005 || k > .01) {
+      vec3 c = mix(grad(noise3(p * .05) * .7 + .5 + uSeed), uPal[4], pow(g, 2.) * .6);
+      // Near gas glows clearer than far gas, which the eye reads as depth rather than fog.
+      glow += clear * c * g * dt * (.4 + 1.1 * g) * exp(-d * .05);
+      clear *= exp(-(g * .3 + k * 1.1) * dt);
+      if (clear < .03) break;
+    }
+    d += dt;
+  }
+  col = col * clear + glow;
+  // Young stars inside the gas, seen through what lies in front of them.
+  float base = floor(ro.z / 11.);
+  for (int i = 0; i < 3; i++) {
+    vec3 s = starAt(base + float(i)) - ro;
+    float along = dot(s, rd);
+    if (along < 0.) continue;
+    float off = length(s - rd * along) / along;
+    col += mix(uPal[4], grad(base + float(i) * .37), .3) * (exp(-off * 90.) * .9 + exp(-off * 12.) * .12) * smoothstep(40., 8., along);
+  }
+  return col;
+}
+`;
+
+/**
+ * Gallery: the player's covers, standing in a dark room in a row that never ends, the camera moving slowly along it.
+ * A glossy floor mirrors them, a light passes over them now and then, and the ones further off go out of focus.
+ */
+const gallery = `
+const float SLOTS = 8., GAP = 1.5;
+const vec2 HALF = vec2(.5, .75);
+float camX() { return uTime * .2 + uSeed * 40.; }
+// A slot of the row: where its cover stands, which way it turns, and which cover it shows. The row wraps round the
+// camera, so a slot that falls behind comes back ahead with the next cover.
+void slot(float i, out vec3 c, out float yaw, out float cover) {
+  float span = SLOTS * GAP;
+  float x = i * GAP;
+  float lap = floor((camX() - x + span * .5) / span);
+  x += lap * span;
+  c = vec3(x, .07 * sin(uTime * .21 + i * 1.7), .55 * sin(i * 2.4 + 1.3));
+  yaw = .3 * sin(i * 1.9 + uTime * .04);
+  cover = mod(i + lap * SLOTS, max(uArtInfo.x, 1.));
+}
+float roundRect(vec2 p, vec2 b, float r) {
+  vec2 q = abs(p) - b + r;
+  return length(max(q, 0.)) + min(max(q.x, q.y), 0.) - r;
+}
+// The nearest cover along a ray: its distance, how much of the pixel it covers, and where on it the ray lands.
+float hitCover(vec3 ro, vec3 rd, float px, out vec2 local, out float cover, out float yawOut, out float covered) {
+  float best = 1e3;
+  covered = 0.;
+  for (float i = 0.; i < SLOTS; i++) {
+    vec3 c; float yaw, k;
+    slot(i, c, yaw, k);
+    vec3 n = vec3(sin(yaw), 0., -cos(yaw));
+    float den = dot(rd, n);
+    if (abs(den) < 1e-3) continue;
+    float t = dot(c - ro, n) / den;
+    if (t < .1 || t > best) continue;
+    vec3 p = ro + rd * t - c;
+    vec2 l = vec2(dot(p, vec3(cos(yaw), 0., sin(yaw))), p.y);
+    float d = roundRect(l, HALF, .045);
+    float a = 1. - smoothstep(-px * t, px * t, d);
+    if (a > .001) { best = t; local = l; cover = k; yawOut = yaw; covered = a; }
+  }
+  return best;
+}
+vec3 art(vec2 l, float cover, float lod) {
+  vec2 cells = uArtInfo.yz;
+  vec2 cell = vec2(mod(cover, cells.x), floor(cover / cells.x));
+  // The camera's frame (lookAt) has x running to the left, so the image's left is at +x.
+  vec2 f = clamp(vec2(.5 - l.x / (2. * HALF.x), .5 - l.y / (2. * HALF.y)), .004, .996);
+  return textureLod(uArt, (cell + f) / cells, lod).rgb;
+}
+float sweep() { return camX() + 3.4 * sin(uTime * .085 + uSeed * 4.); }
+vec3 coverLight(vec3 p, vec2 l, float yaw, vec3 rd, vec3 a) {
+  vec3 n = vec3(sin(yaw), 0., -cos(yaw));
+  float ndv = abs(dot(n, rd));
+  float s = (p.x - sweep()) + .45 * p.y;
+  float band = exp(-s * s * 5.);
+  vec3 c = a * (.62 + .38 * max(dot(n, normalize(vec3(-.4, .5, -1.))), 0.));
+  c += uPal[4] * band * (.1 + .45 * pow(1. - ndv, 2.));
+  // A thin bright edge, as round a print in a light box.
+  return c + uPal[4] * smoothstep(-.02, 0., roundRect(l, HALF, .045)) * .25;
+}
+vec3 room(vec2 uv) {
+  vec3 col = uPal[0] * (.16 + .2 * exp(-uv.y * uv.y * 4.));
+  for (int i = 0; i < 5; i++) {
+    float fi = float(i);
+    vec2 c = vec2(sin(uTime * .03 + fi * 2.1) * .9, .25 + .2 * cos(uTime * .021 + fi * 1.3));
+    col += grad(fi * .21 + uSeed) * exp(-dot(uv - c, uv - c) * 9.) * .05;
+  }
+  return col;
+}
+vec3 scene(vec2 frag) {
+  vec2 uv = (frag - .5 * uRes) / uRes.y;
+  vec3 ro = vec3(camX(), .15 + .05 * sin(uTime * .07), -5.1);
+  vec3 rd = lookAt(ro, vec3(camX() - .35, -.12, 0.)) * normalize(vec3(uv, 1.65));
+  float px = 1.3 / (uRes.y * 1.65);
+  float texels = 576. / (2. * HALF.y);
+  vec3 col = room(uv);
+  coc = .8;
+  vec2 l; float cover, yaw, covered;
+  float t = hitCover(ro, rd, px, l, cover, yaw, covered);
+  float floorT = rd.y < 0. ? (-1.02 - ro.y) / rd.y : 1e3;
+  if (floorT < t) {
+    // The floor: dark and glossy, mirroring the covers a little blurred, and catching the passing light.
+    vec3 p = ro + rd * floorT;
+    vec3 r = vec3(rd.x, -rd.y, rd.z);
+    float fres = .05 + .55 * pow(1. - abs(rd.y), 6.);
+    col = mix(uPal[0] * .08, room(uv), smoothstep(6., 22., floorT));
+    vec2 l2; float c2, y2, a2;
+    float t2 = hitCover(p, r, px * 3., l2, c2, y2, a2);
+    if (t2 < 1e3) {
+      vec3 q = p + r * t2;
+      float lod = log2(max((floorT + t2) * px * texels, 1.)) + 2.;
+      col += coverLight(q, l2, y2, r, art(l2, c2, lod)) * a2 * fres * exp(-t2 * .8);
+    }
+    float s = p.x - sweep();
+    col += uPal[4] * exp(-s * s * 2.) * .04 * (1. - smoothstep(3., 12., floorT));
+    coc = clamp(abs(floorT - 5.2) * .16, 0., .8);
+  }
+  if (t < floorT && t < 1e3) {
+    vec3 p = ro + rd * t;
+    float lod = log2(max(t * px * texels, 1.));
+    col = mix(col, coverLight(p, l, yaw, rd, art(l, cover, lod)), covered);
+    coc = clamp(abs(t - 5.2) * .2, 0., .85) * covered + coc * (1. - covered);
+  }
+  return col;
+}
+`;
+
+/**
+ * Drift: the player's hero art, slowly panning, comes apart into thousands of points of light that swirl across the
+ * screen and settle into another game's hero art. Each point keeps a pixel of the first picture's colour and takes
+ * on the second's as it flies.
+ */
+const DRIFT_GRID = [160, 90];
+const driftLib = `
+const vec2 GRID = vec2(${DRIFT_GRID[0]}., ${DRIFT_GRID[1]}.);
+// The picture covering the screen, slowly zooming and panning; uv runs 0 to 1 across the screen, y down.
+vec2 kenBurns(vec2 uv, float aspect, float k) {
+  float screen = uRes.x / uRes.y;
+  vec2 fit = aspect > screen ? vec2(screen / aspect, 1.) : vec2(1., aspect / screen);
+  float zoom = 1.1 + .06 * sin(uTime * .031 + k * 1.7);
+  vec2 pan = .04 * vec2(sin(uTime * .023 + k * 2.1), cos(uTime * .019 + k));
+  return .5 + (uv - .5) * fit / zoom + pan * fit;
+}
+// When the point at uv leaves, 0 to .5 of the change: a slow sweep across the picture, broken up by noise.
+float leaves(vec2 uv) {
+  float sweep = .6 * (uv.x * .75 + (1. - uv.y) * .25);
+  return .5 * clamp(sweep + .4 * (noise3(vec3(uv * 3.2, uArtInfo.w * 7.3)) * .5 + .5), 0., 1.);
+}
+`;
+const drift = `
+vec3 scene(vec2 frag) {
+  vec2 uv = vec2(frag.x / uRes.x, 1. - frag.y / uRes.y);
+  float s = uArtInfo.x, k = uArtInfo.w;
+  vec3 a = texture(uArt, kenBurns(uv, uArtInfo.y, k)).rgb;
+  vec3 b = texture(uArt2, kenBurns(uv, uArtInfo.z, k + 1.)).rgb;
+  vec2 q = uv - .5;
+  vec3 col = uPal[0] * .2 * (1. - dot(q, q));
+  col = mix(col, a, 1. - smoothstep(leaves(uv), leaves(uv) + .04, s));
+  return mix(col, b, smoothstep(.9, 1., s));
+}
+`;
+const driftParticles = {
+  count: DRIFT_GRID[0] * DRIFT_GRID[1],
+  vertex: `
+out vec3 vColor;
+out vec2 vCorner;
+out float vAlpha;
+void main() {
+  int id = gl_InstanceID;
+  vec2 home = (vec2(id % int(GRID.x), id / int(GRID.x)) + .5) / GRID;
+  // Where it lands: anywhere, so the points cross the screen and the new picture forms as a scatter rather than in
+  // rows or columns (a shuffle of the grid that is linear keeps whole columns together).
+  vec2 there = hash22(vec2(float(id) * .7311, 9.13));
+  float s = uArtInfo.x, k = uArtInfo.w;
+  // Each point leaves a little before or after its neighbours, and wanders off its cell, so no rows show.
+  vec2 r = hash22(vec2(float(id), 3.7));
+  float q = clamp((s - leaves(home) - r.x * .07) / .45, 0., 1.);
+  float e = q * q * (3. - 2. * q);
+  float lift = sin(3.14159 * e);
+  vec2 swirl = vec2(noise3(vec3(home * 1.6, uTime * .06)), noise3(vec3(home * 1.6 + 7., uTime * .06)));
+  vec2 pos = mix(home, there, e) + (swirl * .34 + (r - .5) * .12) * lift + vec2(0., -.05) * lift;
+  vec3 a = texture(uArt, kenBurns(home, uArtInfo.y, k)).rgb;
+  vec3 b = texture(uArt2, kenBurns(there, uArtInfo.z, k + 1.)).rgb;
+  vColor = mix(a, b, smoothstep(.25, .75, e)) * (1. + 2.2 * lift);
+  vAlpha = step(.0001, q) * (1. - smoothstep(.9, 1., s)) * (1. - .45 * lift);
+  int v = gl_VertexID;
+  vCorner = vec2(v == 1 || v == 4 || v == 5 ? 1. : -1., v == 2 || v == 3 || v == 5 ? 1. : -1.);
+  vec2 size = (2. - 1.2 * lift) / GRID;
+  vec2 ndc = vec2(pos.x, 1. - pos.y) * 2. - 1.;
+  gl_Position = vec4(ndc + vCorner * size, 0., 1.);
+}
+`,
+  fragment: `
+in vec3 vColor;
+in vec2 vCorner;
+in float vAlpha;
+void main() {
+  float a = vAlpha * smoothstep(1., .35, length(vCorner));
+  fragColor = vec4(vColor * a, a);
+}
+`,
+};
+
+/**
+ * Flow: four thousand particles carried by a slowly changing current, each leaving a long fading trail, so the
+ * current shows as fine lines of light. The current is the curl of a noise field: it has no sources or sinks, so
+ * the particles never bunch up or thin out.
+ */
+const FLOW_SIZE = 64;
+const flowLib = `
+float potential(vec2 q, float t) { return fbm3(vec3(q * .75, t * .012 + uSeed * 10.), 2) + .18 * q.y; }
+// The current at p (0 to 1 across the screen), in screens per second.
+vec2 current(vec2 p, float t) {
+  float aspect = uRes.x / uRes.y;
+  vec2 q = vec2(p.x * aspect, p.y);
+  float e = .004;
+  float n0 = potential(q, t);
+  vec2 v = vec2(potential(q + vec2(0, e), t) - n0, -(potential(q + vec2(e, 0), t) - n0)) / e;
+  return v * vec2(1. / aspect, 1.) * .05;
+}
+`;
+const flowUpdate = `
+uniform float uDt;
+uniform int uInit;
+out vec4 fragColor;
+void main() {
+  ivec2 id = ivec2(gl_FragCoord.xy);
+  vec4 s = texelFetch(uState, id, 0);
+  vec2 r = hash22(vec2(id) + fract(uTime * 7.13) * 91.);
+  float r3 = hash12(vec2(id).yx + fract(uTime * 3.7) * 53.);
+  // (x, y) across the screen, the particle's age and how long it lives, in seconds.
+  if (uInit == 1 || s.z > s.w || s.x < -.02 || s.x > 1.02 || s.y < -.02 || s.y > 1.02) {
+    s = vec4(r, uInit == 1 ? r3 * 10. : 0., 7. + r3 * 9.);
+  } else {
+    s.xy += current(s.xy, uTime) * uDt;
+    s.z += uDt;
+  }
+  fragColor = s;
+}
+`;
+const flowParticles = {
+  count: FLOW_SIZE * FLOW_SIZE,
+  vertex: `
+out vec3 vColor;
+out vec2 vCorner;
+void main() {
+  int id = gl_InstanceID;
+  vec4 s = texelFetch(uState, ivec2(id % ${FLOW_SIZE}, id / ${FLOW_SIZE}), 0);
+  vec2 v = current(s.xy, uTime);
+  float speed = length(v) * 20.;
+  float life = sin(3.14159 * clamp(s.z / s.w, 0., 1.));
+  vColor = grad(s.x * .35 + s.y * .25 + uTime * .006 + uSeed) * (.45 + .55 * min(speed, 1.)) * life * .22;
+  int k = gl_VertexID;
+  vCorner = vec2(k == 1 || k == 4 || k == 5 ? 1. : -1., k == 2 || k == 3 || k == 5 ? 1. : -1.);
+  gl_Position = vec4(s.xy * 2. - 1. + vCorner * 1.1 / uRes, 0., 1.);
+}
+`,
+  fragment: `
+in vec3 vColor;
+in vec2 vCorner;
+void main() { fragColor = vec4(vColor * smoothstep(1.2, .2, length(vCorner)), 1.); }
+`,
+};
+const flow = `
+vec3 scene(vec2 frag) {
+  vec2 uv = frag / uRes;
+  vec2 q = uv - .5;
+  vec3 col = uPal[0] * (.1 + .12 * (1. - dot(q, q) * 2.));
+  return col + texture(uTrail, uv).rgb;
+}
+`;
+
 /** @type {Scene[]} */
 export const SCENES = [
   { id: 'silk', name: 'Silk', kind: '2d', mood: 'day', source: silk },
   { id: 'dunes', name: 'Dunes', kind: '3d', mood: 'day', source: dunes },
+  { id: 'gallery', name: 'Gallery', kind: '3d', mood: 'night', source: gallery, needs: 'covers' },
   { id: 'waves', name: 'Waves', kind: '2d', mood: 'day', source: waves },
+  { id: 'ocean', name: 'Ocean', kind: '3d', mood: 'day', source: ocean },
+  { id: 'flow', name: 'Flow', kind: '2d', mood: 'night', source: flow, lib: flowLib, particles: flowParticles, state: { size: FLOW_SIZE, decay: 0.99, update: flowUpdate } },
   { id: 'forms', name: 'Forms', kind: '3d', mood: 'night', source: forms },
+  { id: 'drift', name: 'Drift', kind: '2d', mood: 'night', source: drift, lib: driftLib, particles: driftParticles, needs: 'heroes', heroes: driftCycle },
   { id: 'ink', name: 'Ink', kind: '2d', mood: 'night', source: ink },
+  { id: 'nebula', name: 'Nebula', kind: '3d', mood: 'night', source: nebula },
   { id: 'glass', name: 'Glass', kind: '3d', mood: 'night', source: glass },
   { id: 'aurora', name: 'Aurora', kind: '3d', mood: 'night', source: aurora },
 ];
 
+/** Drift's timing: each hero image holds this long, in seconds, then takes this long to become the next one. */
+export const DRIFT = { hold: 22, change: 10 };
+
+/**
+ * Which two of `count` hero images Drift shows at `time`, and how far it has gone from the first to the second
+ * (0 while it holds, 0 to 1 during the change).
+ * @param {number} time @param {number} count
+ */
+export function driftCycle(time, count) {
+  const length = DRIFT.hold + DRIFT.change;
+  const cycle = Math.floor(Math.max(0, time) / length);
+  const local = Math.max(0, time) - cycle * length;
+  return { a: cycle % count, b: (cycle + 1) % count, mix: Math.min(1, Math.max(0, (local - DRIFT.hold) / DRIFT.change)), cycle };
+}
+
+/**
+ * The scenes a show can use: those of the style, without the ones whose art isn't there (Gallery needs covers,
+ * Drift two hero images) or that need float buffers the GPU can't render to (Flow).
+ * @param {'mix' | '2d' | '3d'} style
+ * @param {{ covers: boolean, heroes: number, float: boolean }} have
+ */
+export function scenesFor(style, have) {
+  return SCENES.filter(
+    (s) =>
+      (style === 'mix' || s.kind === style) &&
+      (s.needs !== 'covers' || have.covers) &&
+      (s.needs !== 'heroes' || have.heroes >= 2) &&
+      (!s.state || have.float)
+  );
+}
+
 /** A scene's whole fragment shader. @param {Scene} scene */
-export const fragmentSource = (scene) => COMMON + scene.source + MAIN;
+export const fragmentSource = (scene) => COMMON + (scene.lib ?? '') + scene.source + MAIN;
+
+/** The vertex and fragment shaders of a scene's particles, null when it has none. @param {Scene} scene */
+export function particleSources(scene) {
+  if (!scene.particles) return null;
+  const head = `#version 300 es${SHARED}${scene.lib ?? ''}`;
+  return { vertex: head + scene.particles.vertex, fragment: `${head}out vec4 fragColor;\n${scene.particles.fragment}` };
+}
+
+/** The shader that moves a scene's particles on, null when it has none. @param {Scene} scene */
+export const stateSource = (scene) => (scene.state ? `#version 300 es${SHARED}${scene.lib ?? ''}${scene.state.update}` : null);

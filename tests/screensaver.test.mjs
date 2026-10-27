@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { LAMPLIT, forMood, fromOklch, gradient, medianCut, paletteOf, scenePalette, toOklch } from '../ui/screensaver/palette.js';
-import { SCENES } from '../ui/screensaver/scenes.js';
+import { DRIFT, SCENES, driftCycle, fragmentSource, particleSources, scenesFor, stateSource } from '../ui/screensaver/scenes.js';
 
 /** RGBA bytes of an image made of `parts`: [[r, g, b, a?], pixel count] each. */
 function image(...parts) {
@@ -152,5 +152,55 @@ describe('scenes', () => {
   });
   test('there are 2D and 3D scenes, so each style has something to show', () => {
     assert.ok(SCENES.filter((s) => s.kind === '2d').length >= 2 && SCENES.filter((s) => s.kind === '3d').length >= 2);
+  });
+  test('without art or float buffers, each style still has scenes, none of them needing what is missing', () => {
+    for (const style of ['mix', '2d', '3d']) {
+      const bare = scenesFor(style, { covers: false, heroes: 0, float: false });
+      assert.ok(bare.length >= 3, style);
+      assert.ok(bare.every((s) => !s.needs && !s.state), JSON.stringify(bare.map((s) => s.id)));
+    }
+  });
+  test('Gallery comes in with the covers, Drift with two hero images, Flow with float buffers', () => {
+    const ids = (have) => scenesFor('mix', have).map((s) => s.id);
+    assert.ok(ids({ covers: true, heroes: 0, float: false }).includes('gallery'));
+    assert.ok(!ids({ covers: false, heroes: 1, float: true }).includes('drift'));
+    assert.ok(ids({ covers: false, heroes: 2, float: false }).includes('drift'));
+    assert.ok(ids({ covers: false, heroes: 0, float: true }).includes('flow'));
+    assert.deepEqual(ids({ covers: true, heroes: 4, float: true }), SCENES.map((s) => s.id));
+  });
+  test("a style keeps to its kind, whatever the art", () => {
+    const have = { covers: true, heroes: 4, float: true };
+    assert.ok(scenesFor('2d', have).every((s) => s.kind === '2d') && scenesFor('3d', have).every((s) => s.kind === '3d'));
+  });
+  test('each scene that shows art says which, and Drift picks its hero images', () => {
+    for (const s of SCENES.filter((x) => x.needs)) assert.ok(['covers', 'heroes'].includes(s.needs ?? ''), s.id);
+    assert.ok(SCENES.filter((x) => x.needs === 'heroes').every((x) => typeof x.heroes === 'function'));
+  });
+  test('the shaders are put together for every scene, with particle and state shaders only where they belong', () => {
+    for (const s of SCENES) {
+      assert.match(fragmentSource(s), /^#version 300 es[\s\S]*void main\(\)/, s.id);
+      assert.equal(!!particleSources(s), !!s.particles, s.id);
+      assert.equal(!!stateSource(s), !!s.state, s.id);
+      if (s.particles) assert.match(particleSources(s)?.vertex ?? '', /gl_InstanceID/, s.id);
+    }
+  });
+});
+
+describe("Drift's timing", () => {
+  const length = DRIFT.hold + DRIFT.change;
+  test('holds the first image, then changes it into the second', () => {
+    assert.deepEqual(driftCycle(0, 3), { a: 0, b: 1, mix: 0, cycle: 0 });
+    assert.equal(driftCycle(DRIFT.hold - 0.01, 3).mix, 0);
+    assert.equal(driftCycle(DRIFT.hold + DRIFT.change / 2, 3).mix, 0.5);
+  });
+  test('the end of a change is the start of the next hold, on the image it changed into', () => {
+    const end = driftCycle(length - 1e-6, 3);
+    const next = driftCycle(length, 3);
+    assert.ok(end.mix > 0.99 && next.mix === 0 && next.a === end.b, JSON.stringify({ end, next }));
+  });
+  test('goes round every image and back to the first', () => {
+    const seen = Array.from({ length: 4 }, (_, k) => driftCycle(k * length + 1, 4).a);
+    assert.deepEqual(seen, [0, 1, 2, 3]);
+    assert.equal(driftCycle(4 * length + 1, 4).a, 0);
   });
 });
