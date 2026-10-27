@@ -49,6 +49,20 @@ fn names(games: &[Game]) -> String {
     if list.is_empty() { "none".into() } else { list.join(", ") }
 }
 
+/// Brings the games added by hand among `games`, which a scan found, in line with `manual`, those the player has now. A
+/// scan reads them before the stores, and the player may add or remove one meanwhile: a game added then would leave
+/// the row until the next scan, and one removed would come back.
+pub fn reconcile_manual(games: &mut Vec<Game>, manual: Vec<Game>) {
+    games.retain(|g| !g.manual || manual.iter().any(|m| m.id == g.id));
+    for mut g in manual {
+        let key = folder_key(&g.dir);
+        if !games.iter().any(|o| o.id == g.id || folder_key(&o.dir) == key) {
+            stores::set_requirements(std::slice::from_mut(&mut g));
+            games.push(g);
+        }
+    }
+}
+
 fn add(games: &mut Vec<Game>, g: Game) {
     let key = folder_key(&g.dir);
     if let Some(other) = games.iter().find(|o| folder_key(&o.dir) == key) {
@@ -76,5 +90,29 @@ mod tests {
         add(&mut games, game("ea:other", Store::Ea, r"D:\EA Games\Other"));
         let ids: Vec<&str> = games.iter().map(|g| g.id.as_str()).collect();
         assert_eq!(ids, ["steam:1", "ea:other"]);
+    }
+
+    #[test]
+    fn a_scan_keeps_up_with_games_added_or_removed_meanwhile() {
+        let manual = |id: &str, dir: &str| {
+            let exe = PathBuf::from(dir).join("game.exe");
+            let mut g = Game::new(id.into(), id.into(), None, PathBuf::from(dir), Launch::Exe(exe));
+            g.manual = true;
+            g
+        };
+        let store_game = Game::new(
+            "steam:1".into(),
+            "Racer".into(),
+            Some(Store::Steam),
+            r"D:\Steam\Racer".into(),
+            Launch::Uri(String::new()),
+        );
+        // The scan read Old before the player removed it, and missed New, which they added meanwhile.
+        let mut games = vec![store_game, manual("manual:old", r"D:\Old")];
+        let now = vec![manual("manual:new", r"D:\New"), manual("manual:racer", r"D:\Steam\Racer")];
+        reconcile_manual(&mut games, now);
+        // A game added by hand in a folder a store has since installed into stays the store's.
+        let ids: Vec<&str> = games.iter().map(|g| g.id.as_str()).collect();
+        assert_eq!(ids, ["steam:1", "manual:new"]);
     }
 }

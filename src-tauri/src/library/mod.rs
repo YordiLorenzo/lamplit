@@ -146,10 +146,12 @@ fn find_games(app: &AppHandle) {
     log::info!("discovery done: {} games in {} ms", games.len(), started.elapsed().as_millis());
     let library = app.state::<Library>();
     let changed = {
-        // What the player keeps per game goes on under the list's lock, as in `change`: a favourite marked or art
-        // chosen while this scan ran is then on the list either way.
+        // What the player keeps per game goes on under the list's lock, as in `change`: a favourite marked, art
+        // chosen, or a game added or removed by hand while this scan ran is then on the list either way.
         let mut list = library.games.lock();
-        app.state::<UserData>().apply(&mut games);
+        let user = app.state::<UserData>();
+        discover::reconcile_manual(&mut games, user.manual_games());
+        user.apply(&mut games);
         art::from_disk(&mut games);
         games.sort_by(by_played);
         list.replace(games.clone()).is_none_or(|old| old != games)
