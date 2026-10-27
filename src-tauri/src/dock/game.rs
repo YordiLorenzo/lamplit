@@ -36,16 +36,28 @@ const ANSWER_WITHIN: Duration = Duration::from_secs(1);
 pub fn game_state(app: &AppHandle) -> Option<GameState> {
     let (id, watch) = app.state::<Launcher>().running()?;
     let name = name(app, &id);
-    let windows = launch::game_windows(&watch.pids(Processes::now().iter()));
+    let windows = launch::game_windows(&watch.own_pids(Processes::now().iter()));
     let responding = windows.iter().all(|&w| win::window::responds(w, ANSWER_WITHIN));
-    let asked = ASKED.lock().as_ref().is_some_and(|(asked, at)| *asked == id && at.elapsed() >= GRACE);
-    Some(GameState { id, name, responding, force_close: !responding || windows.is_empty() || asked })
+    let force_close = offers_force(responding, !windows.is_empty(), &id, watch.opened);
+    Some(GameState { id, name, responding, force_close })
+}
+
+/// The dock offers to end the game: it isn't responding, has no window to ask, or the player asked it to close at
+/// least GRACE ago in this session (opened at `since`) and it still runs.
+fn offers_force(responding: bool, has_window: bool, id: &str, since: Instant) -> bool {
+    !responding || !has_window || asked_ago(id, since).is_some_and(|ago| ago >= GRACE)
+}
+
+/// How long ago the player asked from the dock to close or end the game `id` in its session opened at `since`. A
+/// request in an earlier session of the same game doesn't count.
+fn asked_ago(id: &str, since: Instant) -> Option<Duration> {
+    ASKED.lock().as_ref().filter(|(asked, at)| asked == id && *at >= since).map(|(_, at)| at.elapsed())
 }
 
 /// The player closed or ended the game `id` from the dock after `since` (when Lamplit opened it), so its end is no
 /// launcher handing over to the game, which a game that ends within 20 s of starting otherwise is.
 pub fn closed_from_dock(id: &str, since: Instant) -> bool {
-    ASKED.lock().as_ref().is_some_and(|(asked, at)| asked == id && *at >= since)
+    asked_ago(id, since).is_some()
 }
 
 fn name(app: &AppHandle, id: &str) -> String {
@@ -58,9 +70,17 @@ pub fn close_game(app: &AppHandle, force: bool) -> Result<()> {
     let gone = || Error::Player("The game has already closed.".into());
     let (id, watch) = app.state::<Launcher>().running().ok_or_else(gone)?;
     let name = name(app, &id);
-    let pids = watch.pids(Processes::now().iter());
+    let procs = Processes::now();
+    let pids = watch.own_pids(procs.iter());
     if pids.is_empty() {
-        return Err(gone());
+        // Running by its exe name only, from a folder that isn't the game's: maybe another program.
+        return Err(if watch.pids(procs.iter()).is_empty() {
+            gone()
+        } else {
+            Error::Player(format!(
+                "Lamplit can't be sure which program is {name}, so it leaves it. Close it in the game."
+            ))
+        });
     }
     if force {
         let ended = pids
@@ -105,13 +125,22 @@ mod tests {
         assert_eq!(serde_json::to_value(game).unwrap(), ipc_fixture!("dock-game"));
     }
 
+    // One test for everything that reads ASKED, which tests running side by side would share.
     #[test]
-    fn a_close_from_the_dock_counts_for_that_session_only() {
-        let opened = Instant::now();
-        *ASKED.lock() = Some(("steam:70".into(), Instant::now()));
+    fn a_close_from_the_dock_counts_in_its_session_only() {
+        let opened = Instant::now().checked_sub(Duration::from_mins(2)).unwrap();
+        let asked = Instant::now().checked_sub(Duration::from_secs(30)).unwrap();
+        *ASKED.lock() = Some(("steam:70".into(), asked));
         assert!(closed_from_dock("steam:70", opened));
         assert!(!closed_from_dock("steam:80", opened));
-        // Opened again after that close: a launcher handing over to it is one again.
-        assert!(!closed_from_dock("steam:70", Instant::now() + Duration::from_secs(1)));
+        // Asked 30 s ago in this session, and still running: the dock offers to end it.
+        assert!(offers_force(true, true, "steam:70", opened));
+        // Opened again since: a launcher handing over is one again, and the new session is offered no forced close.
+        let reopened = Instant::now();
+        assert!(!closed_from_dock("steam:70", reopened));
+        assert!(!offers_force(true, true, "steam:70", reopened));
+        // Not responding, or no window to ask, is reason enough in any session.
+        assert!(offers_force(false, true, "steam:70", reopened));
+        assert!(offers_force(true, false, "steam:70", reopened));
     }
 }

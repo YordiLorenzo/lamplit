@@ -6,9 +6,9 @@
 use crate::win::dock::{self as float, Input, Rect};
 use crate::win::window::HWND;
 use std::sync::atomic::{AtomicIsize, Ordering};
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Manager, RunEvent, Runtime, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
-const LABEL: &str = "dock";
+pub const LABEL: &str = "dock";
 
 /// The dock window's handle, 0 while there is none. Kept as a number: a window handle can't cross threads.
 static DOCK: AtomicIsize = AtomicIsize::new(0);
@@ -50,6 +50,19 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         }
     });
     Ok(())
+}
+
+/// Closing the home window (Alt+F4) closes the dock with it. Tauri ends the app only once its last window has gone,
+/// so the hidden dock would keep Lamplit running with no window, holding the single-instance lock: starting Lamplit
+/// again would only look for that window and stop. Lamplit never keeps its window open on a close request.
+pub fn close_with_main<R: Runtime>(app: &tauri::AppHandle<R>, event: &RunEvent) {
+    if let RunEvent::WindowEvent { label, event: WindowEvent::CloseRequested { .. }, .. } = event
+        && label == "main"
+        && let Some(dock) = app.get_webview_window(LABEL)
+    {
+        DOCK.store(0, Ordering::SeqCst);
+        let _ = dock.destroy();
+    }
 }
 
 pub fn destroy(app: &AppHandle) {

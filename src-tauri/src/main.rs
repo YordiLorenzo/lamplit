@@ -49,3 +49,37 @@ fn setup() -> ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tauri::test::{mock_builder, mock_context, noop_assets};
+    use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+
+    #[test]
+    fn closing_the_home_window_closes_the_dock_too() {
+        let app = mock_builder().build(mock_context(noop_assets())).unwrap();
+        let main = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default()).build().unwrap();
+        WebviewWindowBuilder::new(&app, lamplit_lib::DOCK_LABEL, WebviewUrl::default()).build().unwrap();
+        // The mock runtime handles one message a second and ends once no window is left. A dock still open after a
+        // few seconds would keep it going for good, so the test closes every window itself then, and fails.
+        let left_open = Arc::new(AtomicBool::new(false));
+        let (flag, mut seconds) = (left_open.clone(), 0);
+        app.run_return(move |app, event| {
+            // Only a running app hears that a window is about to close, as with Alt+F4.
+            if let RunEvent::Ready = event {
+                main.close().unwrap();
+            }
+            lamplit_lib::close_with_main(app, &event);
+            if let RunEvent::MainEventsCleared = event {
+                seconds += 1;
+                if seconds == 4 {
+                    flag.store(true, Ordering::SeqCst);
+                    app.webview_windows().values().for_each(|w| drop(w.destroy()));
+                }
+            }
+        });
+        assert!(!left_open.load(Ordering::SeqCst), "the dock kept the app running after the home window closed");
+    }
+}
