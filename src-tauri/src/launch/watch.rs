@@ -72,16 +72,17 @@ impl Watch {
     /// The game's processes among `procs`, as far as the watcher has found them.
     pub fn pids(&self, procs: &[Proc]) -> HashSet<u32> {
         match &self.launched {
-            Some((_, lineage)) => without_helpers(&lineage.lock().known(procs), procs),
+            Some((_, lineage)) => without_helpers(&lineage.lock().known(procs, false), procs),
             None => self.select(procs, false),
         }
     }
 
     /// The processes among `procs` that are certainly the game's, for closing it: one whose path Windows tells counts
     /// only when it runs from the game's folders. By its exe name alone, another program could be closed in its place.
+    /// For a game outside any store, only those whose descent from what Lamplit started is known (see `Member`).
     pub fn own_pids(&self, procs: &[Proc]) -> HashSet<u32> {
         match &self.launched {
-            Some((_, lineage)) => without_helpers(&lineage.lock().known(procs), procs),
+            Some((_, lineage)) => without_helpers(&lineage.lock().known(procs, true), procs),
             None => self.select(procs, true),
         }
     }
@@ -101,7 +102,8 @@ impl Watch {
         if let Some((_, lineage)) = &self.launched {
             let mut lineage = lineage.lock();
             lineage.since = Some(started.started);
-            lineage.game.insert((started.pid, started.started), Some(started));
+            let key = (started.pid, started.started);
+            lineage.game.insert(key, Member { held: Some(started), proven: true });
         }
     }
 
@@ -160,9 +162,19 @@ const NOT_THE_GAME: &[&str] = &[
 /// found what it started. One that ended before Lamplit could open it counts as a parent only while a look sees it.
 #[derive(Default)]
 pub struct Lineage {
-    game: HashMap<(u32, u64), Option<Held>>,
+    game: HashMap<(u32, u64), Member>,
     /// When the process Lamplit started began (`Watch::seed`).
     since: Option<u64>,
+}
+
+/// One of the game's processes.
+struct Member {
+    /// Kept open (`Held`); None when it ended before Lamplit could open it.
+    held: Option<Held>,
+    /// It runs the game's exe, is what Lamplit started, or came from one that is: closing it closes the game. One
+    /// taken in by its folder alone (`came_through_unseen`), and what it starts, may be another program, so it counts
+    /// for telling the game runs, not for closing it.
+    proven: bool,
 }
 
 impl Lineage {
@@ -171,23 +183,24 @@ impl Lineage {
     /// returns those that run now. `dirs`: the game's folders.
     fn update(&mut self, exe: &str, dirs: &[String], procs: &[Proc]) -> HashSet<u32> {
         for p in procs.iter().filter(|p| p.exe.is_some_and(|e| folder_key(e) == exe)) {
-            self.add(p);
+            self.add(p, true);
         }
         let not_the_game = |p: &Proc| NOT_THE_GAME.iter().any(|n| p.name.eq_ignore_ascii_case(n));
         loop {
-            let found: Vec<&Proc> = procs
+            let found: Vec<(&Proc, bool)> = procs
                 .iter()
                 .filter(|p| !self.game.contains_key(&(p.pid, p.started)) && !not_the_game(p))
-                .filter(|p| {
-                    p.parent.is_some_and(|parent| self.started_by_game(parent, p.started, procs))
-                        || self.came_through_unseen(p, dirs, procs)
+                .filter_map(|p| {
+                    let from_parent = p.parent.and_then(|parent| self.started_by_game(parent, p.started, procs));
+                    let proven = from_parent.or_else(|| self.came_through_unseen(p, dirs, procs).then_some(false));
+                    proven.map(|proven| (p, proven))
                 })
                 .collect();
             if found.is_empty() {
                 break;
             }
-            for p in found {
-                self.add(p);
+            for (p, proven) in found {
+                self.add(p, proven);
             }
         }
         // One this look finds gone is let go: what it started that still runs, this look has found, and from now on
@@ -207,22 +220,25 @@ impl Lineage {
         self.since.is_some_and(|since| p.started >= since) && inside && !parent_runs
     }
 
-    /// The processes among `procs` that the lineage has, as it is.
-    fn known(&self, procs: &[Proc]) -> HashSet<u32> {
-        procs.iter().filter(|p| self.game.contains_key(&(p.pid, p.started))).map(|p| p.pid).collect()
+    /// The processes among `procs` that the lineage has, as it is; with `proven`, only those whose descent is known.
+    fn known(&self, procs: &[Proc], proven: bool) -> HashSet<u32> {
+        let has = |p: &Proc| self.game.get(&(p.pid, p.started)).is_some_and(|m| m.proven || !proven);
+        procs.iter().filter(|p| has(p)).map(|p| p.pid).collect()
     }
 
-    fn add(&mut self, p: &Proc) {
-        self.game.entry((p.pid, p.started)).or_insert_with(|| Held::open(p.pid, p.started));
+    fn add(&mut self, p: &Proc, proven: bool) {
+        self.game.entry((p.pid, p.started)).or_insert_with(|| Member { held: Held::open(p.pid, p.started), proven });
     }
 
     /// Whether the process with id `parent` that started a process at `at` is one of the game's: one Lamplit keeps
-    /// open, whose id no other process can have had since it started, or one that runs now.
-    fn started_by_game(&self, parent: u32, at: u64, procs: &[Proc]) -> bool {
+    /// open, whose id no other process can have had since it started, or one that runs now. Some with whether it is
+    /// proven (see `Member`), which what it started inherits; None when it isn't the game's.
+    fn started_by_game(&self, parent: u32, at: u64, procs: &[Proc]) -> Option<bool> {
         let runs = |started| procs.iter().any(|q| q.pid == parent && q.started == started);
         self.game
             .iter()
-            .any(|(&(pid, started), held)| pid == parent && started <= at && (held.is_some() || runs(started)))
+            .find(|&(&(pid, started), m)| pid == parent && started <= at && (m.held.is_some() || runs(started)))
+            .map(|(_, m)| m.proven)
     }
 }
 
@@ -682,7 +698,25 @@ mod tests {
             proc(4, r"D:\Games\Racer\Tools\server.exe", at.saturating_sub(60), Some(6)),
         ];
         assert_eq!(watch.track(&procs), [2].into(), "the starting screen would stay over the game");
-        assert_eq!(watch.own_pids(&procs), [2].into());
+        // How it came from the launcher is unknown, so the dock leaves closing it to the game.
+        assert!(watch.own_pids(&procs).is_empty());
+    }
+
+    #[test]
+    fn a_program_taken_in_by_its_folder_alone_never_closes_with_the_game() {
+        // Racer runs from Downloads. A portable app there started after it, through a bootstrapper that has ended.
+        let exe = PathBuf::from(r"D:\Downloads\Racer.exe");
+        let game = Game::new(r"pc:d:\downloads".into(), "Racer".into(), None, r"D:\Downloads".into(), Launch::Exe(exe));
+        let (watch, launcher) = (Watch::of(&game), launcher());
+        let at = launcher.started;
+        watch.seed(launcher);
+        let procs = [
+            proc(2, r"D:\Downloads\Racer.exe", at, Some(900)),
+            proc(3, r"D:\Downloads\PortableApp\App.exe", at + 2, Some(7)),
+        ];
+        // It may be the game, for telling it runs; closing it could lose the player's work.
+        assert_eq!(watch.track(&procs), [2, 3].into());
+        assert_eq!(watch.own_pids(&procs), [2].into(), "Close game would close the portable app");
     }
 
     #[test]

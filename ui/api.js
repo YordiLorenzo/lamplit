@@ -201,6 +201,7 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {number} started  when this session started, Unix seconds; 0 when Lamplit doesn't know
  * @property {number} session  this launch of the game, which a close names
  * @property {boolean} responding  its window answers Windows
+ * @property {boolean} closable  Lamplit knows which processes are the game's, so the dock can close it
  * @property {boolean} force_close  the dock offers to end it: not responding, no window, or asked to close a while ago
  */
 

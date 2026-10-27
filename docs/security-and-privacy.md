@@ -116,11 +116,12 @@ These don't change any setting, but you may notice them:
   (Alt+R, or the one you set in NVIDIA's overlay).
 - The in-game dock is a window of Lamplit's own that Windows shows above the game. While it is open it is the window
   in front; Lamplit gives the focus back to the game when it closes. **Close game** posts `WM_CLOSE` to the game's
-  windows, as their close button does. **Force close** ends the game's processes (`TerminateProcess`), the ones
-  that are certainly the game's: those running from its folder, and by one of its exe names only a process whose
-  path Windows doesn't tell. For a game you added by hand, whose folder may hold other programs, only its exe and
-  the processes it started. It is offered only when the game isn't responding or
-  didn't close when asked, and Windows refuses it for a game run as administrator.
+  windows, as their close button does. **Force close** ends the game's processes (`TerminateProcess`), the ones that
+  are certainly the game's: those running from its folder, and by one of its exe names only a process whose path
+  Windows doesn't tell. For a game outside any store, whose folder may hold other programs, only its exe and the
+  processes that came from it as far as Windows tells. It is offered only when the game isn't responding or didn't
+  close when asked, and Windows refuses it for a game run as administrator. When Lamplit knows none of the game's
+  processes for certain, the dock has no Close game.
 - To know when a game runs, it reads the list of running processes and the folder each runs from. It doesn't inject
   code into games or read their memory. For a game outside any store, it keeps the game's processes open while it
   watches them, with the right to read their basic facts only, so Windows doesn't give their ids to other programs

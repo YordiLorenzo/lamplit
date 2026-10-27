@@ -27,6 +27,9 @@ pub struct GameState {
     pub session: u64,
     /// Its window answers Windows.
     pub responding: bool,
+    /// Lamplit knows which processes are the game's (`Watch::own_pids`), so the dock can close it. Not for a game
+    /// known only by its exe name, or by its folder alone: closing it could reach another program.
+    pub closable: bool,
     /// The dock offers to end the game: it isn't responding, has no window to ask, or was asked to close a while ago
     /// and still runs.
     pub force_close: bool,
@@ -60,10 +63,12 @@ pub fn game_state(app: &AppHandle) -> Option<GameState> {
     let game = app.state::<Library>().game(&id);
     let (name, art, started) = game.map_or_else(|| (id.clone(), Art::default(), 0), |g| (g.name, g.art, g.last_played));
     let procs = Processes::now();
-    let windows = launch::game_windows(&watch.own_pids(&procs.list()));
+    let pids = watch.own_pids(&procs.list());
+    let windows = launch::game_windows(&pids);
     let responding = windows.iter().all(|&w| win::window::responds(w, ANSWER_WITHIN));
-    let force_close = offers_force(responding, !windows.is_empty(), &id, watch.opened);
-    Some(GameState { id, name, art, started, session: session(watch.opened), responding, force_close })
+    let closable = !pids.is_empty();
+    let force_close = closable && offers_force(responding, !windows.is_empty(), &id, watch.opened);
+    Some(GameState { id, name, art, started, session: session(watch.opened), responding, closable, force_close })
 }
 
 /// The dock offers to end the game: it isn't responding, has no window to ask, or the player asked it to close at
@@ -179,6 +184,7 @@ mod tests {
             started: 1_761_560_000,
             session: 4_200_000,
             responding: false,
+            closable: true,
             force_close: true,
         };
         assert_eq!(serde_json::to_value(game).unwrap(), ipc_fixture!("dock-game"));
