@@ -11,7 +11,7 @@
 //      colours roll off gently instead of clipping), darkens the corners a little and adds a moving grain, which also
 //      hides the banding that slow dark gradients show on an 8-bit screen.
 
-import { forMood, gradient } from './palette.js';
+import { forMood, gradient, toLinear } from './palette.js';
 import { fragmentSource, particleSources, stateSource } from './scenes.js';
 
 /**
@@ -575,7 +575,7 @@ export class Renderer {
     const target = /** @type {Target} */ (this.targets[slot]);
     const p = this.prepare(scene);
     const colours = this.inMood(palette, scene.mood);
-    const pal = colours.flatMap((rgb) => rgb.map(linear));
+    const pal = colours.flatMap((rgb) => rgb.map(toLinear));
 
     // The textures every program may read: the gradient, the noise, the scene's art.
     this.bind(UNIT.grad, this.gradientTexture(colours, scene.mood));
@@ -731,10 +731,4 @@ export class Renderer {
     gl.uniform2f(pass.final.at.uRes, this.canvas.width, this.canvas.height);
     this.draw();
   }
-}
-
-/** An sRGB byte as linear light, which the scenes work in. @param {number} c */
-function linear(c) {
-  const v = c / 255;
-  return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
 }

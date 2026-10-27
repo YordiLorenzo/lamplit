@@ -225,41 +225,41 @@ impl Processes {
         self.exes = exes;
     }
 
-    /// Each process: its id, its exe's file name, and the exe's full path when Windows tells it.
-    pub fn iter(&self) -> impl Iterator<Item = (u32, &OsStr, Option<&Path>)> {
+    /// Each process: its id, its exe's file name, the exe's full path when Windows tells it, when it started and the
+    /// process that started it.
+    fn iter(&self) -> impl Iterator<Item = Proc<'_>> {
         self.sys.processes().iter().map(|(pid, p)| {
             let exe = p
                 .exe()
                 .filter(|e| !e.as_os_str().is_empty())
                 .or_else(|| self.exes.get(&(pid.as_u32(), p.start_time())).and_then(Option::as_deref));
-            (pid.as_u32(), p.name(), exe)
+            Proc {
+                pid: pid.as_u32(),
+                name: p.name(),
+                exe,
+                started: p.start_time(),
+                parent: p.parent().map(sysinfo::Pid::as_u32),
+            }
         })
     }
 
-    /// Each process with its start time and the process that started it, which `iter` leaves out.
     pub fn list(&self) -> Vec<Proc<'_>> {
-        let started = |pid: u32| self.sys.process(sysinfo::Pid::from_u32(pid)).map_or(0, sysinfo::Process::start_time);
-        self.iter()
-            .map(|(pid, name, exe)| {
-                let parent = self.sys.process(sysinfo::Pid::from_u32(pid)).and_then(sysinfo::Process::parent);
-                Proc { pid, name, exe, started: started(pid), parent: parent.map(sysinfo::Pid::as_u32) }
-            })
-            .collect()
+        self.iter().collect()
+    }
+
+    /// The processes running `exe`.
+    fn running(&self, exe: &Path) -> impl Iterator<Item = Proc<'_>> {
+        let want = exe.to_string_lossy().to_lowercase();
+        self.iter().filter(move |p| p.exe.is_some_and(|e| e.to_string_lossy().to_lowercase() == want))
     }
 
     fn pid_of(&self, exe: &Path) -> Option<u32> {
-        let want = exe.to_string_lossy().to_lowercase();
-        self.iter().find(|(_, _, e)| e.is_some_and(|e| e.to_string_lossy().to_lowercase() == want)).map(|(pid, ..)| pid)
+        self.running(exe).next().map(|p| p.pid)
     }
 
     /// When the first of the processes running `exe` started, in seconds since 1970.
     fn started(&self, exe: &Path) -> Option<u64> {
-        let want = exe.to_string_lossy().to_lowercase();
-        self.iter()
-            .filter(|(_, _, e)| e.is_some_and(|e| e.to_string_lossy().to_lowercase() == want))
-            .filter_map(|(pid, ..)| self.sys.process(sysinfo::Pid::from_u32(pid)))
-            .map(sysinfo::Process::start_time)
-            .min()
+        self.running(exe).map(|p| p.started).min()
     }
 }
 

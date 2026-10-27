@@ -10,8 +10,8 @@
  * @typedef {[RGB, RGB, RGB, RGB, RGB]} Palette
  */
 
-/** sRGB 0 to 255, to linear 0 to 1. @param {number} c */
-const toLinear = (c) => {
+/** sRGB 0 to 255, to linear 0 to 1, the light the scenes work in. @param {number} c */
+export const toLinear = (c) => {
   const v = c / 255;
   return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
 };
