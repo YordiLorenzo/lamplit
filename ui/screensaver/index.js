@@ -63,6 +63,9 @@ function woke(action, now) {
 export function wake(action) {
   const now = performance.now();
   if (now < swallow.until) {
+    // A key or a click woke it: the first controller press in the grace is that same press (Steam mirrors the
+    // controller as keys, and the key can come first), so a held direction's repeats go on extending the grace.
+    if (!swallow.action) swallow.action = action;
     if (action === swallow.action) swallow.until = now + GRACE_MS;
     return true;
   }
