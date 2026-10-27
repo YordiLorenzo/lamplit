@@ -74,6 +74,8 @@ windows = { version = "0.62", features = [
 ] }
 
 [dev-dependencies]
+# Tauri's mock runtime, for the test that closing the home window ends the app while the dock's window exists.
+tauri = { version = "2", features = ["test"] }
 # Each enum the page branches on lists its variants for the tests that pin them to tests/ipc/values.json, so a new
 # variant fails those tests until the page knows it.
 strum = { version = "0.28", features = ["derive"] }

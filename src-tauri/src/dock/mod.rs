@@ -19,6 +19,7 @@ mod window;
 
 pub use game::{GameState, close_game, closed_from_dock, game_state};
 pub use news::News;
+pub use window::{LABEL, close_with_main};
 
 use crate::error::Result;
 use crate::events::{self, Event};
