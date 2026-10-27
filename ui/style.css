@@ -351,9 +351,18 @@ body.arrived #info { animation: settle-info 460ms var(--glide); }
 @keyframes settle-stage { from { scale: 1.04; } }
 @keyframes settle-row { from { translate: 0 3vh; opacity: 0; } }
 @keyframes settle-info { from { translate: 0 1.5vh; } }
+/* Back to the game, the reverse (launch.js backToGame): the home screen eases out under the same veil before the game
+   gets the screen. */
+body.leaving #arrival { opacity: 1; transition: opacity 200ms ease; }
+body.leaving #stage { animation: leave-stage 200ms var(--glide) forwards; }
+body.leaving #row { animation: leave-row 200ms var(--glide) forwards; }
+body.leaving #info { animation: leave-info 200ms var(--glide) forwards; }
+@keyframes leave-stage { to { scale: 1.04; } }
+@keyframes leave-row { to { translate: 0 3vh; opacity: 0; } }
+@keyframes leave-info { to { translate: 0 1.5vh; } }
 @media (prefers-reduced-motion: reduce) {
-  #arrival { transition: none; }
-  body.arrived :is(#stage, #row, #info) { animation: none; }
+  #arrival, body.leaving #arrival { transition: none; }
+  body:is(.arrived, .leaving) :is(#stage, #row, #info) { animation: none; }
 }
 body.launching .cover:not(.focus) { opacity: .2; }
 body.launching .cover.focus { scale: 1.1; }

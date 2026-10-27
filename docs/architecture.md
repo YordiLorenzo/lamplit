@@ -213,7 +213,9 @@ frame. Close game asks for Cross held: the pad sends `dock-pad` with `ok-up` whe
 (`devices/pad/navigation.rs`), or when the controller holding it goes, and only the open dock hears of it. Home
 grows the dock's window over the whole screen, where its page draws a veil in the game's colours; behind the veil the
 home window comes forward, and the dock folds, which lifts the veil (`dock/mod.rs` home). The home page lifts a veil
-of its own as it settles in (`ui/main.js` arrive).
+of its own as it settles in (`ui/main.js` arrive). Back to game is the reverse: the home page eases out under the same
+veil, then asks Rust to bring the game forward (`launch_resume`), and drops the veil once its window has lost the
+foreground (`ui/launch.js` backToGame).
 
 ## Commands
 

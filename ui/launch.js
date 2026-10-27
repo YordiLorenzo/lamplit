@@ -107,10 +107,45 @@ export function cancelLaunch() {
   endLaunch();
 }
 
+/** How long the home screen takes to go under the veil (style.css body.leaving), as the dock's Home takes to veil the
+ * game (dock/mod.rs VEIL). */
+const LEAVE_MS = 200;
+/** A game that hasn't taken the screen by then won't: the home screen comes out from under the veil. */
+const LEFT_BY_MS = 2000;
+const leaving = { timer: 0, asked: false };
+
+/**
+ * Back to the running game, the reverse of the dock's Home: the home screen eases out under a veil in the game's
+ * colours, then the game gets the screen. Lamplit's window, behind the game, keeps the veil until the game has the
+ * foreground; a summon brings Lamplit back under the veil it lifts (main.js arrive). The page asks nothing of the
+ * game, so one that has stopped responding gets the screen as soon.
+ */
 export function backToGame() {
   sfx.open();
-  api.launchResume();
+  stopLeaving();
+  document.body.classList.remove('arriving', 'arrived');
+  document.body.classList.add('leaving');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  leaving.timer = setTimeout(
+    () => {
+      leaving.asked = true;
+      api.launchResume();
+      leaving.timer = setTimeout(stopLeaving, LEFT_BY_MS);
+    },
+    reduced ? 0 : LEAVE_MS
+  );
 }
+
+function stopLeaving() {
+  clearTimeout(leaving.timer);
+  leaving.asked = false;
+  document.body.classList.remove('leaving');
+}
+
+// The game has the foreground, so Lamplit's window is behind it: the veil goes unseen.
+const left = () => leaving.asked && stopLeaving();
+window.addEventListener('blur', left);
+document.addEventListener('visibilitychange', () => document.hidden && left());
 
 /** A game's news takes the screen: the game menu, Find and Add a game close first. */
 function leavePanels() {
@@ -167,6 +202,7 @@ export function onPlay(play) {
 
 /** A controller brought Lamplit forward while `runningId` runs. @param {string | null} runningId */
 export function onSummoned(runningId) {
+  stopLeaving();
   state.running = runningId;
   leavePanels();
   if (runningId) focusGame(runningId);
