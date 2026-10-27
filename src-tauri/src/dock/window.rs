@@ -43,6 +43,8 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     }
     let window = builder.build()?;
     DOCK.store(window.hwnd()?.0 as isize, Ordering::SeqCst);
+    // Its real glass too, while it is hidden (glass.rs).
+    let _ = app.run_on_main_thread(super::glass::prepare);
     let app = app.clone();
     window.on_window_event(move |event| {
         if let WindowEvent::Focused(false) = event {

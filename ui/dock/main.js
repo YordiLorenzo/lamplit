@@ -5,6 +5,7 @@
 
 import * as api from '../api.js';
 import { accentOf, buttonFace, counts, nothingSeen, quietMode } from '../logic.js';
+import { meter } from '../frames.js';
 import { sfx } from '../sounds.js';
 import { HOLD_MS, chips, hints, outputIcon, sessionText, spring, tiles, volumeText } from './logic.js';
 
@@ -100,6 +101,7 @@ function shape(mode) {
   const [width, height] = [`${face.offsetWidth}px`, `${face.offsetHeight}px`];
   const moves = mode !== state.mode || width !== els.island.style.width || height !== els.island.style.height;
   if (moves) dropGlass();
+  if (state.mode === 'gone') unfold(face);
   state.mode = mode;
   for (const el of [els.island, els.shade]) {
     el.dataset.mode = mode;
@@ -110,6 +112,26 @@ function shape(mode) {
   els.island.style.setProperty('--fold-x', '0px');
   els.island.style.setProperty('--fold-y', '0px');
   if (moves && mode === 'open') glassTimer = setTimeout(takeGlass, springMs + SETTLE_MS);
+}
+
+/**
+ * Opening, or showing news, from the pill: the island takes the size of `face` at once, still clipped to the pill at
+ * its bottom centre, and the clip springs open (dock.css), as folding squeezes it, so nothing is laid out per frame.
+ * @param {HTMLElement} face
+ */
+function unfold(face) {
+  const u = screen.height / 100;
+  const [width, height] = [face.offsetWidth, face.offsetHeight];
+  for (const el of [els.island, els.shade]) {
+    el.style.transition = 'none';
+    el.style.width = `${width}px`;
+    el.style.height = `${height}px`;
+  }
+  els.island.style.setProperty('--fold-x', `${Math.max(0, (width - PILL.width * u) / 2)}px`);
+  els.island.style.setProperty('--fold-y', `${Math.max(0, height - PILL.height * u)}px`);
+  void els.island.offsetWidth;
+  els.island.style.transition = '';
+  els.shade.style.transition = '';
 }
 
 /** The pill the island folds into, as dock.css draws it: its width, height and corners, in hundredths of the screen. */
@@ -159,27 +181,6 @@ function rest() {
   void els.island.offsetWidth;
   els.island.style.transition = '';
   els.shade.style.transition = '';
-}
-
-/**
- * One line in Lamplit's log after one of the dock's animations: how many frames it drew in `ms`, and the longest
- * wait between two, so the player's own runs tell whether it ran smoothly.
- * @param {string} name
- * @param {number} ms
- */
-function meter(name, ms) {
-  /** @type {number[]} */
-  const times = [];
-  const step = (/** @type {number} */ t) => {
-    times.push(t);
-    if (t - times[0] < ms) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-  setTimeout(() => {
-    const gaps = times.slice(1).map((t, i) => t - times[i]).sort((a, b) => a - b);
-    const at = (/** @type {number} */ share) => Math.round(gaps[Math.min(gaps.length - 1, Math.floor(gaps.length * share))] ?? 0);
-    api.log.info(`dock: ${name} ${times.length} frames, worst ${at(1)} ms, 95% ${at(0.95)} ms`);
-  }, ms + 50);
 }
 
 // ---------- real glass ----------
@@ -234,7 +235,7 @@ function open() {
   els.ring.classList.remove('on');
   render();
   shape('open');
-  meter('open', springMs + 130);
+  meter('dock: open', springMs + 130);
   sfx.open();
   refresh();
   clearInterval(gameTimer);
@@ -249,7 +250,7 @@ function fold() {
   if (state.leaving) document.body.classList.add('lift');
   if (state.mode === 'gone') return;
   shape('gone');
-  meter('fold', FOLD_MS);
+  meter('dock: fold', FOLD_MS);
   clearTimeout(restTimer);
   restTimer = setTimeout(rest, FOLD_MS + 40);
 }
@@ -265,7 +266,7 @@ function goHome() {
   document.body.classList.add('home');
   // Rust fades the real glass with the island as it grows into the veil (dock/mod.rs home).
   api.dockHome();
-  meter('home', 240);
+  meter('dock: home', 240);
 }
 
 /** @param {Extract<import('../api.js').DockShow, { mode: 'status' }>} news */
@@ -586,6 +587,24 @@ function refresh() {
   });
 }
 
+/**
+ * A game started: everything the dock shows is read and drawn now, while its window is hidden, with the art decoded
+ * and blurred, so the first opening has nothing to do but open.
+ */
+async function prepare() {
+  if (state.mode !== 'gone') return;
+  await refresh();
+  await els.cover.decode().catch(() => {});
+  if (state.mode !== 'gone') return;
+  // A rehearsal: the open dock's styles and layout worked out once, without its transitions, and put back.
+  document.body.classList.add('rehearsing');
+  for (const el of [els.island, els.shade]) el.dataset.mode = 'open';
+  void els.dock.offsetWidth;
+  for (const el of [els.island, els.shade]) el.dataset.mode = 'gone';
+  void els.dock.offsetWidth;
+  document.body.classList.remove('rehearsing');
+}
+
 /** A reading of the game still on its way: a hung game takes Rust a second per window to tell. */
 let readingGame = false;
 
@@ -881,6 +900,7 @@ async function init() {
   let heardKind = false;
   await Promise.all([
     api.onDock(onDock),
+    api.onPlay((play) => play.state === 'running' && prepare()),
     api.onDockPad((action) => act(action, 'pad')),
     api.onPadKind((kind) => {
       heardKind = true;
