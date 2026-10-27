@@ -4,7 +4,7 @@
 // takes no lock the store app could wait on, writes nothing (a SQLite reader would write the `-shm` index), and needs
 // no C library. Anything it doesn't understand reads as no table.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -168,12 +168,21 @@ impl Db {
         if len <= max_local {
             return local.get(..len).map(<[u8]>::to_vec);
         }
+        // A payload can't be longer than the database, nor its overflow chain come back to a page: either is damage,
+        // which would otherwise grow the payload until memory runs out.
+        if len > self.file.len() + self.from_wal.len() * self.page_size {
+            return None;
+        }
         let min_local = (u - 12) * 32 / 255 - 23;
         let k = min_local + (len - min_local) % (u - 4);
         let on_page = if k <= max_local { k } else { min_local };
         let mut out = local.get(..on_page)?.to_vec();
         let mut next = be32(local.get(on_page..on_page + 4)?);
+        let mut seen = HashSet::new();
         while out.len() < len {
+            if !seen.insert(next) {
+                return None;
+            }
             let page = self.page(next)?;
             let take = (u - 4).min(len - out.len());
             out.extend_from_slice(page.get(4..4 + take)?);
@@ -471,6 +480,64 @@ mod tests {
         assert_eq!(columns("CREATE TABLE t (a INTEGER PRIMARY KEY DESC, b)").unwrap().1, None);
         assert_eq!(columns("CREATE TABLE t (a INTEGER, b INTEGER, PRIMARY KEY (a, b))").unwrap().1, None);
         assert!(columns("CREATE TABLE t (a TEXT PRIMARY KEY, b) WITHOUT ROWID").is_none());
+    }
+
+    /// SQLite's varint, for values below 2^56.
+    fn put_varint(mut n: u64) -> Vec<u8> {
+        let mut out = vec![(n & 0x7f) as u8];
+        n >>= 7;
+        while n > 0 {
+            out.push((n & 0x7f) as u8 | 0x80);
+            n >>= 7;
+        }
+        out.reverse();
+        out
+    }
+
+    /// A database of three 512-byte pages: page 1 holds the header and the schema of table t, whose one leaf is page
+    /// 2; page 2 holds one row `len` bytes long, which continues on page 3; page 3 points on to page `next`.
+    fn crafted(len: usize, next: u32) -> Vec<u8> {
+        const SIZE: usize = 512;
+        let mut file = vec![0u8; SIZE * 3];
+        file[..16].copy_from_slice(MAGIC);
+        file[16..18].copy_from_slice(&(SIZE as u16).to_be_bytes());
+        file[56..60].copy_from_slice(&1u32.to_be_bytes());
+        // A leaf page whose header starts at `start`, with one cell at the page's end.
+        let leaf = |page: &mut [u8], start: usize, cell: &[u8]| {
+            let at = SIZE - cell.len();
+            page[start] = 0x0D;
+            page[start + 3..start + 5].copy_from_slice(&1u16.to_be_bytes());
+            page[start + 5..start + 7].copy_from_slice(&(at as u16).to_be_bytes());
+            page[start + 8..start + 10].copy_from_slice(&(at as u16).to_be_bytes());
+            page[at..].copy_from_slice(cell);
+        };
+        // The schema's row: ("table", "t", "t", 2, "CREATE TABLE t (a)").
+        let sql = b"CREATE TABLE t (a)";
+        let mut record = vec![6, 13 + 2 * 5, 15, 15, 1, 13 + 2 * sql.len() as u8];
+        record.extend_from_slice(b"tablett\x02");
+        record.extend_from_slice(sql);
+        let mut cell = vec![record.len() as u8, 1];
+        cell.extend(record);
+        leaf(&mut file[..SIZE], 100, &cell);
+        // The row: its length, rowid 1, the 39 bytes a 512-byte page keeps of a payload this long, then page 3.
+        let mut cell = put_varint(len as u64);
+        cell.push(1);
+        cell.extend([0u8; 39]);
+        cell.extend(3u32.to_be_bytes());
+        leaf(&mut file[SIZE..2 * SIZE], 0, &cell);
+        file[2 * SIZE..2 * SIZE + 4].copy_from_slice(&next.to_be_bytes());
+        file
+    }
+
+    #[test]
+    fn a_damaged_overflow_chain_reads_as_nothing() {
+        let rows = |file: Vec<u8>| Db::from_bytes(file, Vec::new()).unwrap().rows("t").map(|r| r.len());
+        // Sound: a row that continues on one overflow page.
+        assert_eq!(rows(crafted(489, 0)), Some(1));
+        // A chain that comes back to its own page.
+        assert_eq!(rows(crafted(997, 3)), None);
+        // A length far past the database, on that same loop.
+        assert_eq!(rows(crafted(39 + 508 * 100_000 + 450, 3)), None);
     }
 
     #[test]
