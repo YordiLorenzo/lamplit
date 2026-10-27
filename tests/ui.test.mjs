@@ -53,6 +53,8 @@ const play = (state, id, changes = {}) => like(ipc('play').find((p) => p.state =
 async function running(page, id) {
   await emit(page, 'play', play('running', id));
 }
+/** Back to the game: the game gets the screen once the home screen is under the veil (launch.js backToGame). */
+const resumed = (page) => until(page, () => window.__calls.at(-1)?.[0] === 'launch_resume');
 /** One line of the starting screen, in one of the states Rust sends. */
 const step = (changes) => like(ipc('launch-step'), { ...changes, state: known('step_state', changes.state) });
 
@@ -172,6 +174,7 @@ const state = (page) =>
   check('running hides the overlay', !s.overlay);
   check('focused running game offers Back to game', s.hint.includes('Back to game'), s.hint);
   await page.keyboard.press('Enter');
+  await resumed(page);
   s = await state(page);
   check('Enter on the running game resumes it', s.lastCall?.[0] === 'launch_resume');
   await emit(page, 'play', play('ended', 'pc:1'));
@@ -926,6 +929,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   let s = await state(page);
   check('another game offers ○ Back to game', s.focusName === 'Game 001' && s.hint.includes('○Back to game'), `${s.focusName} ${s.hint}`);
   await page.keyboard.press('Escape');
+  await resumed(page);
   s = await state(page);
   check('○ in the row goes back to the running game', s.lastCall?.[0] === 'launch_resume', JSON.stringify(s.lastCall));
   await close(page);
@@ -1118,7 +1122,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   s = await state(page);
   check('with every game hidden, the hints still offer the running game', s.covers === 0 && s.hint.includes('○Back to game'), `${s.covers} ${s.hint}`);
   await page.keyboard.press('Escape');
-  await idle(page);
+  await resumed(page);
   s = await state(page);
   check('○ goes back to a running game that is hidden', s.lastCall?.[0] === 'launch_resume', JSON.stringify(s.lastCall));
   await close(page);
@@ -2337,7 +2341,7 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await close(page);
 }
 
-// 33. Show it now with a mouse (over Moonlight, say): the pointer that clicked moves a pixel or two while the
+// 36. Show it now with a mouse (over Moonlight, say): the pointer that clicked moves a pixel or two while the
 // screensaver gets its colours ready, and as the hand settles; that neither calls it off nor ends it. A real move,
 // once the hand has settled, still ends it.
 {
@@ -2378,6 +2382,45 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await page.mouse.move(row.x + 60, row.y + 40);
   v = await saverView(page);
   check('a real move of the mouse ends it', !v.on, JSON.stringify(v));
+  await close(page);
+}
+
+// 37. Back to the game from the home screen, the reverse of the dock's Home: the home screen eases out under the veil in
+// the game's colours, and only then does the game get the screen. Lamplit's window, behind the game, lets the veil go
+// once the game has the foreground, or a while later if it never takes it. With reduced motion the game gets the
+// screen at once.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await running(page, 'pc:1');
+  await page.evaluate(() => {
+    window.__seen = [];
+    const veil = () => (document.body.classList.contains('leaving') ? 'veiled' : 'bare');
+    Object.assign((window.__settings ??= {}), { launch_resume: () => void window.__seen.push(`resume ${veil()}`) });
+    new MutationObserver(() => {
+      if (window.__seen.filter((s) => !s.startsWith('resume')).at(-1) !== veil()) window.__seen.push(veil());
+    }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  });
+  const seen = () => page.evaluate(() => window.__seen.splice(0));
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(80);
+  let s = await seen();
+  check('back to the game: the home screen goes under the veil before the game gets the screen', JSON.stringify(s) === '["veiled"]', JSON.stringify(s));
+  await page.waitForTimeout(250);
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  s = await seen();
+  check('... then the game gets the screen, and the veil goes once it has it', JSON.stringify(s) === '["resume veiled","bare"]', JSON.stringify(s));
+  // Holding PS brings Lamplit back; this time the game never takes the screen.
+  await emit(page, 'summoned', 'pc:1');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.waitForTimeout(700);
+  await seen();
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(30);
+  s = await seen();
+  check('with reduced motion the game gets the screen at once, veiled', JSON.stringify(s) === '["veiled","resume veiled"]', JSON.stringify(s));
+  await page.waitForTimeout(2200);
+  s = await seen();
+  check("a game that doesn't take the screen leaves the home screen as it was", JSON.stringify(s) === '["bare"]', JSON.stringify(s));
   await close(page);
 }
 
