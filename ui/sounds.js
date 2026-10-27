@@ -12,7 +12,6 @@ requestIdleCallback(() => (ctx ??= new AudioContext()));
  * @param {{ at?: number, dur?: number, vol?: number, type?: OscillatorType, to?: number | null }} [shape]
  */
 function tone(freq, { at = 0, dur = 0.06, vol = 0.04, type = 'sine', to = null } = {}) {
-  // Without an audio device Chromium plays into a silent sink rather than failing.
   ctx ??= new AudioContext();
   if (ctx.state === 'suspended') ctx.resume();
   const t = ctx.currentTime + at;
@@ -40,3 +39,8 @@ export const sfx = {
     tone(1047, { at: 0.14, dur: 0.6, vol: 0.03 });
   },
 };
+
+// The audio device starts once the page is idle after start, not inside the first press's sound, where it takes a
+// frame or more. Lamplit's WebView plays without a press first (`--autoplay-policy` in tauri.conf.json); elsewhere the
+// first sound resumes it. Without an audio device Chromium plays into a silent sink rather than failing.
+requestIdleCallback(() => (ctx ??= new AudioContext()));

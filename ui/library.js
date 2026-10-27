@@ -21,16 +21,20 @@ const fileUrl = (path) => (path ? assetUrl(path) : null);
 // ---------- accent colour from the art ----------
 
 /**
- * The image is loaded with crossOrigin set, so a file without the CORS header fails to load instead of reaching
- * here, and the canvas can always be read back.
- * @param {HTMLImageElement} img
+ * The accent colour of the image at `url`. It is read as a file and decoded straight to 64x36 off the main thread:
+ * drawing the 4K hero itself, or an ImageBitmap of the loaded image, decodes it on the main thread, most of a frame or
+ * more. The asset protocol sends the CORS header, so the canvas can be read back.
+ * @param {string} url
  */
-function sampleAccent(img) {
+async function sampleAccent(url) {
+  const file = await (await fetch(url)).blob();
+  const small = await createImageBitmap(file, { resizeWidth: 64, resizeHeight: 36, resizeQuality: 'medium' });
   const canvas = document.createElement('canvas');
   canvas.width = 64;
   canvas.height = 36;
   const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d', { willReadFrequently: true }));
-  ctx.drawImage(img, 0, 0, 64, 36);
+  ctx.drawImage(small, 0, 0);
+  small.close();
   return accentOf(ctx.getImageData(0, 0, 64, 36).data);
 }
 
@@ -67,14 +71,20 @@ function setHero(g) {
     show();
     return;
   }
+  const accent = state.accents.get(g.id);
+  if (accent) applyAccent(accent);
+  else {
+    sampleAccent(url).then(
+      (rgb) => {
+        state.accents.set(g.id, rgb);
+        if (focused()?.id === g.id) applyAccent(rgb);
+      },
+      () => {}
+    );
+  }
+  // Shown once loaded, so the hero doesn't build up line by line.
   const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => {
-    if (!state.accents.has(g.id)) state.accents.set(g.id, sampleAccent(img));
-    if (focused()?.id === g.id) applyAccent(state.accents.get(g.id));
-    show();
-  };
-  img.onerror = show;
+  img.onload = img.onerror = show;
   img.src = url;
 }
 

@@ -53,8 +53,9 @@ body.pointer { cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .hero { animation: none; }
 }
-/* Nobody is using Lamplit (input.js), or a game's menu blurs it: the drift holds where it is. */
-body.still .hero, body:has(#lift.on) .hero { animation-play-state: paused; }
+/* Nobody is using Lamplit (input.js), or a game's menu or a panel blurs it: the drift holds where it is. A blur over
+   a moving 4K hero is drawn again every frame. */
+body.still .hero, body:has(#lift.on, .panel.on) .hero { animation-play-state: paused; }
 
 .shade {
   position: absolute;

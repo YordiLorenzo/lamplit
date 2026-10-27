@@ -40,11 +40,14 @@ function renderFind() {
   );
   // A store whose games have all gone takes its choice with it.
   if (!targets().some((t) => t.dataset.id === state.findFocus)) state.findFocus = 'store:all';
-  for (const t of targets()) {
-    t.classList.toggle('focus', t.dataset.id === state.findFocus);
-    // Store choices that wrap onto a third line (a 4:3 screen) push Sort below the panel's edge, which then scrolls.
-    if (t.dataset.id === state.findFocus) t.scrollIntoView({ block: 'nearest' });
-  }
+  for (const t of targets()) t.classList.toggle('focus', t.dataset.id === state.findFocus);
+  // Store choices that wrap onto a third line (a 4:3 screen) push Sort below the panel's edge, which then scrolls.
+  // In the frame after next: scrolling now would work out the panel's styles and layout inside the press, on top of
+  // the frame that draws it.
+  const focus = state.findFocus;
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => targets().find((t) => t.dataset.id === focus)?.scrollIntoView({ block: 'nearest' }))
+  );
   showHints();
 }
 
