@@ -39,10 +39,15 @@ tungstenite = { version = "0.30", default-features = false, features = ["handsha
 # windows and windows-core stay on the version Tauri uses: one copy to build, and Tauri's HWND is the same type.
 # windows-core is named because the `interface` macro (IPolicyConfig in win/audio.rs) expands to it.
 windows-core = "0.62"
+# The vectors Windows.UI.Composition takes (the dock's glass, win/glass.rs): the version windows 0.62 uses.
+windows-numerics = "0.3"
 windows = { version = "0.62", features = [
   "Devices_Power",
+  "Foundation_Numerics",
   "Gaming_Input",
   "System_Power",
+  "UI_Composition",
+  "UI_Composition_Desktop",
   "Win32_Foundation",
   "Win32_Devices_Bluetooth",
   "Win32_Globalization",
@@ -62,6 +67,8 @@ windows = { version = "0.62", features = [
   "Win32_System_Com_StructuredStorage",
   "Win32_System_Variant",
   "Win32_System_TaskScheduler",
+  "Win32_System_WinRT",
+  "Win32_System_WinRT_Composition",
   "Win32_System_Ole",
   "Win32_Media_Audio",
   "Win32_Media_Audio_Endpoints",

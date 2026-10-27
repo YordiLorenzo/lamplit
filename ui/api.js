@@ -290,6 +290,12 @@ export const launchResume = () => call('launch_resume');
 export const launchRunning = () => call('launch_running');
 /** The game the dock is over. @returns {Promise<DockGame | null>} */
 export const dockState = () => call('dock_state');
+/**
+ * Where the dock's island rests in its window, in pixels, and the radius of its corners.
+ * @typedef {{ x: number, y: number, width: number, height: number, radius: number }} DockIsland
+ */
+/** Real glass under the island where it rests, or with null none. @param {DockIsland | null} island @returns {Promise<boolean>} true when it shows */
+export const dockGlass = (island) => call('dock_glass', { island });
 /** Folds the dock away, back to the game. @returns {Promise<void>} */
 export const dockResume = () => call('dock_resume');
 /** The home screen, in place of the dock. @returns {Promise<void>} */

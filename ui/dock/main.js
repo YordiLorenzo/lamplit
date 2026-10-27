@@ -89,11 +89,48 @@ function measure() {
 
 /** The island takes the size of the face it shows, or folds into the pill. @param {'gone' | 'news' | 'open'} mode */
 function shape(mode) {
+  const face = mode === 'open' ? els.dock : mode === 'news' ? els.news : null;
+  const [width, height] = face ? [`${face.offsetWidth}px`, `${face.offsetHeight}px`] : ['', ''];
+  const moves = mode !== state.mode || width !== els.island.style.width || height !== els.island.style.height;
+  if (moves) dropGlass();
   state.mode = mode;
   els.island.dataset.mode = mode;
-  const face = mode === 'open' ? els.dock : mode === 'news' ? els.news : null;
-  els.island.style.width = face ? `${face.offsetWidth}px` : '';
-  els.island.style.height = face ? `${face.offsetHeight}px` : '';
+  els.island.style.width = width;
+  els.island.style.height = height;
+  if (moves && mode === 'open') glassTimer = setTimeout(takeGlass, springMs + SETTLE_MS);
+}
+
+// ---------- real glass ----------
+
+/** After the island's spring (its delay and a frame or two): it rests, and real glass can go under it. */
+const SETTLE_MS = 140;
+let springMs = 520;
+let glassTimer = 0;
+/** Counts the asks for glass, so an answer to an earlier one is let go. */
+let glassAsks = 0;
+
+/**
+ * Real glass under the island once it rests open: Windows' blur of the game, live, cut to the island's shape
+ * (src-tauri win/glass.rs). Where Windows can't, the island keeps its glass made of the game's art.
+ */
+async function takeGlass() {
+  if (state.mode !== 'open') return;
+  const asked = ++glassAsks;
+  const box = els.island.getBoundingClientRect();
+  const k = devicePixelRatio;
+  const radius = parseFloat(getComputedStyle(els.island).borderTopLeftRadius) * k;
+  const island = { x: box.x * k, y: box.y * k, width: box.width * k, height: box.height * k, radius };
+  const on = await api.dockGlass(island).catch(() => false);
+  if (on && asked === glassAsks && state.mode === 'open') els.island.classList.add('glass');
+}
+
+/** Before the island moves: its own glass is back at once, and the real glass goes once that has been drawn. */
+function dropGlass() {
+  clearTimeout(glassTimer);
+  if (!els.island.classList.contains('glass')) return;
+  const asked = ++glassAsks;
+  els.island.classList.remove('glass');
+  requestAnimationFrame(() => requestAnimationFrame(() => asked === glassAsks && api.dockGlass(null)));
 }
 
 let newsTimer = 0;
@@ -129,12 +166,14 @@ function fold() {
 }
 
 /**
- * Home: a veil in the game's colours comes over the game, on the whole screen, which Rust gives the window for it,
+ * Home: a veil in the game's colours comes over the game, on the whole screen, which the open dock's window covers,
  * and the island grows into it. Rust brings the home screen forward behind the veil, then folds the dock, which lifts
  * the veil off it (dock/mod.rs home).
  */
 function goHome() {
   sfx.open();
+  // The island fades on its own glass: the real glass would stay behind as it went.
+  dropGlass();
   state.leaving = true;
   document.body.classList.add('home');
   api.dockHome();
@@ -747,6 +786,7 @@ async function init() {
   for (const [name, { easing, ms }] of Object.entries({ spring: spring(0.46, 0.7), snap: spring(0.3, 0.78) })) {
     document.documentElement.style.setProperty(`--${name}`, easing);
     document.documentElement.style.setProperty(`--${name}-ms`, `${ms}ms`);
+    if (name === 'spring') springMs = ms;
   }
   setInterval(() => state.mode === 'open' && tick(), 10_000);
   let heardKind = false;

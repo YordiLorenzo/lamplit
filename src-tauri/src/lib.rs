@@ -149,6 +149,7 @@ pub fn run() {
             commands::dock_state,
             commands::dock_resume,
             commands::dock_home,
+            commands::dock_glass,
             commands::dock_close_game,
         ])
         .setup(|app| {

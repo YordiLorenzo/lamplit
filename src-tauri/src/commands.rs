@@ -281,6 +281,13 @@ pub fn dock_home(app: AppHandle) {
     dock::home(&app);
 }
 
+/// Real glass under the dock's island where it rests (in pixels of the dock's window), or with None none: true when
+/// the island rests on it now.
+#[tauri::command]
+pub fn dock_glass(island: Option<win::glass::Shape>) -> bool {
+    dock::show_glass(island)
+}
+
 /// Asks the game the dock showed (`id` in `session`) to close, or with `force` ends it; refused when another game or
 /// session runs now.
 #[tauri::command]

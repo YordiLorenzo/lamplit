@@ -7,6 +7,7 @@ mod com;
 pub mod display;
 pub mod dock;
 pub mod drives;
+pub mod glass;
 pub mod input;
 pub mod power;
 pub mod process;
