@@ -79,6 +79,9 @@ struct Cave {
     sandbox: Option<bool>,
     /// butler has run the game from this install (it records the run once the game ends, `local_last_run_at`).
     ran: bool,
+    /// The player set a command template in the app for this game (arguments, environment variables or a wrapper
+    /// around its exe, `commandTemplate`), which butler applies when it starts the game.
+    template: bool,
 }
 
 /// The installs of games, from the tables caves, games and install_locations: one per game. itch.io also sells tools,
@@ -125,7 +128,8 @@ fn caves(db: &sqlite::Db) -> Vec<Cave> {
             let target = settings["launchTarget"].as_str().filter(|t| !t.is_empty()).map(str::to_string);
             let sandbox = settings["sandbox"].as_bool();
             let ran = c.text("local_last_run_at").is_some();
-            Some(Cave { game_id, title, dir, exes: windows_exes(&verdict), target, sandbox, ran })
+            let template = settings["commandTemplate"].as_str().is_some_and(|t| !t.trim().is_empty());
+            Some(Cave { game_id, title, dir, exes: windows_exes(&verdict), target, sandbox, ran, template })
         })
         .collect()
 }
@@ -179,6 +183,7 @@ struct App {
 ///   those the manifest names until each is marked installed, and before the first start, those it finds from the
 ///   DLLs the game's exes import, and Unreal Engine's (launchers/native/prereqs.go). butler records a run only after
 ///   all that, so a game it has run from this install has had them.
+/// - The command template the player set for the game in the app, which butler applies to the start.
 fn launch(cave: &Cave, app: &App) -> Option<(Launch, Vec<String>)> {
     let scanned = || {
         let picked = cave.target.as_deref().and_then(|t| cave.exes.iter().find(|e| same_path(e, t)));
@@ -188,7 +193,7 @@ fn launch(cave: &Cave, app: &App) -> Option<(Launch, Vec<String>)> {
     let start = manifest_action(&cave.dir, cave.target.as_deref()).or_else(scanned)?;
     let installed = |name: &String| inside(&app.prereqs, name).is_some_and(|d| d.join(".installed").is_file());
     let prereqs = !cave.ran || !start.prereqs.iter().all(installed);
-    if prereqs || start.api_key || cave.sandbox.unwrap_or(app.isolate_apps || start.sandbox) {
+    if prereqs || cave.template || start.api_key || cave.sandbox.unwrap_or(app.isolate_apps || start.sandbox) {
         let run = format!("--appname itch --run-game {}", cave.game_id);
         return Some((Launch::ExeArgs(app.setup.clone(), run), vec![file_name(&start.exe).to_lowercase()]));
     }
@@ -342,6 +347,7 @@ mod tests {
             target: None,
             sandbox: None,
             ran: false,
+            template: false,
         };
         // Not the tool. The HTML game is there, with no exe to start (games() leaves it out), and so is the one on a
         // share (games() never follows it).
@@ -352,10 +358,12 @@ mod tests {
                 // butler has run it from there.
                 Cave { ran: true, ..cave(1001, "Fennel", &format!(r"{apps}\fennel-beta"), &["FennelBeta.exe"]) },
                 cave(1003, "Web Toy", &format!(r"{apps}\web-toy"), &[]),
-                // The player picked the play action in the app, and switched the sandbox off for it.
+                // The player picked the play action in the app, switched the sandbox off for it, and set a command
+                // template.
                 Cave {
                     target: Some("play".into()),
                     sandbox: Some(false),
+                    template: true,
                     ..cave(1004, "Clover™", r"D:\Games\Clover", &[r"bin\clover.exe"])
                 },
                 cave(1005, "Share Game", r"\\nas\itch\share-game", &["share.exe"]),
@@ -405,6 +413,7 @@ mod tests {
             sandbox: None,
             // Run by butler before, so its prerequisites are in.
             ran: true,
+            template: false,
         };
         (dir, cave)
     }
@@ -561,6 +570,15 @@ path = "docs/"
         fs::remove_file(dir.join(".itch.toml")).unwrap();
         assert_eq!(launch(&Cave { ran: false, ..cave(None) }, &app), Some(handed()));
         assert_eq!(launch(&cave(None), &app), from_exe);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_game_with_a_command_template_goes_to_the_apps_launcher() {
+        let (dir, cave) = install("template", &[r"bin\Game.exe"], &[r"bin\Game.exe"]);
+        assert_eq!(launch(&cave(None), &app(false)), Some((Launch::Exe(dir.join(r"bin\Game.exe")), Vec::new())));
+        // butler applies the template (say `%command% --fullscreen`) when it starts the game.
+        assert_eq!(launch(&Cave { template: true, ..cave(None) }, &app(false)), Some(handed()));
         fs::remove_dir_all(&dir).unwrap();
     }
 

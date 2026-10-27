@@ -197,7 +197,7 @@ How it works, and its limits:
 | Battle.net | Battle.net's list of installed games | Starts Battle.net, waits for it to sign in, then asks it to start the game |
 | GOG (GOG Galaxy or GOG's offline installers) | GOG's list of installed games | Nothing: GOG games start from their own exe |
 | Amazon Games app | The app's list of installed games | Starts the Amazon Games app |
-| itch.io (the itch app) | The itch app's list of installed games | Nothing: itch.io games start from their own exe, as the game's launch manifest names it. A game set to run in itch's sandbox, that asks itch for an API key, or that may still need prerequisites itch installs (on its first start, say) starts through the itch app's launcher (itch 26.20 or newer) |
+| itch.io (the itch app) | The itch app's list of installed games | Nothing: itch.io games start from their own exe, as the game's launch manifest names it. A game set to run in itch's sandbox, that asks itch for an API key, that may still need prerequisites itch installs (on its first start, say), or that has a command template set in itch starts through the itch app's launcher (itch 26.20 or newer) |
 | Xbox app, including PC Game Pass | The Xbox games installed for your Windows account | Nothing: Xbox games start without the app |
 | No store | Folders in `<drive>:\Games`, installed programs that look like games, games Windows' Game Bar has seen, and games you add by hand | Starts the game's exe |
 

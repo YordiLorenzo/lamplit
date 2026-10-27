@@ -81,7 +81,7 @@ const work = mkdtempSync(path.join(tmpdir(), 'lamplit-stores-'));
   game.run(1003, 'https://example.itch.io/web-toy', 'Web Toy', 'html', 'game');
   cave('cave-web', 1003, 5003, verdict(`${apps}\\web-toy`, [candidate('index.html', 1, 'html', 100)]), 'loc-default', 'web-toy', '', 100);
   game.run(1004, 'https://example.itch.io/clover', 'Clover™', 'default', 'game');
-  cave('cave-custom', 1004, 5004, verdict('D:\\Games\\Clover', [candidate('bin/clover.exe', 2, 'windows', 100)]), '', 'clover', 'D:\\Games\\Clover', 100, '{"sandbox":false,"launchTarget":"play"}');
+  cave('cave-custom', 1004, 5004, verdict('D:\\Games\\Clover', [candidate('bin/clover.exe', 2, 'windows', 100)]), '', 'clover', 'D:\\Games\\Clover', 100, '{"sandbox":false,"launchTarget":"play","commandTemplate":"%command% --fullscreen"}');
   game.run(1005, 'https://example.itch.io/share-game', 'Share Game', 'default', 'game');
   // Fennel's beta, a second download of the same game. butler launches the cave used last, by the first of its
   // local run, touched and installed times that is set: the beta (run 10:30 UTC) over the first download (touched
