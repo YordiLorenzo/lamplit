@@ -9,5 +9,6 @@
   "started": 1761560000,
   "session": 4200000,
   "responding": false,
+  "closable": true,
   "force_close": true
 }

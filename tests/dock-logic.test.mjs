@@ -48,6 +48,11 @@ describe('the tiles', () => {
     // The fixture's game isn't responding.
     assert.deepEqual([tile(data(), 'close').label, tile(data(), 'close').tone], ['Force close', 'warn']);
   });
+
+  test("no Close game for a game whose processes Lamplit can't be sure of", () => {
+    const unsure = like(ipc('dock-game'), { closable: false, force_close: false });
+    assert.deepEqual(keys(data({ game: unsure })), ['resume', 'output', 'quiet', 'stats', 'home']);
+  });
 });
 
 test('the volume reads as a percent, or Muted', () => {

@@ -73,7 +73,8 @@ export function tiles(d) {
   // An unknown state can still be switched: NVIDIA's overlay logs the switch.
   if (d.overlays.nvidia_overlay) row.push({ key: 'stats', icon: 'stats', label: 'Stats', on: stats, tone: '' });
   row.push({ key: 'home', icon: 'home', label: 'Home', on: false, tone: '' });
-  if (d.game) {
+  // A game whose processes Lamplit can't be sure of is left to close itself: the dock would reach another program.
+  if (d.game?.closable) {
     const force = d.game.force_close;
     row.push({ key: 'close', icon: 'close', label: force ? 'Force close' : 'Close game', on: false, tone: force ? 'warn' : '' });
   }

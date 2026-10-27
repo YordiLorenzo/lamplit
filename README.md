@@ -103,7 +103,8 @@ while you play. When the game closes, Lamplit is back on screen.
 - **Close game:** hold Cross (A) until the ring around its icon is full, about a second. The game is then asked to
   close, as its own close button does, so it can save or ask you first. Let go earlier and nothing happens. A game
   that isn't responding, or still runs 10 seconds after you asked, gets **Force close** instead, held the same way,
-  which ends it as Task Manager's End task does. Unsaved progress is lost.
+  which ends it as Task Manager's End task does. Unsaved progress is lost. When Lamplit can't be sure which program
+  is the game (it found it only by the folder it runs from), the dock has no Close game: close it in the game.
 - Circle (B), a second hold or Resume closes the dock, and the game is in front again.
 - **News while you play:** the folded dock shows for a few seconds when the headset turns on or off, a controller
   connects or disconnects, or a battery runs low (15% or less). It doesn't take the game's focus, and clicks go
