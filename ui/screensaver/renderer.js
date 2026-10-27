@@ -178,7 +178,7 @@ export const WAYS = 4;
 /** Texture units, the same in every scene's program. */
 const UNIT = { grad: 0, noise: 1, art: 2, art2: 3, trail: 4, state: 5 };
 const SAMPLERS = { uGrad: UNIT.grad, uNoise: UNIT.noise, uArt: UNIT.art, uArt2: UNIT.art2, uTrail: UNIT.trail, uState: UNIT.state };
-const SCENE_UNIFORMS = ['uRes', 'uTime', 'uSeed', 'uDt', 'uInit', 'uPal', 'uArtInfo', 'uCount', ...Object.keys(SAMPLERS)];
+const SCENE_UNIFORMS = ['uRes', 'uTime', 'uSeed', 'uDt', 'uInit', 'uPal', 'uArtInfo', ...Object.keys(SAMPLERS)];
 
 /**
  * @typedef {object} Target  a buffer to render into
@@ -633,7 +633,6 @@ export class Renderer {
       gl.blendFunc(gl.ONE, gl.ONE);
       gl.useProgram(p.particles.program);
       uniforms(p.particles);
-      gl.uniform1i(p.particles.at.uCount, scene.particles?.count ?? 0);
       this.bind(UNIT.state, sim.state[0].tex);
       gl.bindVertexArray(this.vao);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, scene.particles?.count ?? 0);
@@ -651,7 +650,6 @@ export class Renderer {
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.useProgram(p.particles.program);
       uniforms(p.particles);
-      gl.uniform1i(p.particles.at.uCount, scene.particles?.count ?? 0);
       gl.bindVertexArray(this.vao);
       gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, scene.particles?.count ?? 0);
       gl.disable(gl.BLEND);
