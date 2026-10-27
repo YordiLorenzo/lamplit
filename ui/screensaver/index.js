@@ -145,7 +145,8 @@ async function gameLooks() {
   const looks = await Promise.all(
     games.map(async (g) => {
       const palette = await paletteOf(/** @type {string} */ (g.art.hero || g.art.portrait));
-      return palette && { palette, name: g.name, logo: g.art.logo ? api.assetUrl(g.art.logo) : null };
+      const url = (/** @type {string | null} */ path) => (path ? api.assetUrl(path) : null);
+      return palette && { palette, name: g.name, logo: url(g.art.logo), cover: url(g.art.portrait), hero: url(g.art.hero) };
     })
   );
   return /** @type {Look[]} */ (looks.filter(Boolean));

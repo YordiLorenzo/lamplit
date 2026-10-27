@@ -1,24 +1,29 @@
 // @ts-check
-// The screensaver on screen: its scenes in turn, each coloured from one game and handing over to the next with a slow
-// blend, and that game's logo or name drifting faintly through it. Without WebGL2 it shows a CSS gradient that moves
-// the same way. Lamplit (index.js) and the preview (preview.js) both drive this.
+// The screensaver on screen: its scenes in turn, each coloured from one game and handing over to the next, and that
+// game's logo or name drifting faintly through it. Gallery and Drift show the games' covers and hero images
+// themselves. Without WebGL2 it shows a CSS gradient that moves the same way. Lamplit (index.js) and the preview
+// (preview.js) both drive this.
 
 import { LAMPLIT } from './palette.js';
-import { Renderer } from './renderer.js';
-import { SCENES } from './scenes.js';
+import { Renderer, WAYS } from './renderer.js';
+import { scenesFor } from './scenes.js';
 
 /**
  * @typedef {import('./palette.js').Palette} Palette
  * @typedef {import('./scenes.js').Scene} Scene
+ * @typedef {import('./scenes.js').Art} Art
  * @typedef {'mix' | '2d' | '3d'} Style
  */
 
 /**
- * One game's part in the show: the palette from its art, and its logo (a URL) or name.
+ * One game's part in the show: the palette from its art, its logo (a URL) or name, and its cover and hero image (a
+ * URL, or an image the preview has already cut out).
  * @typedef {object} Look
  * @property {Palette} palette
  * @property {string} [name]
  * @property {string | null} [logo]
+ * @property {string | TexImageSource | null} [cover]
+ * @property {string | TexImageSource | null} [hero]
  */
 
 /** At most 30 frames a second: the scenes move slowly, and a TV at 120 Hz would otherwise draw four times as often. */
@@ -39,6 +44,30 @@ const FADE_OUT_S = 30;
 /** The logo or name: how long it takes to appear and to go, and how strong it gets. */
 const MARK_IN_S = 10;
 const MARK_PEAK = 0.4;
+/** Gallery's covers, side by side in one image: up to this many, at this size each (2:3, as covers are). */
+const COVERS = { most: 8, cols: 4, width: 384, height: 576 };
+/** Drift's hero images: up to this many, scaled down to this width (Steam's are 3840 pixels wide). */
+const HEROES = { most: 4, width: 1600 };
+
+/**
+ * An image from a URL (Lamplit's asset protocol sends the CORS header, so WebGL may use it), or one already made.
+ * @param {string | TexImageSource} src
+ * @returns {Promise<TexImageSource>}
+ */
+async function imageOf(src) {
+  if (typeof src !== 'string') return src;
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.src = src;
+  await img.decode();
+  return img;
+}
+
+/** @param {number} width @param {number} height */
+const canvas2d = (width, height) => {
+  const c = Object.assign(document.createElement('canvas'), { width, height });
+  return { canvas: c, ctx: /** @type {CanvasRenderingContext2D} */ (c.getContext('2d')) };
+};
 
 /**
  * An image, or part of one, drawn `width` × `height` and read back as RGBA bytes for palette.js. The image must be
@@ -66,6 +95,7 @@ const smooth = (x) => {
  * @typedef {object} Showing
  * @property {Scene} scene
  * @property {Look} look
+ * @property {number} lookIndex
  * @property {number} seed
  * @property {number} start  show time at which the scene's own time is 0
  * @property {number} length  seconds before it hands over
@@ -128,6 +158,12 @@ export class Saver {
     /** @type {(() => void) | null} the next scene's mark, put up once the current one has faded */
     this.pendingMark = null;
     this.releaseTimer = 0;
+    /** @type {{ atlas: Art['atlas'], heroes: { source: TexImageSource, look: number }[] }} the games' art, once loaded */
+    this.art = { atlas: null, heroes: [] };
+    /** How the scene on its way comes in (renderer.js WAYS); the preview can hold one. */
+    this.way = 0;
+    /** @type {number | null} */
+    this.wayHeld = null;
     this.frame = this.frame.bind(this);
     this.resize = this.resize.bind(this);
   }
@@ -162,6 +198,61 @@ export class Saver {
   setLooks(looks) {
     this.looks = looks.length ? looks : [{ palette: LAMPLIT }];
     this.lookAt = 0;
+    this.art = { atlas: null, heroes: [] };
+    this.loadArt(this.looks);
+  }
+
+  /**
+   * The covers into one atlas and the hero images scaled down, for Gallery and Drift. They join the show once loaded;
+   * art that doesn't load is left out.
+   * @param {Look[]} looks
+   */
+  async loadArt(looks) {
+    const load = (/** @type {string | TexImageSource | null | undefined} */ src) => (src ? imageOf(src).catch(() => null) : null);
+    const [covers, heroes] = await Promise.all([
+      Promise.all(looks.slice(0, COVERS.most).map((l) => load(l.cover))),
+      Promise.all(looks.map((l) => load(l.hero))),
+    ]);
+    if (looks !== this.looks) return;
+    const found = /** @type {TexImageSource[]} */ (covers.filter(Boolean));
+    let atlas = null;
+    if (found.length) {
+      const cols = Math.min(COVERS.cols, found.length);
+      const rows = Math.ceil(found.length / cols);
+      const { canvas, ctx } = canvas2d(cols * COVERS.width, rows * COVERS.height);
+      found.forEach((img, i) => {
+        const { width, height } = /** @type {{ width: number, height: number }} */ (img);
+        // Fill the cell, cropping what doesn't fit 2:3.
+        const scale = Math.max(COVERS.width / width, COVERS.height / height);
+        const [w, h] = [width * scale, height * scale];
+        const [x, y] = [(i % cols) * COVERS.width + (COVERS.width - w) / 2, Math.floor(i / cols) * COVERS.height + (COVERS.height - h) / 2];
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect((i % cols) * COVERS.width, Math.floor(i / cols) * COVERS.height, COVERS.width, COVERS.height);
+        ctx.clip();
+        ctx.drawImage(/** @type {CanvasImageSource} */ (img), x, y, w, h);
+        ctx.restore();
+      });
+      atlas = { source: canvas, count: found.length, cols, rows };
+    }
+    const scaled = heroes.flatMap((img, look) => {
+      if (!img) return [];
+      const { width, height } = /** @type {{ width: number, height: number }} */ (img);
+      const w = Math.min(HEROES.width, width);
+      const { canvas, ctx } = canvas2d(w, Math.round((height * w) / width));
+      ctx.drawImage(/** @type {CanvasImageSource} */ (img), 0, 0, canvas.width, canvas.height);
+      return [{ source: canvas, look }];
+    });
+    this.art = { atlas, heroes: scaled.slice(0, HEROES.most) };
+    // The order so far was shuffled without them.
+    this.queue = [];
+  }
+
+  /** The art a showing draws with: its own game's hero image first. @param {Showing} s @returns {Art} */
+  artFor(s) {
+    const { heroes } = this.art;
+    const first = Math.max(0, heroes.findIndex((h) => h.look === s.lookIndex));
+    return { atlas: this.art.atlas, heroes: [...heroes.slice(first), ...heroes.slice(0, first)].map((h) => h.source) };
   }
 
   /** @param {Style} style */
@@ -171,9 +262,13 @@ export class Saver {
     this.queue = [];
   }
 
-  /** The scenes the style allows. */
+  /** The scenes the style allows, and the art and the GPU can show. */
   scenes() {
-    return SCENES.filter((s) => this.style === 'mix' || s.kind === this.style);
+    return scenesFor(this.style, {
+      covers: !!this.art.atlas,
+      heroes: this.art.heroes.length,
+      float: !!this.renderer?.float,
+    });
   }
 
   /** The next scene in a shuffled order, never the one showing now. */
@@ -192,11 +287,12 @@ export class Saver {
 
   /** @param {Scene} scene @param {number} start @returns {Showing} */
   showing(scene, start) {
-    const look = this.looks[this.lookAt++ % this.looks.length];
+    const lookIndex = this.lookAt++ % this.looks.length;
     const angle = Math.random() * Math.PI * 2;
     return {
       scene,
-      look,
+      look: this.looks[lookIndex],
+      lookIndex,
       seed: Math.random(),
       start,
       length: SCENE_S + (Math.random() - 0.5) * SCENE_SPREAD,
@@ -242,6 +338,7 @@ export class Saver {
   /** Shows `scene` in `look` at once, without a blend: the preview's keys. @param {Scene} scene @param {Look} look */
   cut(scene, look) {
     if (!this.current) return;
+    for (const s of [this.current, this.next]) if (s && s.scene !== scene) this.renderer?.forget(s.scene.id);
     this.next = null;
     this.current = { ...this.showing(scene, this.clock), look };
     this.pendingMark = null;
@@ -252,6 +349,7 @@ export class Saver {
   /** Hands over to the next scene now, or to `scene`. @param {Scene} [scene] */
   skip(scene) {
     if (!this.current) return;
+    if (this.next) this.renderer?.forget(this.next.scene.id);
     this.next = this.showing(scene ?? this.pickScene(), this.clock);
     this.next.start = Infinity;
   }
@@ -310,11 +408,13 @@ export class Saver {
     }
     if (this.next && this.next.start === Infinity && (!r || r.canDraw(this.next.scene))) {
       this.next.start = this.clock;
+      this.way = this.wayHeld ?? Math.floor(Math.random() * WAYS);
       this.paintMark(this.next, true);
       if (!r) this.paintCss(this.next.look);
     }
     const blend = this.next && this.next.start !== Infinity ? smooth((this.clock - this.next.start) / BLEND_S) : 0;
     if (this.next && blend >= 1) {
+      if (cur.scene !== this.next.scene) r?.forget(cur.scene.id);
       this.current = this.next;
       this.next = null;
       r?.swap();
@@ -325,10 +425,10 @@ export class Saver {
     if (this.root.dataset.scene !== cur.scene.id) this.root.dataset.scene = cur.scene.id;
     this.moveMark(blend);
     if (r && r.canDraw(cur.scene)) {
-      const look = (/** @type {Showing} */ s) => ({ time: this.clock - s.start, seed: s.seed, palette: s.look.palette });
+      const look = (/** @type {Showing} */ s) => ({ time: this.clock - s.start, seed: s.seed, palette: s.look.palette, art: this.artFor(s) });
       r.drawScene(0, cur.scene, look(cur));
       if (blend > 0 && this.next) r.drawScene(1, this.next.scene, look(this.next));
-      r.present({ mix: blend, fade, time: this.clock });
+      r.present({ mix: blend, way: this.way, fade, time: this.clock });
       this.shown();
     } else if (!r) {
       this.css.style.opacity = String(fade);

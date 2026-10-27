@@ -11,7 +11,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 export const pageOrigin = 'http://tauri.localhost';
 export const assetOrigin = 'http://asset.localhost';
 const { csp } = JSON.parse(readFileSync(path.join(here, '..', 'src-tauri', 'tauri.conf.json'), 'utf8')).app.security;
-const cspHeader = Object.entries(csp)
+export const cspHeader = Object.entries(csp)
   .map(([directive, sources]) => `${directive} ${sources}`)
   .join('; ');
 
@@ -86,7 +86,7 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
 `;
 
 /** Answers with a file from disk, or 404 when there is none. */
-const serveFile = (route, file, headers) =>
+export const serveFile = (route, file, headers) =>
   existsSync(file) ? route.fulfill({ path: file, headers }) : route.fulfill({ status: 404 });
 
 /**
