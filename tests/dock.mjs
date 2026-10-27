@@ -6,8 +6,8 @@ import { pageFile } from './contract.mjs';
 import { ipc, known, like } from './fixtures.mjs';
 import { emit, idle, settled, until } from './page.mjs';
 
-/** The dock's window while open: the bottom 60% of a 1080p screen (src-tauri/src/dock/window.rs). */
-const OPEN = { width: 1920, height: 648 };
+/** The dock's window while open: a 1080p screen (src-tauri/src/dock/window.rs). */
+const OPEN = { width: 1920, height: 1080 };
 const SCREEN = { width: 1920, height: 1080 };
 /** Longer than Close game's hold (ui/dock/logic.js HOLD_MS), and well shorter. */
 const HELD_MS = 1150;
@@ -551,6 +551,37 @@ export async function dockTests({ open, close, check, shots }) {
     await emit(page, 'dock-pad', 'ok');
     await emit(page, 'dock-pad', 'back');
     check('Circle on the way home goes back to the game', (await docks(from)).join() === 'dock_home,dock_resume', JSON.stringify(await docks(from)));
+    await close(page);
+  }
+
+  // D17. Real glass: once the island rests open the page asks Rust for glass where the island is, and where Rust has
+  // it, the island's own glass fades away over it. Before the island moves again (the list of outputs, folding), its
+  // own glass is back first, and the real glass goes after.
+  {
+    const page = await openDock();
+    await page.evaluate(() => (window.__settings.dock_glass = ({ island }) => island !== null));
+    const glass = () => page.evaluate(() => document.getElementById('island').classList.contains('glass'));
+    const asks = async (from) => (await since(page, from)).filter((c) => c.startsWith('dock_glass')).map((c) => (c.endsWith('null}') ? 'none' : 'island'));
+    let from = (await view(page)).calls.length;
+    await emit(page, 'dock', closed);
+    await emit(page, 'dock', opened);
+    await page.waitForTimeout(1000);
+    const island = await page.evaluate(() => {
+      const b = document.getElementById('island').getBoundingClientRect();
+      return JSON.stringify({ x: b.x, y: b.y, width: b.width, height: b.height, radius: parseFloat(getComputedStyle(document.getElementById('island')).borderTopLeftRadius) });
+    });
+    const asked = (await since(page, from)).find((c) => c.startsWith('dock_glass {"island":{'));
+    check('resting open, the island asks for real glass where it is, and takes it', (await glass()) && asked === `dock_glass {"island":${island}}`, `${await glass()} ${asked} ${island}`);
+    from = (await view(page)).calls.length;
+    await emit(page, 'dock-pad', 'right');
+    await emit(page, 'dock-pad', 'ok');
+    const during = await glass();
+    await page.waitForTimeout(1100);
+    check('the list of outputs grows the island: its own glass is back first, and the real glass comes again once it rests', !during && (await glass()) && (await asks(from)).join() === 'none,island', `${during} ${await glass()} ${await asks(from)}`);
+    from = (await view(page)).calls.length;
+    await emit(page, 'dock', closed);
+    await page.waitForTimeout(200);
+    check('folding gives the real glass up after the island has its own again', !(await glass()) && (await asks(from)).join() === 'none', `${await glass()} ${await asks(from)}`);
     await close(page);
   }
 

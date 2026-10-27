@@ -51,8 +51,6 @@ body.pointer { cursor: default; }
   border-radius: calc(var(--u) * 2.6);
   overflow: hidden;
   isolation: isolate;
-  /* Without art, and on any Windows: a dark glass of its own. */
-  background: rgb(14 13 22 / .94);
   box-shadow:
     0 calc(var(--u) * 2.4) calc(var(--u) * 7) rgb(0 0 0 / .6),
     0 0 0 calc(var(--u) * .1) rgb(0 0 0 / .35);
@@ -84,17 +82,26 @@ body.pointer { cursor: default; }
     translate 300ms var(--glide) 100ms;
 }
 
-/* The game's art behind everything, blurred into its colours (main.js draws it small and blurred, and it is scaled
-   up here, which costs nothing while the island moves); then a tint that keeps text readable over a bright game; then
-   a thin rim of light, as on glass. */
+/* The island's own glass: dark, then the game's art over it, blurred into its colours (main.js draws it small and
+   blurred, and it is scaled up here, which costs nothing while the island moves); then a tint that keeps text readable
+   over a bright game; then a thin rim of light, as on glass. Resting open, Windows' real glass can take the place of
+   the first two (.glass, main.js takeGlass): they fade out over it, and come back at once before the island moves. */
+#island::before { content: ''; position: absolute; inset: 0; z-index: 0; background: rgb(14 13 22 / .94); }
 #backdrop, .tint, .rim { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 #backdrop { z-index: 0; opacity: 0; filter: saturate(1.35); transition: opacity 500ms ease; }
 #island.art #backdrop { opacity: .75; }
+#island.glass::before, #island.glass #backdrop { opacity: 0; transition: opacity 260ms ease; }
 .tint {
   z-index: 1;
   background:
     radial-gradient(110% 120% at 0% 0%, rgb(var(--game) / .2), transparent 62%),
     linear-gradient(180deg, rgb(12 10 18 / .35) 0%, rgb(10 9 16 / .58) 45%, rgb(8 7 12 / .74) 100%);
+}
+/* On real glass the game shows through, blurred: a lighter tint, still dark enough for the text over a bright scene. */
+#island.glass .tint {
+  background:
+    radial-gradient(110% 120% at 0% 0%, rgb(var(--game) / .22), transparent 62%),
+    linear-gradient(180deg, rgb(12 10 18 / .3) 0%, rgb(10 9 16 / .4) 45%, rgb(8 7 12 / .52) 100%);
 }
 .rim {
   z-index: 3;

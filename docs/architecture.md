@@ -178,7 +178,8 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   a Direct3D app in exclusive full screen (`SHQueryUserNotificationState`); otherwise Lamplit comes forward as
   before. A second hold folds the dock. Over exclusive full screen, Windows shows no other window, and one that takes
   the foreground makes the game leave full screen.
-- **Open**, the window spans the bottom 60% of the game's screen and takes the foreground, as the home screen does.
+- **Open**, the window covers the game's screen, transparent but for the dock, and takes the foreground, as the home
+  screen does.
   A window that left the game the foreground (`WS_EX_NOACTIVATE`) would leave the game reading every press: XInput,
   HID and Steam Input don't say which app a press is for. Games are expected to ignore the controller while another
   window is in front (`XInputEnable` is meant for `WM_ACTIVATEAPP`), and Steam Input switches to its desktop layout,
@@ -202,18 +203,22 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   asked 10 seconds ago hasn't happened. With none of those processes, `GameState::closable` is false and the dock has
   no Close game at all.
 
-The page sizes the dock in hundredths of the screen's height (`--u`, from `screen.height`), since its window covers
-only part of the screen. The island's width and height follow the face it shows, with a spring easing built as a CSS
-`linear()` curve; one focus ring springs from tile to tile on a quicker one. Behind the faces, the game's own art is
-drawn small and blurred into a canvas, which the page scales up to the island: a blur that costs nothing while the
-island moves, where CSS `backdrop-filter` couldn't see the game behind a transparent window at all. Windows 11 can
-blur what is behind a window (Acrylic, which Tauri offers as a window effect), but it covers the whole window, and the
-dock's window is wider than the island and springs open: shaping it would take a window region redrawn on every
-frame. Close game asks for Cross held: the pad sends `dock-pad` with `ok-up` when Cross is let go after a press
-(`devices/pad/navigation.rs`), or when the controller holding it goes, and only the open dock hears of it. Home
-grows the dock's window over the whole screen, where its page draws a veil in the game's colours; behind the veil the
-home window comes forward, and the dock folds, which lifts the veil (`dock/mod.rs` home). The home page lifts a veil
-of its own as it settles in (`ui/main.js` arrive).
+The page sizes the dock in hundredths of the screen's height (`--u`, from `screen.height`), as the home screen is
+sized in `vh`. The island's width and height follow the face it shows, with a spring easing built as a CSS `linear()`
+curve; one focus ring springs from tile to tile on a quicker one. Behind the faces, the game's own art is drawn small
+and blurred into a canvas, which the page scales up to the island: a blur that costs nothing while the island moves,
+where CSS `backdrop-filter` couldn't see the game behind a transparent window at all. Once the island rests open,
+Windows' real glass takes the art's place where Windows 11 22H2 or later has transparency effects on (`dock/glass.rs`,
+`win/glass.rs`): a Windows.UI.Composition visual in the dock's own window, behind the page, filled with the host
+backdrop (what is behind the window, blurred live by Windows) and clipped to the island's rounded rectangle. Acrylic
+for a whole window (`DWMWA_SYSTEMBACKDROP_TYPE`, Tauri's window effect) fills the window's rectangle and ignores a
+window region, and goes flat on a window that isn't in front, so it can't take the island's shape. The glass doesn't
+follow the island's springs: before the island moves, the page puts its own glass back and lets the real glass go, and
+asks for it again where the island comes to rest. Close game asks for Cross held: the pad sends `dock-pad` with
+`ok-up` when Cross is let go after a press (`devices/pad/navigation.rs`), or when the controller holding it goes, and
+only the open dock hears of it. Home draws a veil in the game's colours over the whole of the open dock's window,
+which covers the screen; behind the veil the home window comes forward, and the dock folds, which lifts the veil
+(`dock/mod.rs` home). The home page lifts a veil of its own as it settles in (`ui/main.js` arrive).
 
 ## Commands
 
@@ -257,6 +262,7 @@ message is written for the player, and the page shows it.
 | `dock_state` | | The game the dock is over: `{ id, name, art, started, responding, force_close }`, or `null` |
 | `dock_resume` | | Nothing; the dock folds and the game is in front again |
 | `dock_home` | | Nothing; the home screen comes forward and the dock goes |
+| `dock_glass` | `island`: `{ x, y, width, height, radius }` in the window's pixels, or `null` | Whether real glass is under the island now |
 | `dock_close_game` | `force` | Nothing, once Windows has the request; the game's end follows as after any game |
 
 ## Events
