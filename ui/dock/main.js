@@ -4,9 +4,9 @@
 // is open, and calls the commands its tiles stand for.
 
 import * as api from '../api.js';
-import { buttonFace, readable } from '../logic.js';
+import { accentOf, buttonFace, counts, nothingSeen } from '../logic.js';
 import { sfx } from '../sounds.js';
-import { HOLD_MS, chips, counts, hints, outputIcon, sessionText, spring, tiles, volumeText } from './logic.js';
+import { HOLD_MS, chips, hints, outputIcon, sessionText, spring, tiles, volumeText } from './logic.js';
 
 /** @typedef {import('./logic.js').TileKey} TileKey */
 /** @typedef {import('../api.js').Action | import('../api.js').DockRelease} Step */
@@ -69,7 +69,7 @@ const state = {
   },
   /** @type {import('../api.js').PadKind} */
   padKind: 'dualsense',
-  seen: { lastPad: -Infinity, lastKey: { action: '', at: 0 } },
+  seen: nothingSeen(),
   /** The art the island shows now: its game and files. */
   artFor: '',
 };
@@ -178,28 +178,8 @@ function paintBackdrop(img) {
   ctx.filter = 'blur(5px)';
   ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
   ctx.filter = 'none';
-  tint(colourOf(ctx, canvas.width, canvas.height));
-}
-
-/**
- * The art's colour, as the home screen picks a game's accent: vivid, mid-bright pixels count most.
- * @param {CanvasRenderingContext2D} ctx @param {number} width @param {number} height
- */
-function colourOf(ctx, width, height) {
-  const d = ctx.getImageData(0, 0, width, height).data;
-  let r = 0, g = 0, b = 0, w = 0;
-  for (let i = 0; i < d.length; i += 4) {
-    const max = Math.max(d[i], d[i + 1], d[i + 2]);
-    const min = Math.min(d[i], d[i + 1], d[i + 2]);
-    const sat = max ? (max - min) / max : 0;
-    const lum = max / 255;
-    const wt = sat * sat * (lum > 0.2 && lum < 0.95 ? 1 : 0.15) + 0.002;
-    r += d[i] * wt;
-    g += d[i + 1] * wt;
-    b += d[i + 2] * wt;
-    w += wt;
-  }
-  return readable([r / w, g / w, b / w]);
+  // The art's colour, as the home screen picks a game's accent.
+  tint(accentOf(ctx.getImageData(0, 0, canvas.width, canvas.height).data));
 }
 
 /** @param {number[]} rgb */

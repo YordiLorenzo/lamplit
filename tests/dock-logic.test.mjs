@@ -1,7 +1,7 @@
 // The pure functions of the in-game dock's page (ui/dock/logic.js), in Node: `node --test tests/dock-logic.test.mjs`.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { chips, counts, hints, MIRROR_MS, outputLabel, PAD_KEEPS_MS, sessionText, spring, tiles, volumeText } from '../ui/dock/logic.js';
+import { chips, hints, outputLabel, sessionText, spring, tiles, volumeText } from '../ui/dock/logic.js';
 import { ipc, known, like } from './fixtures.mjs';
 
 /** What the dock knows, as Rust sends it, with some parts changed. */
@@ -113,18 +113,4 @@ test('the spring overshoots a little, settles at 1, and is quick', () => {
   assert.ok(ms > 300 && ms < 700, `${ms} ms`);
   // Critically damped would never overshoot; this one comes close to it.
   assert.ok(Math.max(...spring(0.46, 0.99).easing.slice(7, -1).split(', ').map(Number)) <= 1.0001);
-});
-
-test('a press Steam mirrors as a key counts once, in either order', () => {
-  const seen = { lastPad: -Infinity, lastKey: { action: '', at: 0 } };
-  // Key first, then the pad's own press: one press.
-  assert.equal(counts(seen, 'ok', 'key', 10_000), true);
-  assert.equal(counts(seen, 'ok', 'pad', 10_000 + MIRROR_MS - 1), false);
-  // A second real press right after counts.
-  assert.equal(counts(seen, 'ok', 'pad', 10_000 + MIRROR_MS + 50), true);
-  // Pad first: keys are the mirror for a while, then count again.
-  assert.equal(counts(seen, 'left', 'key', 10_400), false);
-  assert.equal(counts(seen, 'left', 'key', 10_350 + PAD_KEEPS_MS + 1), true);
-  // The mouse always counts.
-  assert.equal(counts(seen, 'ok', 'mouse', 10_351), true);
 });

@@ -9,22 +9,15 @@ import { showHints, toast } from './hints.js';
 import * as keyboard from './keyboard.js';
 import { backToGame, cancelLaunch, play } from './launch.js';
 import { closeDetails, detailChoice, markGame, move, moveDetails, openDetails, showAllGames } from './library.js';
-import { narrowed } from './logic.js';
+import { counts, narrowed, nothingSeen, padInUse } from './logic.js';
 import { wake } from './screensaver/index.js';
 import { adjustSetting, backSettings, closeSettings, moveSettings, openSettings, selectSetting } from './settings.js';
 import { actionableStep, els, state } from './state.js';
 
 /** @typedef {import('./api.js').Action} Action */
 
-/** Steam can mirror the controller as keys; while the pad is in use, the keyboard is ignored. */
-const padInUse = () => performance.now() - state.lastPad < 2000;
-
-/**
- * A mirrored key can also come before the pad's own press, while the pad is idle: that press is the same one again.
- * Without this, one press of ✕ could ask "Shut down?" and answer it.
- */
-const MIRROR_MS = 300;
-let lastKey = { action: '', at: 0 };
+/** What this window had from the pad and the keys: Steam can mirror the controller as keys (counts). */
+const seen = nothingSeen();
 
 /**
  * The hero art drifts only while someone uses Lamplit. An endless drift changes every pixel of the screen on every
@@ -56,18 +49,7 @@ export function act(action, source) {
   stir();
   // The press that ends the screensaver does nothing else; keys and clicks it catches itself (screensaver/index.js).
   if (wake(action)) return;
-  const now = performance.now();
-  if (source === 'pad') {
-    state.lastPad = now;
-    if (action === lastKey.action && now - lastKey.at < MIRROR_MS) {
-      // That key had one press behind it: a second press right after is a real one.
-      lastKey = { action: '', at: 0 };
-      return;
-    }
-  } else if (source === 'key') {
-    if (padInUse()) return;
-    lastKey = { action, at: now };
-  }
+  if (!counts(seen, action, source, performance.now())) return;
 
   if (state.mode === 'starting') {
     const s = actionableStep();
@@ -151,13 +133,13 @@ window.addEventListener('keydown', (e) => {
   const typing = (e.key.length === 1 || e.key === 'Backspace') && !e.ctrlKey && !e.altKey && !e.metaKey;
   if (state.mode === 'find' && typing) {
     e.preventDefault();
-    if (!padInUse()) typeFromKeyboard(e.key);
+    if (!padInUse(seen, performance.now())) typeFromKeyboard(e.key);
     return;
   }
   // Only while its screen is up: a game that closes right after starting brings the starting screen over Add a game.
   if (state.typing && typing && (state.mode === 'details' || state.mode === 'add')) {
     e.preventDefault();
-    if (!padInUse()) {
+    if (!padInUse(seen, performance.now())) {
       keyboard.typeKey(state.typing, e.key);
       showHints();
     }

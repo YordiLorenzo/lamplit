@@ -5,7 +5,7 @@
 import { assetUrl, libraryRemoveGame, librarySetFavourite, librarySetHidden } from './api.js';
 import { showHints, toast } from './hints.js';
 import { face, lift, lower, settle, showSheet } from './lift.js';
-import { detailChoices, narrowed, playTimeText, playedText, readable, rowOf, storeWarning, words } from './logic.js';
+import { accentOf, detailChoices, narrowed, playTimeText, playedText, rowOf, storeWarning, words } from './logic.js';
 import { sfx } from './sounds.js';
 import { byId, els, focused, icon, state, storeName, withStoreLogo } from './state.js';
 
@@ -31,21 +31,7 @@ function sampleAccent(img) {
   canvas.height = 36;
   const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d', { willReadFrequently: true }));
   ctx.drawImage(img, 0, 0, 64, 36);
-  const d = ctx.getImageData(0, 0, 64, 36).data;
-  let r = 0, g = 0, b = 0, w = 0;
-  for (let i = 0; i < d.length; i += 4) {
-    const max = Math.max(d[i], d[i + 1], d[i + 2]);
-    const min = Math.min(d[i], d[i + 1], d[i + 2]);
-    const sat = max ? (max - min) / max : 0;
-    const lum = max / 255;
-    // Favour vivid, mid-bright pixels; dark and washed-out ones barely count.
-    const wt = sat * sat * (lum > 0.2 && lum < 0.95 ? 1 : 0.15) + 0.002;
-    r += d[i] * wt;
-    g += d[i + 1] * wt;
-    b += d[i + 2] * wt;
-    w += wt;
-  }
-  return readable([r / w, g / w, b / w]);
+  return accentOf(ctx.getImageData(0, 0, 64, 36).data);
 }
 
 /** @param {number[] | null | undefined} rgb */

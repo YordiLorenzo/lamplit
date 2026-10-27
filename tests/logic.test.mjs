@@ -2,11 +2,14 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  MIRROR_MS,
+  PAD_KEEPS_MS,
   STORE_ORDER,
   batteryText,
   buttonFace,
   byName,
   byPlayed,
+  counts,
   detailChoices,
   focusIndex,
   liftLayout,
@@ -14,6 +17,7 @@ import {
   nameAfter,
   narrowed,
   nearest,
+  nothingSeen,
   padBatteryText,
   playTimeText,
   playedText,
@@ -707,4 +711,18 @@ describe('Settings > Screensaver', () => {
     assert.deepEqual(all.map((s, i) => stepSaver('style', s, 1) === (all[i + 1] ?? s)), all.map(() => true));
     assert.equal(stepSaver('style', all[0], -1), all[0]);
   });
+});
+
+test('a press Steam mirrors as a key counts once, in either order', () => {
+  const seen = nothingSeen();
+  // Key first, then the pad's own press: one press.
+  assert.equal(counts(seen, 'ok', 'key', 10_000), true);
+  assert.equal(counts(seen, 'ok', 'pad', 10_000 + MIRROR_MS - 1), false);
+  // A second real press right after counts.
+  assert.equal(counts(seen, 'ok', 'pad', 10_000 + MIRROR_MS + 50), true);
+  // Pad first: keys are the mirror for a while, then count again.
+  assert.equal(counts(seen, 'left', 'key', 10_400), false);
+  assert.equal(counts(seen, 'left', 'key', 10_350 + PAD_KEEPS_MS + 1), true);
+  // The mouse always counts.
+  assert.equal(counts(seen, 'ok', 'mouse', 10_351), true);
 });

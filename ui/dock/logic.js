@@ -172,29 +172,3 @@ export function spring(response, damping) {
   return { easing: `linear(${points.join(', ')})`, ms: Math.round(seconds * 1000) };
 }
 
-/** How long a mirrored key and the pad's own press can be apart and still be one press (input.js has the same). */
-export const MIRROR_MS = 300;
-/** After a pad press, keys are Steam mirroring the pad, and are ignored this long. */
-export const PAD_KEEPS_MS = 2000;
-
-/**
- * Whether an input counts. Steam mirrors the controller as keys while a window other than a game is in front, which
- * the dock is: the same press comes once from Rust and once as a key, in either order.
- * @param {{ lastPad: number, lastKey: { action: string, at: number } }} seen  updated in place
- * @param {string} action
- * @param {'pad' | 'key' | 'mouse'} source
- * @param {number} now  milliseconds
- */
-export function counts(seen, action, source, now) {
-  if (source === 'pad') {
-    seen.lastPad = now;
-    if (action === seen.lastKey.action && now - seen.lastKey.at < MIRROR_MS) {
-      seen.lastKey = { action: '', at: 0 };
-      return false;
-    }
-  } else if (source === 'key') {
-    if (now - seen.lastPad < PAD_KEEPS_MS) return false;
-    seen.lastKey = { action, at: now };
-  }
-  return true;
-}
