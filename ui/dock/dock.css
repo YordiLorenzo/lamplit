@@ -104,6 +104,20 @@ body.pointer { cursor: default; }
     inset 0 0 0 calc(var(--u) * .1) rgb(255 255 255 / .1);
 }
 
+/* Home (main.js goHome): a veil in the game's colours dims the game, and the island grows into it and fades. The
+   home screen comes forward behind the veil, which then lifts. */
+#veil {
+  position: fixed;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(90% 70% at 50% 100%, rgb(var(--game) / .32), transparent 72%), rgb(9 8 14);
+  transition: opacity 200ms ease;
+}
+body.home #veil { opacity: 1; }
+body.home.lift #veil { opacity: 0; transition: opacity 240ms ease; }
+body.home #island { scale: 1.08; opacity: 0; transition: scale 240ms var(--glide), opacity 200ms ease; }
+
 /* What the island shows, laid out from its bottom centre at its own size; the island reveals it as it grows. */
 .face {
   position: absolute;
@@ -484,4 +498,5 @@ body.pointer { cursor: default; }
   }
   #island[data-mode='gone'] { transition: opacity 150ms ease; }
   .tile.closing, .output.picked, .output.picked .check { animation: none; }
+  #veil, body.home.lift #veil, body.home #island { transition-duration: 1ms; }
 }

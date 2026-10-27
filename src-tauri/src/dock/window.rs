@@ -86,13 +86,15 @@ pub fn destroy(app: &AppHandle) {
 pub enum Size {
     Open,
     News,
+    /// The whole screen, for the veil that hands over to the home screen (Home).
+    Screen,
 }
 
 /// Shows the dock's window at the bottom of the screen `over` is on: open, or around the folded pill for news,
-/// which leaves the game its focus and its mouse.
+/// which leaves the game its focus and its mouse, or over all of it.
 pub fn place(dock: HWND, over: HWND, size: Size) {
     let Some(screen) = float::screen_of(over) else { return };
-    let input = if size == Size::Open { Input::Active } else { Input::Passive };
+    let input = if size == Size::News { Input::Passive } else { Input::Active };
     float::float(dock, rect(screen, size), input);
 }
 
@@ -105,6 +107,7 @@ fn rect(screen: Rect, size: Size) -> Rect {
     let (width, height) = match size {
         Size::Open => (screen.width, u(60)),
         Size::News => (u(72).min(screen.width), u(16)),
+        Size::Screen => (screen.width, screen.height),
     };
     Rect { x: screen.x + (screen.width - width) / 2, y: screen.y + screen.height - height, width, height }
 }
@@ -119,6 +122,7 @@ mod tests {
         let tv = Rect { x: 1920, y: 0, width: 3840, height: 2160 };
         assert_eq!(rect(tv, Size::Open), Rect { x: 1920, y: 864, width: 3840, height: 1296 });
         assert_eq!(rect(tv, Size::News), Rect { x: 1920 + 1142, y: 1815, width: 1555, height: 345 });
+        assert_eq!(rect(tv, Size::Screen), tv);
         // A portrait screen is narrower than the strip for news.
         let tall = Rect { x: 0, y: 0, width: 1080, height: 1920 };
         assert_eq!(rect(tall, Size::News), Rect { x: 0, y: 1613, width: 1080, height: 307 });

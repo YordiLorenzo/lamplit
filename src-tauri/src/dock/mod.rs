@@ -65,6 +65,10 @@ static SHOWING: AtomicU64 = AtomicU64::new(0);
 
 /// How long the page takes to fold the dock away (dock.css).
 const FOLD: Duration = Duration::from_millis(450);
+/// How long the page takes to veil the game for Home (dock.css #veil), and how long the home window then has to draw
+/// itself behind the veil before it lifts.
+const VEIL: Duration = Duration::from_millis(220);
+const HAND_OVER: Duration = Duration::from_millis(120);
 /// How long news shows: the page springs it open, holds it and folds it in this time.
 const NEWS_FOR: Duration = Duration::from_millis(3200);
 
@@ -199,6 +203,40 @@ pub fn fold(app: &AppHandle, give_back: bool) {
             give_focus_back(&folded, HWND(game as *mut _));
         }
         hide_later(folded, showing, FOLD);
+    });
+}
+
+/// Home from the open dock. Its window grows over the whole screen, where the page veils the game in the game's
+/// colours; behind the veil the home window comes forward on the game's card, and the dock folds, which lifts the
+/// veil off the home screen. Circle meanwhile goes back to the game instead. During a launch, Lamplit comes forward
+/// as before.
+pub fn home(app: &AppHandle) {
+    if !is_open() || app.state::<Launcher>().starting().is_some() {
+        return launch::window::summon(app);
+    }
+    let veiled = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let (Shown::Open { game }, Some(dock)) = (*SHOWN.lock(), window::handle()) else { return };
+        window::place(dock, HWND(game as *mut _), window::Size::Screen);
+        let showing = SHOWING.load(Ordering::SeqCst);
+        std::thread::spawn(move || {
+            std::thread::sleep(VEIL);
+            let home = veiled.clone();
+            let _ = veiled.run_on_main_thread(move || {
+                // Folded meanwhile: Circle went back to the game.
+                if SHOWING.load(Ordering::SeqCst) != showing {
+                    return;
+                }
+                let Some(main) = home.get_webview_window("main").and_then(|w| w.hwnd().ok()) else { return };
+                // Below the dock, which stays above every window until it has folded.
+                win::window::force_foreground(HWND(main.0));
+                events::emit(&home, Event::Summoned(home.state::<Launcher>().running_id()));
+                std::thread::spawn(move || {
+                    std::thread::sleep(HAND_OVER);
+                    fold(&home, false);
+                });
+            });
+        });
     });
 }
 

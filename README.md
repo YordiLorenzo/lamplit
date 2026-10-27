@@ -96,11 +96,12 @@ while you play. When the game closes, Lamplit is back on screen.
 - **Hold PS while you play** (or View and Menu on an Xbox controller) and a small dock rises from the bottom edge of
   the screen, over the game, rather than the whole home screen. It opens on Resume, so Cross (A) goes straight back.
 - **What it holds:** Resume, the sound output, quiet mode, NVIDIA's performance stats when NVIDIA's overlay is
-  installed, Home for the whole home screen, and Close game. Quiet mode and the stats light up when they are on. Above
-  them are the game with its cover and how long you have been playing, the volume, each controller's battery and the
-  headset's, and the time. Up goes to the volume, which opens into a slider: Left and Right change it, Cross mutes.
-  Cross on the sound output lists your outputs; the one in use has a check, and Cross on another moves the check
-  there and switches to it. The dock takes its colours from the game's art.
+  installed, Home for the whole home screen, and Close game. Home fades the game under a veil in its colours, and the
+  home screen settles in behind it. Quiet mode and the stats light up when they are on. Above them are the game with
+  its cover and how long you have been playing, the volume, each controller's battery and the headset's, and the time.
+  Up goes to the volume, which opens into a slider: Left and Right change it, Cross mutes. Cross on the sound output
+  lists your outputs; the one in use has a check, and Cross on another moves the check there and switches to it. The
+  dock takes its colours from the game's art.
 - **Close game:** hold Cross (A) until the ring around its icon is full, about a second. The game is then asked to
   close, as its own close button does, so it can save or ask you first. Let go earlier and nothing happens. A game
   that isn't responding, or still runs 10 seconds after you asked, gets **Force close** instead, held the same way,

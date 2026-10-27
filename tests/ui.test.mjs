@@ -2245,6 +2245,32 @@ await dockTests({ open, close, check, shots });
   await close(page);
 }
 
+// 35. Back from a game (the dock's Home, or holding PS): the home screen comes forward under a veil in the game's
+// colours, on the game's card, and the veil lifts as the screen settles in. A summon with no game running has none.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.keyboard.press('ArrowRight');
+  await running(page, 'pc:1');
+  await page.evaluate(() => {
+    window.__arrival = [];
+    new MutationObserver(() => {
+      const now = ['arriving', 'arrived'].filter((c) => document.body.classList.contains(c)).join(' ') || 'none';
+      if (window.__arrival.at(-1) !== now) window.__arrival.push(now);
+    }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  });
+  await emit(page, 'summoned', 'pc:1');
+  await page.waitForTimeout(800);
+  let s = await state(page);
+  let seen = await page.evaluate(() => window.__arrival.splice(0));
+  check("back from a game, a veil shows first, then lifts as the screen settles in, on the game's card", JSON.stringify(seen) === '["arriving","arrived","none"]' && s.focusName === 'Game 001', `${JSON.stringify(seen)} ${s.focusName}`);
+  await emit(page, 'play', play('ended', 'pc:1'));
+  await emit(page, 'summoned', null);
+  await page.waitForTimeout(100);
+  seen = await page.evaluate(() => window.__arrival.splice(0));
+  check('a summon with no game running comes without the veil', seen.every((c) => c === 'none'), JSON.stringify(seen));
+  await close(page);
+}
+
 // 32. Holding PS while the screensaver shows only ends it, as any first press does: Rust sends `summoned` rather than
 // a press, and the game menu open underneath stays open. A summon after the grace does what a summon does.
 {

@@ -21,6 +21,23 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('resize', layout);
 
+let arrivedTimer = 0;
+/**
+ * Back from a game: the veil shows on the first frame Lamplit draws in front (a window behind a game draws nothing
+ * until it comes forward), then lifts while the screen settles in (style.css #arrival).
+ */
+function arrive() {
+  clearTimeout(arrivedTimer);
+  document.body.classList.remove('arrived');
+  document.body.classList.add('arriving');
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      document.body.classList.replace('arriving', 'arrived');
+      arrivedTimer = setTimeout(() => document.body.classList.remove('arrived'), 600);
+    })
+  );
+}
+
 window.addEventListener('error', (e) => api.log.error(`${e.message} at ${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', (e) => api.log.error(`unhandled: ${e.reason?.message ?? e.reason}`));
 
@@ -45,7 +62,10 @@ async function init() {
       // Holding PS comes as a summon rather than a press; over the screensaver it only ends it, as any first press
       // does. What Rust says runs still counts.
       if (wake('summon')) state.running = runningId;
-      else onSummoned(runningId);
+      else {
+        onSummoned(runningId);
+        if (runningId && state.mode !== 'starting') arrive();
+      }
     }),
     api.onLaunchStep(onStep),
     api.onStores(setStores),

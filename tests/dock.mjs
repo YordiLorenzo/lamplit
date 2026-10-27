@@ -525,6 +525,35 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
+  // D16. Home: a veil in the game's colours comes over the game and the island grows into it, while only Circle still
+  // counts; once Rust has the home screen behind the veil it folds the dock, which lifts the veil. Circle on the way
+  // goes back to the game instead, and the next opening starts without the veil.
+  {
+    const page = await openDock();
+    const veil = () => page.evaluate(() => ['home', 'lift'].filter((c) => document.body.classList.contains(c)).join(' ') || 'none');
+    const docks = async (from) => (await since(page, from)).filter((c) => c === 'dock_home' || c === 'dock_resume');
+    for (let i = 0; i < 4; i++) await emit(page, 'dock-pad', 'right');
+    let v = await view(page);
+    let from = v.calls.length;
+    await emit(page, 'dock-pad', 'ok');
+    await emit(page, 'dock-pad', 'left');
+    v = await view(page);
+    check('Home brings the veil and asks Rust for the home screen, and the controller no longer moves the dock', (await veil()) === 'home' && (await docks(from)).join() === 'dock_home' && v.focus === 'home', `${await veil()} ${await docks(from)} ${v.focus}`);
+    await emit(page, 'dock', closed);
+    await settled(page);
+    v = await view(page);
+    check('folded behind the home screen, the dock lifts its veil', (await veil()) === 'home lift' && v.mode === 'gone', `${await veil()} ${v.mode}`);
+    await emit(page, 'dock', opened);
+    await idle(page);
+    check('the next opening starts without the veil', (await veil()) === 'none', await veil());
+    for (let i = 0; i < 4; i++) await emit(page, 'dock-pad', 'right');
+    from = (await view(page)).calls.length;
+    await emit(page, 'dock-pad', 'ok');
+    await emit(page, 'dock-pad', 'back');
+    check('Circle on the way home goes back to the game', (await docks(from)).join() === 'dock_home,dock_resume', JSON.stringify(await docks(from)));
+    await close(page);
+  }
+
   // D8. The dock draws the controller's buttons with index.html's own symbols.
   {
     const symbols = (file) => pageFile(file).match(/<symbol id="btn-[\s\S]*?<\/symbol>/g) ?? [];
