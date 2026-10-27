@@ -474,7 +474,10 @@ describe('Stores', () => {
     store('ea', 'EA app', false, 'signed-out'),
     store('ubisoft', 'Ubisoft Connect', false, 'signed-out'),
     store('rockstar', 'Rockstar Games Launcher', false, 'signed-out'),
+    store('battlenet', 'Battle.net', false, 'signed-out'),
     store('gog', 'GOG Galaxy', false, 'unknown'),
+    store('amazon', 'Amazon Games', false, 'unknown'),
+    store('itch', 'itch.io', false, 'unknown'),
     store('xbox', 'Xbox app', true, 'unknown'),
   ];
   /** Rust's list, with these stores as given. */

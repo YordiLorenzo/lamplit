@@ -100,7 +100,8 @@ NVIDIA's overlay notifications aren't covered; switch those off in NVIDIA's over
 These don't change any setting, but you may notice them:
 
 - It starts the store apps a game needs: Steam with `-silent` (plus `-cef-enable-debugging` when the DevTools port
-  setting is on), the others as they start by default.
+  setting is on), the others as they start by default. A Battle.net game starts through Battle.net:
+  `Battle.net.exe --exec="launch <code>"`, or `--game=<id>` to open Battle.net on the game's page.
 - It closes Steam's Big Picture mode whenever it opens, and minimises Steam's main window when Lamplit takes the
   screen back after a Steam game.
 - It keeps the PC and the screen awake while a game is starting or Steam is updating it, and lets them sleep again

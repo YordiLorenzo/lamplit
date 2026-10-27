@@ -49,6 +49,8 @@ pub struct Art {
 pub enum Launch {
     Uri(String),
     Exe(PathBuf),
+    /// An exe with its arguments: a store app told which game to start (Battle.net's `--exec="launch <code>"`).
+    ExeArgs(PathBuf, String),
 }
 
 impl Game {

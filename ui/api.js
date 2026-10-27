@@ -5,7 +5,9 @@
 
 const tauri = /** @type {any} */ (window).__TAURI__;
 
-/** @typedef {'steam' | 'epic' | 'ea' | 'ubisoft' | 'rockstar' | 'gog' | 'xbox'} StoreKey */
+/**
+ * @typedef {'steam' | 'epic' | 'ea' | 'ubisoft' | 'rockstar' | 'battlenet' | 'gog' | 'amazon' | 'itch' | 'xbox'} StoreKey
+ */
 
 /**
  * Local paths of a game's art files.

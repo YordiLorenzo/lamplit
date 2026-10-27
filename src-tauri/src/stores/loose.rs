@@ -187,7 +187,7 @@ mod tests {
             .iter()
             .map(|g| {
                 let exe = match &g.launch {
-                    Launch::Exe(p) => file_name(p),
+                    Launch::Exe(p) | Launch::ExeArgs(p, _) => file_name(p),
                     Launch::Uri(u) => u.clone(),
                 };
                 (g.name.clone(), exe)

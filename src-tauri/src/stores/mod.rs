@@ -2,13 +2,18 @@
 // and signed in, and what it needs to start; `Store` hands each question to the right file. loose.rs finds the games
 // outside any store.
 
+mod amazon;
+mod battlenet;
 mod ea;
 mod epic;
 mod gog;
 mod installed;
+mod itch;
 pub mod loose;
 mod names;
+mod proto;
 mod rockstar;
+mod sqlite;
 pub mod steam;
 pub mod ubisoft;
 mod xbox;
@@ -35,13 +40,26 @@ pub enum Store {
     Ea,
     Ubisoft,
     Rockstar,
+    Battlenet,
     Gog,
+    Amazon,
+    Itch,
     Xbox,
 }
 
 /// Every store, in the order discovery reads them: a game two stores claim goes to the first.
-pub const ALL: [Store; 7] =
-    [Store::Steam, Store::Epic, Store::Ea, Store::Ubisoft, Store::Rockstar, Store::Gog, Store::Xbox];
+pub const ALL: [Store; 10] = [
+    Store::Steam,
+    Store::Epic,
+    Store::Ea,
+    Store::Ubisoft,
+    Store::Rockstar,
+    Store::Battlenet,
+    Store::Gog,
+    Store::Amazon,
+    Store::Itch,
+    Store::Xbox,
+];
 
 impl Store {
     /// The id the UI uses (the serde name).
@@ -52,7 +70,10 @@ impl Store {
             Store::Ea => "ea",
             Store::Ubisoft => "ubisoft",
             Store::Rockstar => "rockstar",
+            Store::Battlenet => "battlenet",
             Store::Gog => "gog",
+            Store::Amazon => "amazon",
+            Store::Itch => "itch",
             Store::Xbox => "xbox",
         }
     }
@@ -64,7 +85,10 @@ impl Store {
             Store::Ea => "EA app",
             Store::Ubisoft => "Ubisoft Connect",
             Store::Rockstar => "Rockstar Games Launcher",
+            Store::Battlenet => "Battle.net",
             Store::Gog => "GOG Galaxy",
+            Store::Amazon => "Amazon Games",
+            Store::Itch => "itch.io",
             Store::Xbox => "Xbox app",
         }
     }
@@ -77,7 +101,10 @@ impl Store {
             Store::Ea => ea::games(&installed.drives, &installed.programs),
             Store::Ubisoft => ubisoft::games(),
             Store::Rockstar => rockstar::games(&installed.game_exes),
+            Store::Battlenet => battlenet::games(),
             Store::Gog => gog::games(),
+            Store::Amazon => amazon::games(),
+            Store::Itch => itch::games(),
             Store::Xbox => xbox::games(&installed.drives),
         }
     }
@@ -90,7 +117,10 @@ impl Store {
             Store::Ea => ea::exe(),
             Store::Ubisoft => ubisoft::exe(),
             Store::Rockstar => rockstar::exe(),
+            Store::Battlenet => battlenet::exe(),
             Store::Gog => gog::exe(),
+            Store::Amazon => Some(amazon::exe()),
+            Store::Itch => itch::exe(),
             Store::Xbox => None,
         };
         path.filter(|p| p.is_file())
@@ -123,8 +153,8 @@ impl Store {
     }
 }
 
-/// What the store knows about its account. For every store but Steam this rests on whether a saved sign-in exists
-/// (see `status`), so Lamplit lets the player go ahead anyway.
+/// What the store knows about its account. For every store but Steam this rests on what the store leaves on disk (a
+/// saved sign-in, or Battle.net's log; see `status`), so Lamplit lets the player go ahead anyway.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
 #[cfg_attr(test, derive(strum::VariantArray))]
 #[serde(rename_all = "kebab-case")]
@@ -197,6 +227,16 @@ impl Processes {
         let want = exe.to_string_lossy().to_lowercase();
         self.iter().find(|(_, _, e)| e.is_some_and(|e| e.to_string_lossy().to_lowercase() == want)).map(|(pid, ..)| pid)
     }
+
+    /// When the first of the processes running `exe` started, in seconds since 1970.
+    fn started(&self, exe: &Path) -> Option<u64> {
+        let want = exe.to_string_lossy().to_lowercase();
+        self.iter()
+            .filter(|(_, _, e)| e.is_some_and(|e| e.to_string_lossy().to_lowercase() == want))
+            .filter_map(|(pid, ..)| self.sys.process(sysinfo::Pid::from_u32(pid)))
+            .map(sysinfo::Process::start_time)
+            .min()
+    }
 }
 
 /// The processes running an exe with one of these names (in any case). Reads only the names, so it is cheap to ask
@@ -218,8 +258,9 @@ pub fn status(store: Store, procs: &Processes) -> Status {
     let installed = exe.is_some() || store == Store::Xbox;
     let pid = exe.as_deref().and_then(|e| store.processes(e).iter().find_map(|r| procs.pid_of(r)));
     let running = pid.is_some();
-    // Only Steam says live who is signed in. The others keep an encrypted saved login; whether it exists is the
-    // best local sign: with it the app signs in by itself, without it the player has to.
+    // Steam says live who is signed in, and Battle.net's log says how its session went. The others keep an encrypted
+    // saved login; whether it exists is the best local sign: with it the app signs in by itself, without it the
+    // player has to.
     let saved = |present: bool| match (present, running) {
         (true, true) => Account::SignedIn,
         (true, false) => Account::Remembered,
@@ -231,8 +272,12 @@ pub fn status(store: Store, procs: &Processes) -> Status {
         Store::Ea => saved(ea::remembered()),
         Store::Ubisoft => saved(ubisoft::remembered()),
         Store::Rockstar => saved(rockstar::remembered()),
-        // GOG games run without the client; Xbox games use the Windows account.
-        Store::Gog | Store::Xbox => Account::Unknown,
+        Store::Battlenet => {
+            battlenet::account(exe.as_deref().filter(|_| running).map(|e| procs.started(e).unwrap_or(0)))
+        }
+        // GOG and itch.io games run without the client; Xbox games use the Windows account. The Amazon Games app
+        // keeps nothing Lamplit can read: the launch shows whether it is signed in.
+        Store::Gog | Store::Itch | Store::Xbox | Store::Amazon => Account::Unknown,
     };
     Status { store, name: store.name(), installed, running, account }
 }
@@ -254,8 +299,8 @@ pub fn set_requirements(games: &mut [Game]) {
 }
 
 fn requirements(g: &Game, rockstar_dirs: &[String]) -> Vec<Store> {
-    // GOG games are DRM-free and start from their own exe, so GOG Galaxy isn't needed.
-    let mut out: Vec<Store> = g.store.into_iter().filter(|s| *s != Store::Gog).collect();
+    // GOG and itch.io games are DRM-free and start from their own exe, so neither app is needed.
+    let mut out: Vec<Store> = g.store.into_iter().filter(|s| !matches!(s, Store::Gog | Store::Itch)).collect();
     let names: Vec<String> = std::iter::once(g.dir.clone())
         .chain(subdirs(&g.dir))
         .flat_map(|d| std::fs::read_dir(d).into_iter().flatten().flatten())
