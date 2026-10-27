@@ -133,6 +133,8 @@ function move(delta) {
 /** ✕ on the focused row. */
 function press() {
   const row = addRow();
+  // A folder with no folders or exes has only a line saying so.
+  if (!row) return;
   if (row.kind === 'browse') browse(null);
   else if (row.kind === 'drive' || row.kind === 'folder') browse(row.path);
   else if (row.kind === 'exe' || row.kind === 'program') name(row.path, row.title);
