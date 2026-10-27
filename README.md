@@ -106,11 +106,12 @@ while you play. When the game closes, Lamplit is back on screen.
 
 - **Art that moves while nobody plays.** After five minutes without a press on the controller, the keyboard or the
   mouse, while Lamplit is in front and no game runs, a screensaver covers the home screen, so a still picture can't
-  mark an OLED TV. It draws its scenes live: three in 2D (draped silk, layered waves, coloured ink) and three in 3D
-  (a landscape of iridescent dunes, soft shapes that melt into each other, an aurora over a lake). Every minute and a
-  half or so the next scene blends in.
+  mark an OLED TV. It draws its scenes live: three in 2D (draped silk, layered waves, coloured ink) and four in 3D
+  (a desert at the end of the day, soft shapes that melt into each other, glass forms that bend the light behind
+  them, an aurora over a lake). Every minute and a half or so the next scene blends in.
 - **Coloured from your games.** Each scene takes its colours from the art of one of your games, favourites and the
-  most recently played first, and that game's logo or name drifts faintly through it.
+  most recently played first, and that game's logo or name drifts faintly through it. Night scenes keep a deep blue
+  dark, and no scene lets a yellow fade to olive.
 - **Easy on the TV.** Nothing on it stands still, its average brightness is held down, and after an hour it fades to
   black. It draws at part of the screen's resolution and at most 30 frames a second, and stops the moment a game
   starts. Without WebGL2 it shows a slowly moving gradient instead.
