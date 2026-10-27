@@ -1,14 +1,15 @@
 // @ts-check
 // The screensaver's scenes, each a WebGL2 fragment shader that draws one frame from the time and a palette. They
-// write linear light into a buffer smaller than the screen; renderer.js scales it up, blends two scenes during a
-// change, keeps the brightness down and adds the grain.
+// write linear light into a buffer smaller than the screen, and how far out of focus each pixel is; renderer.js does
+// the rest (focus blur, blends between scenes, bloom, tone mapping, grain).
 
 /**
  * @typedef {object} Scene
  * @property {string} id
  * @property {string} name  as the preview shows it
  * @property {'2d' | '3d'} kind
- * @property {string} source  GLSL that defines `vec3 scene(vec2 frag)`
+ * @property {import('./palette.js').Mood} mood  which way palette.js forMood adapts the palette
+ * @property {string} source  GLSL that defines `vec3 scene(vec2 frag)`, and may set `coc`
  */
 
 /**
@@ -47,6 +48,8 @@ float gnoise(vec2 p) {
   float d = dot(hash22(i + vec2(1, 1)) * 2. - 1., f - vec2(1, 1));
   return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
 }
+// How far out of focus this pixel is, 0 to 1; a 3D scene sets it, and the mix pass blurs by it.
+float coc = 0.;
 const mat2 OCTAVE = mat2(1.6, 1.2, -1.2, 1.6);
 float fbm(vec2 p, int octaves) {
   float s = 0., a = .5;
@@ -60,6 +63,16 @@ float fbm(vec2 p, int octaves) {
 }
 // The main colours as one loop: 0, 1/3 and 2/3 are the three colours.
 vec3 grad(float t) { return texture(uGrad, vec2(t, .5)).rgb; }
+// A colour dimmed to k (0 to 1). Dimmed as it is, a yellow turns olive; this one leans away from the middle of yellow
+// as it darkens, towards amber as gold does in shadow, or towards green when it was a yellow-green.
+vec3 dim(vec3 c, float k) {
+  float yellow = clamp((min(c.r, c.g) - c.b) / max(max(c.r, c.g), 1e-4), 0., 1.);
+  float away = .55 * yellow * (1. - clamp(k, 0., 1.));
+  float warm = smoothstep(-.04, .04, (c.r - c.g) / max(max(c.r, c.g), 1e-4));
+  c.g *= 1. - away * warm;
+  c.r *= 1. - away * (1. - warm);
+  return c * k;
+}
 mat3 lookAt(vec3 ro, vec3 ta) {
   vec3 w = normalize(ta - ro);
   vec3 u = normalize(cross(w, vec3(0, 1, 0)));
@@ -68,7 +81,10 @@ mat3 lookAt(vec3 ro, vec3 ta) {
 `;
 
 const MAIN = `
-void main() { fragColor = vec4(max(scene(gl_FragCoord.xy), 0.), 1.); }
+void main() {
+  vec3 c = max(scene(gl_FragCoord.xy), 0.);
+  fragColor = vec4(c, clamp(coc, 0., 1.));
+}
 `;
 
 /** Silk: colour draped like satin in long folds, bent by domain warping and lit by a light that wanders. */
@@ -100,7 +116,7 @@ vec3 scene(vec2 frag) {
   // A broad pool of light that wanders, and the deep tone in the valleys of the folds.
   vec2 spot = vec2(.55 * sin(t * 1.3), .3 * cos(t * 1.7));
   float pool = .55 + .6 * exp(-dot(uv - spot, uv - spot) * 1.6);
-  vec3 col = mix(uPal[0], base, .15 + .85 * lit) * (.18 + .95 * lit) * pool;
+  vec3 col = dim(mix(uPal[0], base, .15 + .85 * lit), (.18 + .95 * lit) * pool);
   // Satin: a sheen that runs along the folds.
   float nh = max(dot(n, normalize(l + vec3(0, 0, 1))), 0.);
   col += mix(base, uPal[4], .5) * (pow(nh, 10.) * .25 + pow(nh, 40.) * .3) * pool;
@@ -115,7 +131,7 @@ vec3 scene(vec2 frag) {
   float aspect = uRes.x / uRes.y;
   float x = uv.x * aspect;
   float t = uTime * .045 + uSeed * 19.;
-  vec3 col = mix(uPal[0] * .7, grad(t * .2 + .1) * .45, uv.y * .8);
+  vec3 col = mix(uPal[0] * .7, dim(grad(t * .2 + .1), .45), uv.y * .8);
   float px = 1.5 / uRes.y;
   const int N = 7;
   for (int i = 0; i < N; i++) {
@@ -128,9 +144,9 @@ vec3 scene(vec2 frag) {
     float d = edge - uv.y;
     // The band in front darkens what lies just above its edge.
     col *= 1. - .42 * exp(min(d, 0.) * 22.) * step(d, 0.);
-    vec3 band = grad(fi * .55 + x * .07 + t * .12) * mix(.42, 1., fi);
+    vec3 band = dim(grad(fi * .55 + x * .07 + t * .12), mix(.42, 1., fi));
     // Lit along its top edge, darker further down.
-    band *= mix(1.05, .62, smoothstep(0., .3, d));
+    band = dim(band, mix(1.05, .62, smoothstep(0., .3, d)));
     band += uPal[4] * exp(-max(d, 0.) * 55.) * .16 * (.4 + .6 * fi);
     col = mix(col, band, smoothstep(-px, px, d));
   }
@@ -158,74 +174,132 @@ vec3 scene(vec2 frag) {
 }
 `;
 
-/** Dunes: an iridescent landscape under a slow camera, its colour shifting with the angle it is seen at. */
+/**
+ * Dunes: a desert at the end of the day under a slow camera. A low sun to one side lights one flank of each dune and
+ * leaves the other in the sky's cool light, with long soft shadows, a sheen on the lit sand and haze that takes the far
+ * dunes into the sky.
+ */
 const dunes = `
 float terrain(vec2 p) {
   vec2 b = p + 5. * vec2(gnoise(p * .06), gnoise(p * .05 + 3.1));
   float ridge = 1. - abs(sin(b.x * .19 + b.y * .05));
   return ridge * ridge * 1.6 + gnoise(p * .09) * 2.6 + gnoise(p * .27 + 7.) * .35;
 }
-float ripples(vec2 p) { return terrain(p) + gnoise(p * vec2(2.1, .8)) * .03; }
-vec3 sunDir() { return normalize(vec3(-.75, .22, .62)); }
+// The large swell alone: where the terrain lies below it is a trough, which the sky lights less.
+float swell(vec2 p) { return gnoise(p * .09) * 2.6 + .8; }
+float ripples(vec2 p) { return terrain(p) + gnoise(p * vec2(2.1, .8)) * .025; }
+// The sun sits low, ahead and to the left. The sky above is a cool blue, whatever the palette: sand in a yellow
+// palette under a sky of the same colour turns olive, while a cool sky keeps the shadows blue and the sand warm.
+const vec3 SUN = vec3(-.6, .1, .8);
+vec3 sunLight() { return mix(uPal[4], grad(.1), .25) * 2.8; }
+vec3 zenith() { return mix(vec3(.02, .042, .125), uPal[0], .15); }
+// The haze is the palette's light colour, half greyed and cooled: a dim yellow haze would read as khaki.
+vec3 horizon() {
+  vec3 c = mix(uPal[4], grad(.62), .25);
+  float l = dot(c, vec3(.2126, .7152, .0722));
+  return mix(mix(vec3(l), c, .5), vec3(.82, .9, 1.) * l, .35) * .62;
+}
 vec3 sky(vec3 rd) {
+  vec3 sun = normalize(SUN);
   float y = max(rd.y, 0.);
-  float s = max(dot(rd, sunDir()), 0.);
-  vec3 col = mix(grad(.62) * .55 + uPal[4] * .06, uPal[0] * .3, pow(y, .5));
-  return col + mix(grad(.62), uPal[4], .5) * (pow(s, 120.) * .5 + pow(s, 8.) * .22);
+  vec3 col = mix(horizon(), zenith(), pow(smoothstep(0., .34, y), .6));
+  float s = max(dot(rd, sun), 0.);
+  col += sunLight() * (smoothstep(.9993, .9998, s) * .5 + pow(s, 120.) * .2 + pow(s, 10.) * .09);
+  return col + horizon() * exp(-y * 18.) * .3;
+}
+// Air between the camera and what it sees: the far dunes take on the haze, and the haze glows towards the sun.
+vec3 haze(vec3 rd) { return horizon() * 1.1 + sunLight() * pow(max(dot(rd, normalize(SUN)), 0.), 8.) * .1; }
+vec3 aerial(vec3 col, vec3 rd, float t) { return mix(col, haze(rd), 1. - exp(-t * .014)); }
+float shadow(vec3 ro, vec3 rd) {
+  float res = 1., t = .2;
+  for (int i = 0; i < 28; i++) {
+    vec3 p = ro + rd * t;
+    float h = p.y - terrain(p.xz);
+    res = min(res, 9. * h / t);
+    if (res < .01 || p.y > 4.5) break;
+    t += clamp(h * .5, .12, 1.4);
+  }
+  return smoothstep(0., 1., clamp(res, 0., 1.));
+}
+// The sand at distance t along the ray: sun and shadow, the sky's light in the troughs, a sheen, and the haze.
+vec3 sand(vec3 ro, vec3 rd, float t) {
+  vec3 p = ro + rd * t;
+  float e = .008 + .0012 * t;
+  vec3 n = normalize(vec3(ripples(p.xz - vec2(e, 0)) - ripples(p.xz + vec2(e, 0)), 2. * e,
+                          ripples(p.xz - vec2(0, e)) - ripples(p.xz + vec2(0, e))));
+  vec3 sun = normalize(SUN);
+  float ndv = clamp(dot(n, -rd), 0., 1.);
+  float lit = max(dot(n, sun), 0.) * shadow(p + n * .03, sun);
+  float trough = clamp(.45 + (terrain(p.xz) - swell(p.xz)) * .4, .2, 1.);
+  // The palette lies across the dunes in broad drifts, over a stretch of the gradient that each showing picks.
+  vec3 albedo = mix(grad(uSeed + .01 * p.x + .006 * p.z + gnoise(p.xz * .04) * .18), uPal[4], .3);
+  vec3 c = dim(albedo * sunLight(), lit * .55);
+  // In shadow the sand shows mostly the sky's cool light, as in a photograph: a yellow there would turn olive.
+  vec3 shade = mix(vec3(dot(albedo, vec3(.2126, .7152, .0722))), albedo, .3);
+  c += shade * (zenith() * 3.4 + horizon() * .25) * (.35 + .65 * n.y) * trough * .75;
+  // A sheen on the lit sand that shifts colour with the angle, as a thin film does, and light along the crests.
+  float film = ndv * 1.6 + p.y * .12 + uTime * .004;
+  c += mix(grad(film + .4), uPal[4], .45) * pow(max(dot(reflect(rd, n), sun), 0.), 12.) * lit * .5;
+  c += sunLight() * pow(1. - ndv, 4.) * lit * .12;
+  return aerial(c, rd, t);
 }
 vec3 scene(vec2 frag) {
   vec2 uv = (frag - .5 * uRes) / uRes.y;
-  float z = uTime * .45 + uSeed * 400.;
+  float z = uTime * .42 + uSeed * 400.;
   vec3 ro = vec3(sin(z * .04) * 7., 0., z);
-  ro.y = (terrain(ro.xz) + terrain(ro.xz + vec2(0, 5))) * .5 + 1.5;
-  vec3 ta = vec3(sin((z + 7.) * .04) * 7., ro.y - .55, z + 7.);
+  ro.y = (terrain(ro.xz) + terrain(ro.xz + vec2(0, 5))) * .5 + 1.5 + .25 * sin(uTime * .05);
+  vec3 ta = vec3(sin((z + 7.) * .04) * 7. + 1.5 * sin(uTime * .013 + uSeed * 9.), ro.y - .5, z + 7.);
   vec3 rd = lookAt(ro, ta) * normalize(vec3(uv, 1.5));
-  // Small steps: a height field isn't a distance field, and a long step would pass through a thin crest.
-  float t = .4, last = .4;
-  // The ray's closest pass over the terrain, as an angle, for a soft edge where a crest meets the sky.
-  float near = 1e3, nearT = 0.;
+  // Small steps: a height field isn't a distance field, and a long step would pass through a thin crest. The ray
+  // also keeps its closest pass over a crest it went on beyond (a low point of its clearance, as an angle), for a
+  // soft edge where a crest stands against the sky or against dunes further away.
+  float t = .4, last = .4, near = 1e3, nearT = 0., lastA = 1e3, lastT = 0.;
   bool hit = false;
-  for (int i = 0; i < 160; i++) {
+  for (int i = 0; i < 200; i++) {
     vec3 p = ro + rd * t;
-    float d = p.y - terrain(p.xz);
-    if (d < .001 * t) { hit = true; break; }
-    if (d / t < near) { near = d / t; nearT = t; }
+    float h = p.y - terrain(p.xz);
+    if (h < .0008 * t) { hit = true; break; }
+    float a = h / t;
+    if (a > lastA && lastA < near) { near = lastA; nearT = lastT; }
+    lastA = a;
+    lastT = t;
     last = t;
-    t += max(d * .3, .01 * t);
-    // Above the highest the terrain reaches and still climbing: only sky lies ahead.
-    if (t > 90. || (p.y > 4.5 && rd.y >= 0.)) break;
+    t += max(h * .35, .005 * t);
+    if (t > 110. || (p.y > 4.5 && rd.y >= 0.)) break;
   }
+  if (!hit && lastA < near) { near = lastA; nearT = lastT; }
   if (hit) {
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 6; i++) {
       float m = (last + t) * .5;
       vec3 p = ro + rd * m;
       if (p.y - terrain(p.xz) < 0.) t = m; else last = m;
     }
   }
-  vec3 col = sky(rd);
-  // A miss that passed within a pixel of a crest is shaded there and blended into the sky.
-  float pixel = 1.5 / uRes.y;
-  float cover = hit ? 1. : 1. - smoothstep(0., pixel, near);
-  if (!hit && cover > 0.) t = nearT;
-  if (cover > 0.) {
-    vec3 p = ro + rd * t;
-    float e = .01 + .0015 * t;
-    vec3 n = normalize(vec3(ripples(p.xz - vec2(e, 0)) - ripples(p.xz + vec2(e, 0)), 2. * e,
-                            ripples(p.xz - vec2(0, e)) - ripples(p.xz + vec2(0, e))));
-    float ndv = clamp(dot(n, -rd), 0., 1.);
-    float dif = clamp(dot(n, sunDir()), 0., 1.);
-    // Thin-film colour, as on a soap bubble: it moves with the viewing angle as the camera glides.
-    float film = ndv * 1.8 + p.y * .16 + gnoise(p.xz * .1) * .35 + uTime * .004;
-    vec3 c = grad(film) * (.05 + 1.2 * pow(dif, 1.5)) + uPal[0] * .4 * (.4 + .6 * n.y);
-    c += mix(grad(film + .5), uPal[4], .4) * pow(clamp(dot(reflect(rd, n), sunDir()), 0., 1.), 18.) * .55;
-    c += grad(film + .33) * pow(1. - ndv, 5.) * .5;
-    col = mix(col, mix(c, col, 1. - exp(-.00022 * t * t)), cover);
+  float pixel = 1.3 / (uRes.y * 1.5);
+  if (near < 2. * pixel) {
+    // The closest pass, found more exactly than the steps did (golden-section search).
+    float a = nearT * .85, b = nearT * 1.15;
+    for (int i = 0; i < 8; i++) {
+      float m1 = mix(a, b, .382), m2 = mix(a, b, .618);
+      vec3 p1 = ro + rd * m1, p2 = ro + rd * m2;
+      if ((p1.y - terrain(p1.xz)) / m1 < (p2.y - terrain(p2.xz)) / m2) b = m2; else a = m1;
+    }
+    nearT = (a + b) * .5;
+    vec3 p = ro + rd * nearT;
+    near = max((p.y - terrain(p.xz)) / nearT, 0.);
   }
+  float edge = 1. - smoothstep(0., pixel, near);
+  // A ray that runs out of steps below the horizon is looking at dunes too far off to see: haze, not the sky.
+  vec3 col = hit ? sand(ro, rd, t) : mix(haze(rd), sky(rd), smoothstep(-.012, .012, rd.y));
+  if (edge > 0.) col = mix(col, sand(ro, rd, nearT), edge);
+  // Far dunes go soft, the near sand a little too; the middle distance and the sky stay sharp.
+  float depth = edge > .5 ? nearT : t;
+  if (hit || edge > .5) coc = smoothstep(16., 70., depth) * .65 + smoothstep(3.5, 1.2, depth) * .4;
   return col;
 }
 `;
 
-/** Forms: soft shapes that drift, meet and melt into each other, coloured by the way each part faces. */
+/** Forms: soft shapes that drift, meet and melt into each other, glossy, coloured by the way each part faces. */
 const forms = `
 float T;
 float smin(float a, float b, float k) {
@@ -236,20 +310,27 @@ float map(vec3 p) {
   float d = 1e3;
   for (int i = 0; i < 6; i++) {
     float fi = float(i);
-    vec3 c = vec3(sin(T * (.31 + .05 * fi) + fi * 1.3) * 1.6,
-                  cos(T * (.23 + .04 * fi) + fi * 2.1) * .9,
-                  sin(T * (.19 + .03 * fi) + fi * .7) * 1.1);
+    vec3 c = vec3(sin(T * (.31 + .05 * fi) + fi * 1.3) * 1.35,
+                  cos(T * (.23 + .04 * fi) + fi * 2.1) * .75,
+                  sin(T * (.19 + .03 * fi) + fi * .7) * 1.3);
     d = smin(d, length(p - c) - (.52 + .17 * sin(fi * 1.7 + T * .4)), .8);
   }
   return d;
 }
+// What a glossy surface mirrors: a soft studio, light above and the deep tone below, with two broad lights.
+vec3 studio(vec3 r) {
+  vec3 col = mix(uPal[0] * .6, grad(.3 + r.x * .15) * .35, smoothstep(-.4, .8, r.y));
+  col += uPal[4] * pow(max(dot(r, normalize(vec3(.5, .8, -.3))), 0.), 24.) * 1.6;
+  col += grad(.7) * pow(max(dot(r, normalize(vec3(-.8, .2, -.4))), 0.), 10.) * .5;
+  return col;
+}
 vec3 scene(vec2 frag) {
   vec2 uv = (frag - .5 * uRes) / uRes.y;
-  T = uTime * .11 + uSeed * 50.;
-  float a = uTime * .018 + uSeed * 6.283;
-  vec3 ro = vec3(sin(a) * 6., .8 * sin(uTime * .011 + uSeed * 3.), cos(a) * 6.);
-  vec3 rd = lookAt(ro, vec3(0)) * normalize(vec3(uv, 1.7));
-  vec3 col = uPal[0] * (.38 + .5 * exp(-dot(uv, uv) * 2.2));
+  T = uTime * .1 + uSeed * 50.;
+  float a = uTime * .016 + uSeed * 6.283;
+  vec3 ro = vec3(sin(a) * 6.2, .8 * sin(uTime * .011 + uSeed * 3.), cos(a) * 6.2);
+  vec3 rd = lookAt(ro, vec3(0)) * normalize(vec3(uv, 1.8));
+  vec3 col = uPal[0] * (.3 + .55 * exp(-dot(uv, uv) * 2.));
   float t = 0., halo = 0.;
   bool hit = false;
   for (int i = 0; i < 90; i++) {
@@ -257,20 +338,127 @@ vec3 scene(vec2 frag) {
     halo += exp(-d * 2.6);
     if (d < .001) { hit = true; break; }
     t += d;
-    if (t > 14.) break;
+    if (t > 16.) break;
   }
-  col += grad(T * .05 + uv.x * .1) * halo * .009;
+  col += grad(T * .05 + uv.x * .1) * halo * .008;
   if (hit) {
     vec3 p = ro + rd * t;
     vec2 k = vec2(1, -1) * .0015;
     vec3 n = normalize(k.xyy * map(p + k.xyy) + k.yyx * map(p + k.yyx) + k.yxy * map(p + k.yxy) + k.xxx * map(p + k.xxx));
     float ndv = clamp(dot(n, -rd), 0., 1.);
     vec3 l = normalize(vec3(.6, .7, -.4));
-    float g = dot(n, normalize(vec3(.4, .8, .3))) * .38 + .5 + p.y * .08 + T * .03;
-    vec3 body = grad(g) * (.2 + .8 * clamp(dot(n, l), 0., 1.)) + uPal[0] * .2;
-    body += uPal[4] * pow(clamp(dot(reflect(rd, n), l), 0., 1.), 42.) * .55;
-    col = mix(body, grad(g + .33) * 1.15, pow(1. - ndv, 3.) * .85);
+    // A narrow stretch of the gradient across each form, drifting slowly: two neighbouring colours, not a rainbow.
+    float g = dot(n, normalize(vec3(.4, .8, .3))) * .14 + p.x * .06 + p.y * .03 + T * .02 + uSeed;
+    // A soft body lit from above, light that seems to pass through its thin edges, and a clear coat that mirrors.
+    vec3 body = grad(g) * (.12 + .7 * max(dot(n, l), 0.) + .25 * (.5 + .5 * n.y));
+    body += grad(g + .12) * pow(1. - ndv, 2.) * .55;
+    float fres = .04 + .96 * pow(1. - ndv, 5.);
+    col = body + studio(reflect(rd, n)) * mix(.12, 1., fres);
+    coc = smoothstep(.4, 3., abs(t - 6.2)) * .8;
   }
+  return col;
+}
+`;
+
+/**
+ * Glass: clear forms that turn slowly in front of soft coloured light. Each bends the light behind it, splitting it a
+ * little into colours at the edges, and mirrors the room with a thin film's colours; the background is out of focus.
+ */
+const glass = `
+float T;
+mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
+float torus(vec3 p, vec2 r) { return length(vec2(length(p.xz) - r.x, p.y)) - r.y; }
+float roundBox(vec3 p, vec3 b, float r) {
+  vec3 q = abs(p) - b;
+  return length(max(q, 0.)) + min(max(q.x, max(q.y, q.z)), 0.) - r;
+}
+float map(vec3 p) {
+  vec3 a = p - vec3(-1.55 + .2 * sin(T * .3), .3 * sin(T * .4), .2);
+  a.xz *= rot(T * .21);
+  a.xy *= rot(T * .17 + 1.);
+  float d = torus(a, vec2(.78, .27));
+  vec3 b = p - vec3(1.5, -.2 + .2 * cos(T * .35), .5);
+  b.yz *= rot(T * .19);
+  b.xy *= rot(T * .13 + .4);
+  d = min(d, roundBox(b, vec3(.42), .2));
+  vec3 c = p - vec3(.15 * sin(T * .2), 1. + .15 * sin(T * .5), 1.7);
+  return min(d, length(c) - .48);
+}
+vec3 normalAt(vec3 p) {
+  vec2 k = vec2(1, -1) * .0015;
+  return normalize(k.xyy * map(p + k.xyy) + k.yyx * map(p + k.yyx) + k.yxy * map(p + k.yxy) + k.xxx * map(p + k.xxx));
+}
+// The light behind the glass: the deep tone, three slow pools of colour and one thin bright line, far away.
+vec3 backdrop(vec3 rd) {
+  vec2 q = rd.xy / max(rd.z, .25);
+  vec3 col = uPal[0] * mix(1.1, .35, smoothstep(-.7, .9, q.y));
+  for (int i = 0; i < 3; i++) {
+    float fi = float(i);
+    vec2 c = vec2(sin(T * .13 + fi * 2.1) * .95, cos(T * .11 + fi * 1.7) * .5);
+    vec2 d = q - c;
+    col += uPal[i + 1] * exp(-dot(d, d) * 5.5) * .65;
+  }
+  float line = abs(q.y - .02 - .16 * sin(q.x * 1.3 + T * .25));
+  return col + uPal[4] * smoothstep(.014, 0., line) * .32;
+}
+// What the glass mirrors: the backdrop, and two soft studio lights.
+vec3 room(vec3 r) {
+  return backdrop(r) * .6 + uPal[4] * (pow(max(dot(r, normalize(vec3(-.5, .7, -.5))), 0.), 40.) * 2.2
+                                      + pow(max(dot(r, normalize(vec3(.8, .3, -.4))), 0.), 14.) * .5);
+}
+// The glass at p, seen along rd.
+vec3 glassAt(vec3 p, vec3 rd) {
+  vec3 n = normalAt(p);
+  // Never quite edge-on: at a grazing angle the normal changes from one pixel to the next and the rim would sparkle.
+  float ndv = clamp(dot(n, -rd), .08, 1.);
+  float fres = .04 + .96 * pow(1. - ndv, 5.);
+  // Through the form: in, across, and out, each colour bent a little differently.
+  vec3 r1 = refract(rd, n, 1. / 1.45);
+  vec3 q = p - n * .01;
+  float s = .02;
+  for (int i = 0; i < 40; i++) {
+    float d = -map(q + r1 * s);
+    if (d < .001) break;
+    s += max(d, .01);
+    if (s > 4.) break;
+  }
+  vec3 through;
+  if (s > 4.) through = backdrop(r1);
+  else {
+    vec3 n2 = -normalAt(q + r1 * s);
+    for (int c = 0; c < 3; c++) {
+      // Light that can't leave (total internal reflection) is taken as leaving straight on.
+      vec3 r2 = refract(r1, n2, 1.45 + (float(c) - 1.) * .03);
+      through[c] = backdrop(dot(r2, r2) < .01 ? r1 : r2)[c];
+    }
+  }
+  // Thicker glass holds back a little more light, towards the palette's light colour.
+  through *= exp(-s * (1. - uPal[4]) * .4) * 1.1;
+  vec3 film = grad(ndv * 1.7 + T * .04);
+  vec3 col = mix(through, room(reflect(rd, n)) * mix(vec3(1), film * 1.5, .55), fres);
+  return col + film * pow(1. - ndv, 3.) * .12;
+}
+vec3 scene(vec2 frag) {
+  vec2 uv = (frag - .5 * uRes) / uRes.y;
+  T = uTime * .12 + uSeed * 60.;
+  vec3 ro = vec3(.6 * sin(uTime * .013 + uSeed * 5.), .3 * sin(uTime * .017), -6.);
+  vec3 rd = lookAt(ro, vec3(0, .1, .5)) * normalize(vec3(uv, 1.9));
+  // The ray's closest pass by a form it missed, as an angle, gives a soft edge round each form.
+  float t = 0., near = 1e3, nearT = 0.;
+  bool hit = false;
+  for (int i = 0; i < 80; i++) {
+    float d = map(ro + rd * t);
+    if (d < .001) { hit = true; break; }
+    if (d / t < near) { near = d / t; nearT = t; }
+    t += d;
+    if (t > 14.) break;
+  }
+  if (hit) return glassAt(ro + rd * t, rd);
+  vec3 col = backdrop(rd);
+  float pixel = 1.2 / (uRes.y * 1.9);
+  float edge = 1. - smoothstep(0., pixel, near);
+  if (edge > 0.) col = mix(col, glassAt(ro + rd * nearT, rd), edge);
+  coc = .85 * (1. - edge);
   return col;
 }
 `;
@@ -340,12 +528,13 @@ vec3 scene(vec2 frag) {
 
 /** @type {Scene[]} */
 export const SCENES = [
-  { id: 'silk', name: 'Silk', kind: '2d', source: silk },
-  { id: 'dunes', name: 'Dunes', kind: '3d', source: dunes },
-  { id: 'waves', name: 'Waves', kind: '2d', source: waves },
-  { id: 'forms', name: 'Forms', kind: '3d', source: forms },
-  { id: 'ink', name: 'Ink', kind: '2d', source: ink },
-  { id: 'aurora', name: 'Aurora', kind: '3d', source: aurora },
+  { id: 'silk', name: 'Silk', kind: '2d', mood: 'day', source: silk },
+  { id: 'dunes', name: 'Dunes', kind: '3d', mood: 'day', source: dunes },
+  { id: 'waves', name: 'Waves', kind: '2d', mood: 'day', source: waves },
+  { id: 'forms', name: 'Forms', kind: '3d', mood: 'night', source: forms },
+  { id: 'ink', name: 'Ink', kind: '2d', mood: 'night', source: ink },
+  { id: 'glass', name: 'Glass', kind: '3d', mood: 'night', source: glass },
+  { id: 'aurora', name: 'Aurora', kind: '3d', mood: 'night', source: aurora },
 ];
 
 /** A scene's whole fragment shader. @param {Scene} scene */

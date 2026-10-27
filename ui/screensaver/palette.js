@@ -189,14 +189,80 @@ export function scenePalette(swatches) {
 }
 
 /**
- * The three main colours as one gradient that loops (a, b, c and back to a), blended in OKLab so the steps look even
- * and no muddy colour sits between two vivid ones.
+ * A scene in daylight colours (silk, waves, dunes), or light on a dark ground (ink, forms, glass, aurora).
+ * @typedef {'day' | 'night'} Mood
+ */
+
+/**
+ * Hues where a colour that isn't light turns olive, khaki or brown: mud. Yellow only reads as yellow when it is light,
+ * and light dimmed on a dark ground is a darker colour, so a night scene keeps out of this band altogether.
+ */
+const MUD = [55, 122];
+const inMud = (/** @type {number} */ h) => h >= MUD[0] && h <= MUD[1];
+/** 0 at the band's edges, 1 in its middle. @param {number} h */
+const mudWeight = (h) => (inMud(h) ? Math.sin(((h - MUD[0]) / (MUD[1] - MUD[0])) * Math.PI) : 0);
+/**
+ * A colour in the band lifted to the lightness it needs to read as gold or yellow rather than olive, most in the
+ * band's middle. Lifting twice changes nothing.
+ * @param {number} L @param {number} h
+ */
+const gold = (L, h) => (inMud(h) ? Math.max(L, 0.7 + 0.1 * mudWeight(h)) : L);
+
+/** A hue in the band moved to green-cyan (150 to 170), keeping its order. @param {number} h */
+const outOfMud = (h) => 150 + ((h - MUD[0]) / (MUD[1] - MUD[0])) * 20;
+
+/**
+ * The palette as a scene of that mood uses it, worked in OKLCh. By day a yellow is lifted to gold, and the deep tone
+ * takes the hue of the main colour furthest from yellow. At night yellows turn green-cyan, every main colour glows
+ * (lighter, with more chroma, grey ones tinted), and the deep tone is a deep blue or teal.
+ * @param {Palette} palette
+ * @param {Mood} mood
+ * @returns {Palette}
+ */
+export function forMood(palette, mood) {
+  const main = [palette[1], palette[2], palette[3]].map((rgb) => {
+    let [L, C, h] = toOklch(rgb);
+    if (mood === 'day') {
+      // Out of the band's middle: a yellow-green becomes a green, any other yellow a light warm gold.
+      if (inMud(h) && h > 105) h = 135 + (h - 105) * 0.3;
+      else if (inMud(h)) {
+        h = Math.min(h, 72 + (h - MUD[0]) * 0.15);
+        L = gold(L, h);
+      }
+      C = Math.max(C, C < GREY ? C : 0.12);
+    } else {
+      if (inMud(h)) h = outOfMud(h);
+      L = Math.min(0.8, Math.max(0.64, L));
+      // Grey art glows a cool silver-blue rather than grey.
+      if (C < GREY) [C, h] = [0.09, 235];
+      C = Math.max(C, 0.13);
+    }
+    return { L, C, h };
+  });
+  /** @typedef {{ L: number, C: number, h: number }} Lch */
+  const hueOf = (/** @type {(c: Lch) => number} */ score) => [...main].sort((a, b) => score(b) - score(a))[0].h;
+  /** Teal to blue: the hues a night sky's dark can take from the palette. @param {Lch} c */
+  const cool = (c) => c.h >= 185 && c.h <= 275;
+  const deep =
+    mood === 'day'
+      ? fromOklch(0.2, 0.06, hueOf((c) => hueGap(c.h, (MUD[0] + MUD[1]) / 2)))
+      : fromOklch(0.17, 0.065, main.some(cool) ? hueOf((c) => (cool(c) ? c.C : -1)) : 245);
+  const brightest = [...main].sort((a, b) => b.L - a.L)[0];
+  const [a, b, c] = main.map((m) => fromOklch(m.L, m.C, m.h));
+  return [deep, a, b, c, fromOklch(0.9, Math.min(0.09, brightest.C * 0.6), brightest.h)];
+}
+
+/**
+ * The three main colours as one gradient that loops (a, b, c and back to a), blended in OKLCh so the colours between
+ * two vivid ones stay vivid. By day a stretch through yellow is lifted to gold; at night a stretch that would pass
+ * through yellow goes round the other way of the colour wheel.
  * @param {Palette} palette
  * @param {number} [steps]
+ * @param {Mood} [mood]
  * @returns {Uint8Array}  RGBA bytes, `steps` texels wide
  */
-export function gradient(palette, steps = 256) {
-  const stops = [palette[1], palette[2], palette[3]].map(toOklab);
+export function gradient(palette, steps = 256, mood = 'day') {
+  const stops = [palette[1], palette[2], palette[3]].map(toOklch);
   const out = new Uint8Array(steps * 4);
   for (let i = 0; i < steps; i++) {
     const t = (i / steps) * 3;
@@ -204,12 +270,25 @@ export function gradient(palette, steps = 256) {
     const f = t - k;
     const e = f * f * (3 - 2 * f);
     const [a, b] = [stops[k % 3], stops[(k + 1) % 3]];
-    const lab = /** @type {[number, number, number]} */ (a.map((v, j) => v + (b[j] - v) * e));
-    const lin = labToLinear(lab).map((v) => Math.min(1, Math.max(0, v)));
-    lin.forEach((v, j) => (out[i * 4 + j] = Math.round(toSrgb(v))));
-    out[i * 4 + 3] = 255;
+    let turn = ((b[2] - a[2] + 540) % 360) - 180;
+    if (mood === 'night' && crossesMud(a[2], turn)) turn -= Math.sign(turn) * 360;
+    let L = a[0] + (b[0] - a[0]) * e;
+    const C = a[1] + (b[1] - a[1]) * e;
+    const h = (a[2] + turn * e + 360) % 360;
+    if (mood === 'day') L = gold(L, h);
+    const rgb = fromOklch(L, C, h);
+    out.set([...rgb, 255], i * 4);
   }
   return out;
+}
+
+/** Whether turning from hue `from` by `turn` degrees passes through the mud band. @param {number} from @param {number} turn */
+function crossesMud(from, turn) {
+  for (let d = 0; Math.abs(d) <= Math.abs(turn); d += Math.sign(turn) || 1) {
+    if (inMud((from + d + 360) % 360)) return true;
+    if (!turn) break;
+  }
+  return false;
 }
 
 /** A scene palette from a few colours given by hand, each counting the same. @param {RGB[]} colours */

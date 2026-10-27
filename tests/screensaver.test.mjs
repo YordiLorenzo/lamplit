@@ -2,7 +2,7 @@
 // `node --test tests/screensaver.test.mjs`. The page's tests (ui.test.mjs) cover the screensaver on screen.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { LAMPLIT, fromOklch, gradient, medianCut, paletteOf, scenePalette, toOklch } from '../ui/screensaver/palette.js';
+import { LAMPLIT, forMood, fromOklch, gradient, medianCut, paletteOf, scenePalette, toOklch } from '../ui/screensaver/palette.js';
 import { SCENES } from '../ui/screensaver/scenes.js';
 
 /** RGBA bytes of an image made of `parts`: [[r, g, b, a?], pixel count] each. */
@@ -82,21 +82,73 @@ describe('colour helpers', () => {
     const [L, , h] = lch(fromOklch(0.7, 0.4, 150));
     assert.ok(Math.abs(L - 0.7) < 0.01 && hueGap(h, 150) < 3, `${L} ${h}`);
   });
-  test('the gradient loops through the three main colours', () => {
-    const bytes = gradient(LAMPLIT, 300);
-    const at = (i) => [...bytes.slice(i * 4, i * 4 + 3)];
-    assert.equal(bytes.length, 1200);
-    assert.ok([...bytes].filter((_, i) => i % 4 === 3).every((a) => a === 255));
-    assert.deepEqual([at(0), at(100), at(200)], [LAMPLIT[1], LAMPLIT[2], LAMPLIT[3]]);
-    // The last step is a step away from the first: no seam where the loop closes.
-    assert.ok(at(299).every((v, i) => Math.abs(v - at(0)[i]) < 8), `${at(299)} ${at(0)}`);
+  test('the gradient loops through the three main colours, by day and at night', () => {
+    for (const mood of ['day', 'night']) {
+      const palette = forMood(LAMPLIT, mood);
+      const bytes = gradient(palette, 300, mood);
+      const at = (i) => [...bytes.slice(i * 4, i * 4 + 3)];
+      assert.equal(bytes.length, 1200);
+      assert.ok([...bytes].filter((_, i) => i % 4 === 3).every((a) => a === 255));
+      [at(0), at(100), at(200)].forEach((rgb, k) => assert.ok(rgb.every((v, i) => Math.abs(v - palette[k + 1][i]) <= 2), `${mood} ${rgb} ${palette[k + 1]}`));
+      // The last step is a step away from the first: no seam where the loop closes.
+      assert.ok(at(299).every((v, i) => Math.abs(v - at(0)[i]) < 10), `${mood} ${at(299)} ${at(0)}`);
+    }
+  });
+});
+
+describe('palettes by mood', () => {
+  // Three kinds of art that turn to mud most easily: yellow (Cyberpunk 2077's cover), red and amber (Red Dead
+  // Redemption 2's), and grey all over.
+  const yellow = scenePalette(medianCut(image([[240, 230, 20], 300], [[25, 20, 10], 200], [[90, 200, 60], 60], [[240, 140, 0], 40])));
+  const red = scenePalette(medianCut(image([[200, 30, 25], 300], [[210, 140, 10], 100], [[30, 20, 10], 200])));
+  const grey = scenePalette(medianCut(image([[118, 118, 120], 100], [[160, 158, 154], 100], [[70, 71, 74], 100])));
+  /** Hues 0 to 360 in 37 steps, at three lightnesses: palettes from every kind of art, made the same way each run. */
+  const wheel = Array.from({ length: 37 }, (_, i) => paletteOf([[0.45, 0.6, 0.75].map((L, k) => fromOklch(L, 0.14, i * 10 + k * 40))].flat()));
+  const all = [LAMPLIT, yellow, red, grey, ...wheel];
+  /** Olive, khaki and mustard: a yellow hue that isn't light. */
+  const mud = ([L, C, h]) => h > 70 && h < 115 && L < 0.7 && C > 0.04;
+  const texels = (bytes) => Array.from({ length: bytes.length / 4 }, (_, i) => lch([...bytes.slice(i * 4, i * 4 + 3)]));
+
+  test('no main colour and no step of the gradient is mud, by day or at night', () => {
+    for (const palette of all) {
+      for (const mood of ['day', 'night']) {
+        const p = forMood(palette, mood);
+        const muddy = [...p.slice(1, 4).map(lch), ...texels(gradient(p, 128, mood))].filter(mud);
+        assert.deepEqual(muddy, [], `${mood} ${JSON.stringify(palette)}`);
+      }
+    }
+  });
+  test('at night the dark is a deep blue or teal, and every main colour glows', () => {
+    for (const palette of all) {
+      const { deep, main } = parts(forMood(palette, 'night'));
+      assert.ok(deep[0] < 0.25 && deep[2] >= 180 && deep[2] <= 280, `deep ${deep}`);
+      // As much chroma as the screen can show at that lightness: a teal can't reach as far as a red.
+      for (const c of main) assert.ok(c[0] >= 0.6 && c[1] >= 0.1, `main ${c}`);
+    }
+  });
+  test('at night the gradient keeps out of yellow altogether', () => {
+    for (const palette of all) {
+      const yellows = texels(gradient(forMood(palette, 'night'), 128, 'night')).filter(([, C, h]) => C > 0.05 && h > 62 && h < 118);
+      assert.deepEqual(yellows, [], JSON.stringify(palette));
+    }
+  });
+  test("by day a yellow from the art stays warm and light: gold, or green when it leaned green", () => {
+    const { main } = parts(forMood(yellow, 'day'));
+    for (const c of main.filter(([, , h]) => h > 55 && h < 125)) assert.ok(c[0] >= 0.7, `main ${c}`);
+    assert.ok(main.some(([, , h]) => h > 55 && h < 85), `a gold in ${JSON.stringify(main)}`);
+  });
+  test('grey art stays quiet by day and turns a cool silver-blue at night', () => {
+    for (const c of parts(forMood(grey, 'day')).main) assert.ok(c[1] < 0.06, `day ${c}`);
+    for (const c of parts(forMood(grey, 'night')).main) assert.ok(c[2] > 200 && c[2] < 260, `night ${c}`);
   });
 });
 
 describe('scenes', () => {
-  test('each has its own id, a kind and a scene function', () => {
+  test('each has its own id, a kind, a mood and a scene function', () => {
     assert.equal(new Set(SCENES.map((s) => s.id)).size, SCENES.length);
-    for (const s of SCENES) assert.ok(['2d', '3d'].includes(s.kind) && /vec3 scene\(vec2 frag\)/.test(s.source), s.id);
+    for (const s of SCENES) {
+      assert.ok(['2d', '3d'].includes(s.kind) && ['day', 'night'].includes(s.mood) && /vec3 scene\(vec2 frag\)/.test(s.source), s.id);
+    }
   });
   test('there are 2D and 3D scenes, so each style has something to show', () => {
     assert.ok(SCENES.filter((s) => s.kind === '2d').length >= 2 && SCENES.filter((s) => s.kind === '3d').length >= 2);
