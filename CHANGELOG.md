@@ -4,6 +4,18 @@ Every release of Lamplit, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- A screensaver. After a few minutes without input, while Lamplit is in front and no game runs, generative art covers
+  the screen, so a still home screen can't mark an OLED TV: three 2D and three 3D scenes drawn with WebGL2, coloured
+  from the art of your games, with a game's logo or name drifting faintly through each. A new scene blends in every
+  minute and a half or so, and after an hour it fades to black. The first press only ends it. Settings > Screensaver
+  sets the delay (Off, 2, 5, 10 or 20 minutes; 5 by default) and the scenes (2D and 3D, only 2D, or only 3D), and
+  shows it now. Without WebGL2 it shows a moving gradient.
+- `ui/screensaver/preview.html` shows the screensaver's scenes in a normal browser, for working on them.
+
 ## 0.2.0 - 2026-10-26
 
 ### Added

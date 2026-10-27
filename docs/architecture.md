@@ -41,6 +41,8 @@ ui/
   logic.js         pure functions (the cover row's search and order, the Settings rows), tested in Node
   hints.js         the button hints and short messages
   sounds.js        interface sounds made with Web Audio
+  screensaver/     the screensaver: when it shows and what ends it (index.js), the show (saver.js), the WebGL2
+                   renderer, the scenes' shaders, palettes from the game art, and preview.html to view it in a browser
 tests/
   ipc/             payloads both sides are tested against
   *.test.mjs       the page's tests; page.mjs serves the page with a fake Tauri
@@ -155,6 +157,8 @@ message is written for the player, and the page shows it.
 | `controller_kind` | | The kind of controller used last (`dualsense`, `playstation`, `xbox`, `other`), or `null` before any was |
 | `prefs_state` | | The prefs |
 | `prefs_set_sound_follows`, `prefs_set_touchpad_mouse`, `prefs_set_steam_devtools`, `prefs_set_online_art` | `on` | The prefs after the change |
+| `prefs_set_screensaver_minutes` | `minutes` (0 for never) | The prefs after the change |
+| `prefs_set_screensaver_style` | `style`: `mix`, `2d` or `3d` | The prefs after the change |
 | `power_sleep` | | Nothing, once the PC has woken up again |
 | `power_restart`, `power_shut_down` | | Nothing, once Windows has started to restart or shut down |
 | `display_mode` | | The screen's mode, such as `3840 × 2160 at 120 Hz` |

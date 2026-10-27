@@ -108,6 +108,7 @@ npm --prefix tests run typecheck
 ```
 
 - `logic.test.mjs` tests the pure functions in `ui/logic.js`.
+- `screensaver.test.mjs` tests the screensaver's palettes (`ui/screensaver/palette.js`) and its list of scenes.
 - `contract.test.mjs` checks that the page and the Rust core agree on every command, argument and event.
 - `ui.test.mjs` drives the page in Chromium at 1920 x 1080 and other sizes. `page.mjs` serves the page the way
   Tauri serves it on Windows, under the same content security policy, with a fake Tauri that refuses any call Rust
@@ -115,6 +116,10 @@ npm --prefix tests run typecheck
 
 The art checks use small generated images. For realistic covers in the screenshots, copy `%LOCALAPPDATA%\lamplit\art`
 from a Windows PC that has run Lamplit to `tests/art` (it is ignored by git).
+
+The screensaver's scenes also run in a normal browser. Serve the repository's folder (`python3 -m http.server 8123`)
+and open `http://localhost:8123/ui/screensaver/preview.html`: its corner lists the keys, and an image dropped on it
+colours the scenes. `?cap=0` in the address draws as fast as the GPU can, so the frame rate shows what a scene costs.
 
 `node tests/screenshots.mjs [art folder]` takes the README's screenshots in `docs/images/`. It needs the art of the
 games it shows, laid out like `%LOCALAPPDATA%\lamplit\art`; the list of games is at the top of the script.
