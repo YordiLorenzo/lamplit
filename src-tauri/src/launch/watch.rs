@@ -10,10 +10,10 @@ use crate::events::{self, Event, Play, StepState};
 use crate::files::folder_key;
 use crate::library::{self, Game, Launch};
 use crate::stores::{Proc, Processes, Store, steam};
-use crate::win::process::keep_awake;
+use crate::win::process::{Held, keep_awake};
 use crate::win::window;
 use parking_lot::Mutex;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::ControlFlow;
 use std::path::Path;
 use std::sync::Arc;
@@ -74,19 +74,19 @@ impl Watch {
     }
 
     /// The watch of a game Lamplit has just started: `started` is the process that started, when Windows told.
-    fn launched(g: &Game, started: Option<(u32, u64)>) -> Self {
+    fn launched(g: &Game, started: Option<Held>) -> Self {
         let watch = Self::of(g);
-        if let Some((pid, at)) = started {
-            watch.seed(pid, at);
+        if let Some(started) = started {
+            watch.seed(started);
         }
         watch
     }
 
-    /// The process Lamplit started for a game added by hand, by id and start time: it may start the game proper and end
-    /// before the watcher first looks, which then has nothing else to tell the game's processes by.
-    fn seed(&self, pid: u32, started: u64) {
+    /// The process Lamplit started for a game added by hand, kept open from the start: it may start the game proper
+    /// and end before the watcher first looks, which then has nothing else to tell the game's processes by.
+    fn seed(&self, started: Held) {
         if let Some((_, lineage)) = &self.launched {
-            lineage.lock().game.insert((pid, started));
+            lineage.lock().game.insert((started.pid, started.started), Some(started));
         }
     }
 
@@ -139,56 +139,60 @@ const NOT_THE_GAME: &[&str] = &[
     "ubisoftconnect.exe", "battle.net.exe", "battle.net launcher.exe", "discord.exe", "overwolf.exe",
 ];
 
-/// The processes that came from a game's exe, by id and start time, kept from poll to poll: a launcher that starts the
-/// game and exits leaves the game its own. The start time tells a process from a later one that got the same id.
+/// The processes that came from a game's exe, by id and start time, kept from look to look: a launcher that starts the
+/// game and exits leaves the game its own. Lamplit keeps each open (`Held`) until a look finds it gone, so meanwhile
+/// Windows gives its id to no other process, and one whose parent has that id came from it; by then the look has
+/// found what it started. One that ended before Lamplit could open it counts as a parent only while a look sees it.
 #[derive(Default)]
 pub struct Lineage {
-    game: HashSet<(u32, u64)>,
-    /// Processes seen with an id one of the game's had before them, which aren't the game's: what they start isn't
-    /// the game's either, also once they have exited.
-    others: HashSet<(u32, u64)>,
+    game: HashMap<(u32, u64), Option<Held>>,
 }
 
 impl Lineage {
     /// Adds the processes running `exe` (a `folder_key`) and every process one of the game's started, other than the
     /// programs in NOT_THE_GAME, and returns those that run now.
     fn update(&mut self, exe: &str, procs: &[Proc]) -> HashSet<u32> {
-        let game = procs.iter().filter(|p| p.exe.is_some_and(|e| folder_key(e) == exe));
-        self.game.extend(game.map(|p| (p.pid, p.started)));
+        for p in procs.iter().filter(|p| p.exe.is_some_and(|e| folder_key(e) == exe)) {
+            self.add(p);
+        }
         let not_the_game = |p: &Proc| NOT_THE_GAME.iter().any(|n| p.name.eq_ignore_ascii_case(n));
         loop {
-            let found: Vec<(u32, u64)> = procs
+            let found: Vec<&Proc> = procs
                 .iter()
-                .filter(|p| !self.game.contains(&(p.pid, p.started)) && !not_the_game(p))
+                .filter(|p| !self.game.contains_key(&(p.pid, p.started)) && !not_the_game(p))
                 .filter(|p| p.parent.is_some_and(|parent| self.started_by_game(parent, p.started, procs)))
-                .map(|p| (p.pid, p.started))
                 .collect();
             if found.is_empty() {
                 break;
             }
-            self.game.extend(found);
+            for p in found {
+                self.add(p);
+            }
         }
-        let reused = procs.iter().filter(|p| {
-            !self.game.contains(&(p.pid, p.started))
-                && self.game.iter().any(|&(pid, started)| pid == p.pid && started < p.started)
-        });
-        self.others.extend(reused.map(|p| (p.pid, p.started)));
-        procs.iter().filter(|p| self.game.contains(&(p.pid, p.started))).map(|p| p.pid).collect()
+        // One this look finds gone is let go: what it started that still runs, this look has found, and from now on
+        // Windows may give its id to another process.
+        self.game.retain(|&(pid, started), _| procs.iter().any(|p| p.pid == pid && p.started == started));
+        self.game.keys().map(|&(pid, _)| pid).collect()
     }
 
-    /// Whether the process with id `parent` that started a process at `at` is one of the game's: of the processes
-    /// that had that id by then, running now or seen before, the latest.
+    fn add(&mut self, p: &Proc) {
+        self.game.entry((p.pid, p.started)).or_insert_with(|| Held::open(p.pid, p.started));
+    }
+
+    /// Whether the process with id `parent` that started a process at `at` is one of the game's: one Lamplit keeps
+    /// open, whose id no other process can have had since it started, or one that runs now.
     fn started_by_game(&self, parent: u32, at: u64, procs: &[Proc]) -> bool {
-        let running = procs.iter().filter(|q| q.pid == parent).map(|q| q.started);
-        let seen = self.game.iter().chain(&self.others).filter(|&&(pid, _)| pid == parent).map(|&(_, s)| s);
-        running.chain(seen).filter(|&s| s <= at).max().is_some_and(|s| self.game.contains(&(parent, s)))
+        let runs = |started| procs.iter().any(|q| q.pid == parent && q.started == started);
+        self.game
+            .iter()
+            .any(|(&(pid, started), held)| pid == parent && started <= at && (held.is_some() || runs(started)))
     }
 }
 
 /// Watches a launched game until it closes. Runs on the launch's own thread, which keeps the PC awake while
 /// Lamplit waits for the game (or for Steam to update it), and lets it sleep while the game runs. `before`: the windows
 /// open when the player pressed Play. `started`: the process Lamplit started, when Windows told (a game's exe).
-pub fn watch_game(app: &AppHandle, generation: u64, game: &Game, before: &HashSet<isize>, started: Option<(u32, u64)>) {
+pub fn watch_game(app: &AppHandle, generation: u64, game: &Game, before: &HashSet<isize>, started: Option<Held>) {
     let (id, name, watch) = (game.id.as_str(), game.name.as_str(), Watch::launched(game, started));
     let launcher = app.state::<Launcher>();
     let mut screen = Screen { handed: false, awake: true };
@@ -559,13 +563,31 @@ mod tests {
     }
 
     #[test]
+    fn the_id_of_a_launcher_seen_gone_leads_to_the_game_no_more() {
+        let watch = racer(r"D:\Old Games\Racer\Launcher.exe", r"D:\Old Games\Racer");
+        let game = proc(2, r"D:\Old Games\Racer\bin\Racer.exe", 101, Some(1));
+        assert_eq!(watch.pids(&[proc(1, r"D:\Old Games\Racer\Launcher.exe", 100, Some(900)), game]), [1, 2].into());
+        // The launcher has ended.
+        assert_eq!(watch.pids(&[game]), [2].into());
+        // Between two looks, another program got its id, started one and ended: no look saw it.
+        let unseen = [game, proc(3, r"C:\Tools\helper.exe", 301, Some(1))];
+        assert_eq!(watch.own_pids(&unseen), [2].into(), "closing the game would close the helper too");
+        assert_eq!(watch.pids(&unseen), [2].into());
+    }
+
+    #[test]
     fn a_launcher_that_ends_before_the_first_look_still_leads_to_the_game() {
         let watch = racer(r"D:\Old Games\Racer\Launcher.exe", r"D:\Old Games\Racer");
-        // The launcher started bin\Racer.exe and ended before the watcher first looked.
-        let game = [proc(2, r"D:\Old Games\Racer\bin\Racer.exe", 101, Some(1))];
+        // The launcher, which Lamplit keeps open from the start: this test's own process stands in for it.
+        let launcher = {
+            let procs = Processes::now();
+            let me = procs.list().into_iter().find(|p| p.pid == std::process::id()).unwrap();
+            Held::open(me.pid, me.started).unwrap()
+        };
+        // It started bin\Racer.exe and ended before the watcher first looked.
+        let game = [proc(2, r"D:\Old Games\Racer\bin\Racer.exe", launcher.started, Some(launcher.pid))];
         assert!(watch.pids(&game).is_empty(), "nothing else leads to it");
-        // Windows told the launcher's id and start time when Lamplit started it.
-        watch.seed(1, 100);
+        watch.seed(launcher);
         assert_eq!(watch.pids(&game), HashSet::from([2]));
     }
 

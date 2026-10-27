@@ -1,15 +1,16 @@
 // This process: its single-instance lock, its console, and keeping the PC awake while it waits. And the exe another
-// process runs from.
+// process runs from, and keeping another process open.
 
 use std::ffi::OsString;
 use std::os::windows::ffi::OsStringExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::PathBuf;
-use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError, HANDLE};
+use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, FILETIME, GetLastError, HANDLE};
 use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
 use windows::Win32::System::Power::{ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED, SetThreadExecutionState};
 use windows::Win32::System::Threading::{
-    CreateMutexW, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+    CreateMutexW, GetProcessId, GetProcessTimes, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    QueryFullProcessImageNameW,
 };
 use windows::core::{HSTRING, PWSTR};
 
@@ -59,4 +60,61 @@ pub fn exe_path(pid: u32) -> Option<PathBuf> {
     }
     .ok()?;
     Some(PathBuf::from(OsString::from_wide(&buf[..len as usize])))
+}
+
+/// A process Lamplit keeps open. While a handle to a process is open, Windows gives its id to no other process, also
+/// after it has ended (only while a process runs is its id its own otherwise). Closes when dropped.
+pub struct Held {
+    pub pid: u32,
+    /// In seconds since 1970, as `Processes` (sysinfo) reads it, so the two compare.
+    pub started: u64,
+    _process: OwnedHandle,
+}
+
+impl Held {
+    /// Keeps open the process with id `pid` that started at `started`. None when it has ended, or another process has
+    /// that id by now.
+    pub fn open(pid: u32, started: u64) -> Option<Held> {
+        // SAFETY: takes plain values; the handle it returns is owned below.
+        let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }.ok()?;
+        // SAFETY: the handle was just opened for this function, and nothing else owns or closes it.
+        Held::of(unsafe { OwnedHandle::from_raw_handle(handle.0) }).filter(|h| h.pid == pid && h.started == started)
+    }
+
+    /// Keeps open the process `process` is a handle to. None when Windows doesn't tell its id or start time.
+    pub fn of(process: OwnedHandle) -> Option<Held> {
+        let handle = HANDLE(process.as_raw_handle());
+        let mut times = [FILETIME::default(); 4];
+        let [created, exited, kernel, user] = &mut times;
+        // SAFETY: the handle is open, and each FILETIME is a valid place for an answer.
+        let (pid, read) = unsafe { (GetProcessId(handle), GetProcessTimes(handle, created, exited, kernel, user)) };
+        let ticks = (u64::from(times[0].dwHighDateTime) << 32) | u64::from(times[0].dwLowDateTime);
+        // FILETIME counts 100 ns steps from 1601; 11_644_473_600 s lie between then and 1970.
+        let started = ticks / 10_000_000 - 11_644_473_600;
+        (pid != 0 && read.is_ok()).then_some(Held { pid, started, _process: process })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stores::Processes;
+    use std::process::{Command, Stdio};
+
+    #[test]
+    fn a_process_kept_open_keeps_its_id_after_it_ends() {
+        // cmd waits for a key that never comes.
+        let mut cmd =
+            Command::new("cmd").args(["/c", "pause"]).stdin(Stdio::piped()).stdout(Stdio::null()).spawn().unwrap();
+        let pid = cmd.id();
+        // Read and let go, as sysinfo keeps its own handles.
+        let started = Processes::now().list().iter().find(|p| p.pid == pid).unwrap().started;
+        let held = Held::open(pid, started).unwrap();
+        assert!(Held::open(pid, started + 1).is_none(), "a process that started at another time isn't this one");
+        cmd.kill().unwrap();
+        cmd.wait().unwrap();
+        drop(cmd);
+        assert!(Held::open(pid, started).is_some(), "ended, its id is still its own");
+        drop(held);
+    }
 }

@@ -2,16 +2,15 @@
 // Both run on a thread of their own, one call at a time. ShellExecute can take long (a packaged app activating, the
 // admin prompt of an exe that asks for one), and the thread that runs Lamplit's window must not wait for it.
 
+use super::process::Held;
 use std::ffi::OsStr;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::Path;
 use std::sync::LazyLock;
 use std::sync::mpsc;
-use windows::Win32::Foundation::{E_HANDLE, FILETIME, HANDLE};
+use windows::Win32::Foundation::{E_HANDLE, HANDLE};
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx};
-use windows::Win32::System::Threading::{
-    GetExitCodeProcess, GetProcessId, GetProcessTimes, INFINITE, WaitForSingleObject,
-};
+use windows::Win32::System::Threading::{GetExitCodeProcess, INFINITE, WaitForSingleObject};
 use windows::Win32::UI::Shell::{SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW, ShellExecuteW};
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use windows::core::{Error, HSTRING, PCWSTR, Result, w};
@@ -50,10 +49,9 @@ pub fn open(file: &OsStr, args: Option<&str>, dir: Option<&Path>) -> std::result
     if code > 32 { Ok(()) } else { Err(code) }
 }
 
-/// Starts `exe` as `open` does, and returns the process it started: its id and its start time in seconds since 1970,
-/// worked out as `Processes` (sysinfo) does, so the two compare. None when Windows doesn't say. Err is ShellExecute's
-/// error code, as for `open`.
-pub fn start(exe: &OsStr, args: Option<&str>, dir: Option<&Path>) -> std::result::Result<Option<(u32, u64)>, isize> {
+/// Starts `exe` as `open` does, and returns the process it started, kept open. None when Windows doesn't say which.
+/// Err is ShellExecute's error code, as for `open`.
+pub fn start(exe: &OsStr, args: Option<&str>, dir: Option<&Path>) -> std::result::Result<Option<Held>, isize> {
     let file = HSTRING::from(exe);
     let (args, dir) = (args.map(HSTRING::from), dir.map(|d| HSTRING::from(d.as_os_str())));
     on_shell_thread(move || {
@@ -77,16 +75,8 @@ pub fn start(exe: &OsStr, args: Option<&str>, dir: Option<&Path>) -> std::result
             return Ok(None);
         }
         // SAFETY: SEE_MASK_NOCLOSEPROCESS hands the new process's handle to the caller, and nothing else owns or
-        // closes it; it closes when `process` drops.
-        let process = unsafe { OwnedHandle::from_raw_handle(info.hProcess.0) };
-        let handle = HANDLE(process.as_raw_handle());
-        let mut times = [FILETIME::default(); 4];
-        let [created, exited, kernel, user] = &mut times;
-        // SAFETY: the handle is open, and each FILETIME is a valid place for an answer.
-        let (pid, read) = unsafe { (GetProcessId(handle), GetProcessTimes(handle, created, exited, kernel, user)) };
-        let ticks = (u64::from(times[0].dwHighDateTime) << 32) | u64::from(times[0].dwLowDateTime);
-        // FILETIME counts 100 ns steps from 1601; 11_644_473_600 s lie between then and 1970.
-        Ok((pid != 0 && read.is_ok()).then(|| (pid, ticks / 10_000_000 - 11_644_473_600)))
+        // closes it.
+        Ok(Held::of(unsafe { OwnedHandle::from_raw_handle(info.hProcess.0) }))
     })
 }
 
