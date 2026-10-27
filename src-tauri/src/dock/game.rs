@@ -55,6 +55,15 @@ fn asked_ago(id: &str, since: Instant) -> Option<Duration> {
     ASKED.lock().as_ref().filter(|(asked, at)| asked == id && *at >= since).map(|(_, at)| at.elapsed())
 }
 
+/// Remembers that the player asked the game `id` to close or ended it, in its session opened at `since`. An earlier
+/// request in this session stands: asking again mustn't restart the wait before the dock offers Force close.
+fn remember_ask(id: String, since: Instant) {
+    let mut asked = ASKED.lock();
+    if !asked.as_ref().is_some_and(|(a, at)| *a == id && *at >= since) {
+        *asked = Some((id, Instant::now()));
+    }
+}
+
 /// The player closed or ended the game `id` from the dock after `since` (when Lamplit opened it), so its end is no
 /// launcher handing over to the game, which a game that ends within 20 s of starting otherwise is.
 pub fn closed_from_dock(id: &str, since: Instant) -> bool {
@@ -94,7 +103,7 @@ pub fn close_game(app: &AppHandle, force: bool) -> Result<()> {
             return Err(Error::Player(format!("Windows didn't let Lamplit end {name}.")));
         }
         log::info!("dock: ended {name} ({ended} of {} processes)", pids.len());
-        *ASKED.lock() = Some((id.clone(), Instant::now()));
+        remember_ask(id.clone(), watch.opened);
         // The watcher notices only after the game has been gone for 5 s; until then the screen would show the desktop.
         launch::window::bring_lamplit_forward(app);
         events::emit(app, Event::Summoned(Some(id)));
@@ -110,7 +119,7 @@ pub fn close_game(app: &AppHandle, force: bool) -> Result<()> {
         }
     }
     log::info!("dock: asked {name} to close");
-    *ASKED.lock() = Some((id, Instant::now()));
+    remember_ask(id, watch.opened);
     // Back to the game, which may ask whether to quit.
     super::fold(app, true);
     Ok(())
@@ -134,7 +143,9 @@ mod tests {
         *ASKED.lock() = Some(("steam:70".into(), asked));
         assert!(closed_from_dock("steam:70", opened));
         assert!(!closed_from_dock("steam:80", opened));
-        // Asked 30 s ago in this session, and still running: the dock offers to end it.
+        // Asked 30 s ago in this session, and still running: the dock offers to end it, also after asking again.
+        assert!(offers_force(true, true, "steam:70", opened));
+        remember_ask("steam:70".into(), opened);
         assert!(offers_force(true, true, "steam:70", opened));
         // Opened again since: a launcher handing over is one again, and the new session is offered no forced close.
         let reopened = Instant::now();

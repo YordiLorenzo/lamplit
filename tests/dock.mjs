@@ -284,6 +284,31 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
+  // D10. The open dock reads the game again: a game that stops responding turns Close game into Force close without
+  // the dock opening again, a press already asked for starts over, and the folded dock stops asking.
+  {
+    const page = await openDock();
+    for (let i = 0; i < 5; i++) await emit(page, 'dock-pad', 'right');
+    await emit(page, 'dock-pad', 'ok');
+    let v = await view(page);
+    check('Close game waits for a second press', v.values.close === 'Close game|Press again', v.values.close);
+    await page.evaluate((hung) => (window.__settings.game = hung), ipc('dock-game'));
+    await until(page, () => document.querySelector('.tile[data-key="close"] .label')?.textContent === 'Force close');
+    v = await view(page);
+    check('the open dock offers Force close once the game stops responding, and asks first', v.values.close === 'Force close|Not responding', v.values.close);
+    const from = v.calls.length;
+    await emit(page, 'dock-pad', 'ok');
+    await emit(page, 'dock-pad', 'ok');
+    await idle(page);
+    check('Cross twice then ends the game', (await since(page, from)).includes('dock_close_game {"force":true}'), JSON.stringify(await since(page, from)));
+    await emit(page, 'dock', closed);
+    const reads = async () => (await view(page)).calls.filter(([cmd]) => cmd === 'dock_state').length;
+    const folded = await reads();
+    await page.waitForTimeout(2500);
+    check('the folded dock stops reading the game', (await reads()) === folded, `${folded} then ${await reads()}`);
+    await close(page);
+  }
+
   // D8. The dock draws the controller's buttons with index.html's own symbols.
   {
     const symbols = (file) => pageFile(file).match(/<symbol id="btn-[\s\S]*?<\/symbol>/g) ?? [];

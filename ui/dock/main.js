@@ -38,6 +38,11 @@ const els = {
 const NEWS_HOLD_MS = 2600;
 /** How long a message under the tiles stays. */
 const MESSAGE_MS = 6000;
+/**
+ * How often the open dock reads the game again: Close game becomes Force close once the game stops responding, or
+ * still runs 10 s after it was asked to close (dock/game.rs).
+ */
+const GAME_EVERY_MS = 2000;
 
 const state = {
   /** @type {'gone' | 'news' | 'open'} */
@@ -79,6 +84,7 @@ function shape(mode) {
 }
 
 let newsTimer = 0;
+let gameTimer = 0;
 
 function open() {
   clearTimeout(newsTimer);
@@ -91,10 +97,13 @@ function open() {
   shape('open');
   sfx.open();
   refresh();
+  clearInterval(gameTimer);
+  gameTimer = setInterval(rereadGame, GAME_EVERY_MS);
 }
 
 function fold() {
   clearTimeout(newsTimer);
+  clearInterval(gameTimer);
   if (state.mode !== 'gone') shape('gone');
 }
 
@@ -247,6 +256,25 @@ async function refresh() {
   d.quiet = quiet ?? d.quiet;
   d.overlays = overlays ?? d.overlays;
   render();
+}
+
+/** A reading of the game still on its way: a hung game takes Rust a second per window to tell. */
+let readingGame = false;
+
+/** The game again, while the dock is open. */
+async function rereadGame() {
+  if (readingGame || state.mode !== 'open') return;
+  readingGame = true;
+  try {
+    const game = await orKeep(api.dockState());
+    if (game === undefined || state.mode !== 'open') return;
+    // Close game turned into Force close: a press already asked for was for the other one.
+    if (game?.force_close !== state.data.game?.force_close) state.data.confirm = false;
+    state.data.game = game;
+    render();
+  } finally {
+    readingGame = false;
+  }
 }
 
 /** The headset, a controller or the sound device changed. */
