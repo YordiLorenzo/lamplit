@@ -351,11 +351,26 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
   border-radius: calc(var(--u) * 2.8);
 }
 .tile .glyph { position: relative; display: grid; place-items: center; }
+/* A switch that is on glows in the lamp's colour: a soft light drawn once behind its icon, which fades in and out (a
+   drop-shadow filter would be drawn again on every frame of the change). */
+.tile .glyph::before {
+  content: '';
+  position: absolute;
+  width: calc(var(--u) * 7);
+  height: calc(var(--u) * 7);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(var(--lamp) / .32), rgb(var(--lamp) / 0));
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.tile.on .glyph::before { opacity: 1; }
+.tile.primary .glyph::before { content: none; }
 .tile .icon {
+  position: relative;
   width: calc(var(--u) * 5.4);
   height: calc(var(--u) * 5.4);
   color: var(--ink-dim);
-  transition: color 160ms ease, scale var(--snap-ms) var(--snap), filter 200ms ease;
+  transition: color 160ms ease, scale var(--snap-ms) var(--snap);
 }
 .tile .label {
   max-width: 100%;
@@ -369,7 +384,7 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
 }
 .tile.focus .icon { color: var(--ink); scale: 1.1; }
 .tile.focus .label { color: var(--ink); }
-.tile.on .icon { color: rgb(var(--lamp)); filter: drop-shadow(0 0 calc(var(--u) * 1) rgb(var(--lamp) / .6)); }
+.tile.on .icon { color: rgb(var(--lamp)); }
 .tile.warn .icon { color: var(--warn); }
 .tile.warn.focus .label { color: var(--warn); }
 

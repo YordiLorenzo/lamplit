@@ -288,6 +288,12 @@ pub fn dock_glass(island: Option<win::glass::Shape>) -> bool {
     dock::show_glass(island)
 }
 
+/// The home page has drawn its screen after coming forward: the dock over it goes.
+#[tauri::command]
+pub fn dock_home_drawn(app: AppHandle) {
+    dock::home_drawn(&app);
+}
+
 /// Squeezes the real glass under the dock's island into the pill as the page folds it.
 #[tauri::command]
 pub fn dock_glass_fold(fold: win::glass::Fold) {

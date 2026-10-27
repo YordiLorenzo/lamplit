@@ -33,21 +33,37 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('resize', layout);
 
 let arrivedTimer = 0;
+let arrivals = 0;
+const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+
+/** The hero on screen decoded, or 300 ms on, whichever comes first. */
+function heroDecoded() {
+  const url = els.heroes[state.heroLayer]?.style.backgroundImage.match(/url\("(.*)"\)/)?.[1];
+  if (!url) return Promise.resolve();
+  const img = new Image();
+  img.src = url;
+  return Promise.race([img.decode().catch(() => {}), new Promise((resolve) => setTimeout(resolve, 300))]);
+}
+
 /**
  * Back from a game: the veil shows on the first frame Lamplit draws in front (a window behind a game draws nothing
- * until it comes forward), then lifts while the screen settles in (style.css #arrival).
+ * until it comes forward), then lifts while the screen settles in (style.css #arrival). Behind a game the window had
+ * let go of what it drew, so its first frames in front redraw the whole screen: the settling starts once the hero is
+ * decoded and those frames are out, and the dock's veil over it lifts then too (dock_home_drawn).
  */
-function arrive() {
+async function arrive() {
+  const mine = ++arrivals;
   clearTimeout(arrivedTimer);
   document.body.classList.remove('arrived');
   document.body.classList.add('arriving');
+  await heroDecoded();
+  await nextFrame();
+  await nextFrame();
+  if (mine !== arrivals) return;
+  api.dockHomeDrawn().catch(() => {});
   meter('home: arrive', 600);
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() => {
-      document.body.classList.replace('arriving', 'arrived');
-      arrivedTimer = setTimeout(() => document.body.classList.remove('arrived'), 600);
-    })
-  );
+  document.body.classList.replace('arriving', 'arrived');
+  arrivedTimer = setTimeout(() => document.body.classList.remove('arrived'), 600);
 }
 
 window.addEventListener('error', (e) => api.log.error(`${e.message} at ${e.filename}:${e.lineno}`));

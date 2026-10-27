@@ -180,7 +180,8 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   the foreground makes the game leave full screen.
 - **Open**, the window covers the game's screen, transparent but for the dock, and takes the foreground, as the home
   screen does. The island takes its size at once, clipped to the pill at its bottom centre, and the clip springs open:
-  the folding below in reverse, with nothing laid out per frame. When a game starts the hidden page gets ready (it
+  the folding below in reverse, with nothing laid out per frame. The spring starts two frames after the window shows:
+  Windows composes the game anew for a frame or two when a window comes up over it. When a game starts the hidden page gets ready (it
   reads what it shows, draws and decodes the art, and works out the open layout once), and the real glass is made with
   the window, so the first opening has nothing to do but open.
   A window that left the game the foreground (`WS_EX_NOACTIVATE`) would leave the game reading every press: XInput,
@@ -203,8 +204,8 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   Circle does: its window refuses to close, since Lamplit keeps its handle for the next hold of PS. After each
   opening, fold and Home the page logs its frames, the longest wait between two and the 95th percentile (`dock: fold
   64 frames, worst 9 ms, 95% 8 ms`); the home page logs its veil the same way (`home: arrive`, `home: leave`).
-  Coming forward, the home page asks for a rescan 0.9 s later, once its veil and the dock's fold have played: reading
-  the drives and the art meanwhile cost them frames.
+  Coming forward, the home page asks for a rescan 0.9 s later, once its veil has lifted: reading the drives and the
+  art meanwhile cost it frames.
 - **News** (`dock/news.rs`) shows in a strip around the folded pill at the bottom centre, with `WS_EX_NOACTIVATE`
   and `WS_EX_TRANSPARENT`: the game keeps the foreground and its clicks. Only over a running game, with Lamplit not
   in front and no exclusive full screen.
@@ -218,7 +219,7 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
 The page sizes the dock in hundredths of the screen's height (`--u`, from `screen.height`), as the home screen is
 sized in `vh`. The island's width and height follow the face it shows, with a spring easing built as a CSS `linear()`
 curve; one focus ring springs from tile to tile on a quicker one. Behind the faces, the game's own art is drawn small
-and blurred into a canvas, which the page scales up to the island: a blur that costs nothing while the island moves,
+(`createImageBitmap` scales it down off the page's thread) and blurred into a canvas, which the page scales up to the island: a blur that costs nothing while the island moves,
 where CSS `backdrop-filter` couldn't see the game behind a transparent window at all. Once the island rests open,
 Windows' real glass takes the art's place where Windows 11 22H2 or later has transparency effects on (`dock/glass.rs`,
 `win/glass.rs`): a Windows.UI.Composition visual in the dock's own window, behind the page, filled with the host
@@ -229,9 +230,11 @@ follow the island's springs: before the island moves, the page puts its own glas
 asks for it again where the island comes to rest. Close game asks for Cross held: the pad sends `dock-pad` with
 `ok-up` when Cross is let go after a press (`devices/pad/navigation.rs`), or when the controller holding it goes, and
 only the open dock hears of it. Home draws a veil in the game's colours over the whole of the open dock's window,
-which covers the screen; behind the veil the home window comes forward, and the dock folds, which lifts the veil
-(`dock/mod.rs` home). The home page lifts a veil of its own as it settles in (`ui/main.js` arrive). Back to game is the reverse: the home page eases out under the same
-veil, then asks Rust to bring the game forward (`launch_resume`), and drops the veil once its window has lost the
+which covers the screen; behind the veil the home window comes forward under a veil of its own (`dock/mod.rs` home).
+Its first frames in front redraw the whole screen (65 to 80 ms on TOASTER), so the home page waits for its hero to
+decode and two frames to pass, then says so (`dock_home_drawn`): the dock's window goes, and the home page lifts its
+veil as it settles in (`ui/main.js` arrive). Without word from the home page, the dock folds 450 ms in all the same.
+Back to game is the reverse: the home page eases out under the same veil, then asks Rust to bring the game forward (`launch_resume`), and drops the veil once its window has lost the
 foreground (`ui/launch.js` backToGame).
 
 ## Commands
@@ -276,6 +279,7 @@ message is written for the player, and the page shows it.
 | `dock_state` | | The game the dock is over: `{ id, name, art, started, responding, force_close }`, or `null` |
 | `dock_resume` | | Nothing; the dock folds and the game is in front again |
 | `dock_home` | | Nothing; the home screen comes forward and the dock goes |
+| `dock_home_drawn` | | Nothing; the home page has drawn behind the veil, and the dock goes |
 | `dock_glass` | `island`: `{ x, y, width, height, radius }` in the window's pixels, or `null` | Whether real glass is under the island now |
 | `dock_glass_fold` | `fold`: `{ to, ms, curve, after, fade, drop }`, the pill and the spring the page folds the island with | Nothing; Rust squeezes the real glass the same way |
 | `dock_close_game` | `force` | Nothing, once Windows has the request; the game's end follows as after any game |

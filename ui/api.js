@@ -296,6 +296,8 @@ export const dockState = () => call('dock_state');
  */
 /** Real glass under the island where it rests, or with null none. @param {DockIsland | null} island @returns {Promise<boolean>} true when it shows */
 export const dockGlass = (island) => call('dock_glass', { island });
+/** The home screen has drawn after coming forward: the dock over it goes. @returns {Promise<void>} */
+export const dockHomeDrawn = () => call('dock_home_drawn');
 /**
  * Squeezes the real glass under the island into the pill as the page folds it: `to` where the pill is, over `ms` on
  * `curve` (the spring's way from 0 to 1), then it drops by `drop` pixels and fades over `fade` ms, `after` ms in.

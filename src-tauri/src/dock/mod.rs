@@ -68,10 +68,14 @@ static SHOWING: AtomicU64 = AtomicU64::new(0);
 /// How long the page takes to fold the dock away: a clip squeezes the island into the pill, which drops onto the edge
 /// and goes (dock.css #island[data-mode='gone'], main.js FOLD_MS).
 const FOLD: Duration = Duration::from_millis(520);
-/// How long the page takes to veil the game for Home (dock.css #veil), and how long the home window then has to draw
-/// itself behind the veil before it lifts.
-const VEIL: Duration = Duration::from_millis(220);
-const HAND_OVER: Duration = Duration::from_millis(120);
+/// How long the page takes to veil the game for Home (dock.css #veil).
+const VEIL: Duration = Duration::from_millis(260);
+/// The home window, behind a game until now, redraws its whole screen when it comes forward: on TOASTER its first
+/// frames took 65 to 80 ms, and the GPU they share stalled the dock's frames too. The dock goes once the home page says
+/// it has drawn (`home_drawn`), or folds after this at the latest.
+const HAND_OVER: Duration = Duration::from_millis(450);
+/// The showing whose Home waits for the home page to have drawn behind the veil, 0 for none.
+static HANDING_OVER: AtomicU64 = AtomicU64::new(0);
 /// How long news shows: the page springs it open, holds it and folds it in this time.
 const NEWS_FOR: Duration = Duration::from_millis(3200);
 
@@ -210,9 +214,9 @@ const fn ms(n: u64) -> Duration {
 }
 
 /// Home from the open dock. Its page veils the game in the game's colours, over the whole screen, which the open
-/// dock's window covers; behind the veil the home window comes forward on the game's card, and the dock folds, which
-/// lifts the veil off the home screen. Circle meanwhile goes back to the game instead. During a launch, Lamplit comes
-/// forward as before.
+/// dock's window covers; behind the veil the home window comes forward on the game's card, under a veil of its own.
+/// Once the home page has drawn, the dock goes and the home page lifts its veil (`home_drawn`). Circle meanwhile goes
+/// back to the game instead. During a launch, Lamplit comes forward as before.
 pub fn home(app: &AppHandle) {
     if !is_open() || app.state::<Launcher>().starting().is_some() {
         return launch::window::summon(app);
@@ -232,13 +236,27 @@ pub fn home(app: &AppHandle) {
             let Some(main) = home.get_webview_window("main").and_then(|w| w.hwnd().ok()) else { return };
             // Below the dock, which stays above every window until it has folded.
             win::window::force_foreground(HWND(main.0));
+            HANDING_OVER.store(showing, Ordering::SeqCst);
             events::emit(&home, Event::Summoned(home.state::<Launcher>().running_id()));
             std::thread::spawn(move || {
                 std::thread::sleep(HAND_OVER);
-                fold(&home, false);
+                if SHOWING.load(Ordering::SeqCst) == showing {
+                    log::info!("dock: the home screen didn't say it had drawn; the veil lifts all the same");
+                    fold(&home, false);
+                }
             });
         });
     });
+}
+
+/// The home page has drawn behind the veil, its own veil first (main.js arrive), so the dock goes at once: one veil
+/// lifting over the home screen, where two lifting together cost the GPU frames on TOASTER. Anything else (Lamplit
+/// summoned without the dock) has nothing waiting.
+pub fn home_drawn(app: &AppHandle) {
+    let showing = SHOWING.load(Ordering::SeqCst);
+    if HANDING_OVER.swap(0, Ordering::SeqCst) == showing && showing != 0 {
+        hide(app);
+    }
 }
 
 /// Back to the window that was in front when the dock opened, or else to the game's own window.
