@@ -50,10 +50,13 @@ const work = mkdtempSync(path.join(tmpdir(), 'lamplit-stores-'));
   const location = db.prepare('INSERT INTO "install_locations" VALUES (?, ?)');
   const game = db.prepare('INSERT INTO "games" ("id", "url", "title", "type", "classification") VALUES (?, ?, ?, ?, ?)');
   const insert = db.prepare(`INSERT INTO "caves" ("id", "game_id", "upload_id", "verdict", "install_location_id",
-    "install_folder_name", "custom_install_folder", "installed_size", "settings") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  // A cave's settings hold, among others, the launch target the player picked in the app.
-  const cave = (id, gameId, uploadId, verdictJson, location, folder, custom, size, settings = '{}') =>
-    insert.run(id, gameId, uploadId, verdictJson, location, folder, custom, size, settings);
+    "install_folder_name", "custom_install_folder", "installed_size", "settings", "installed_at", "last_touched_at",
+    "local_last_run_at") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  // A cave's settings hold, among others, the launch target the player picked in the app; its times say when it was
+  // installed, last touched and last run here, as RFC 3339 text.
+  const cave = (id, gameId, uploadId, verdictJson, location, folder, custom, size, settings = '{}', times = {}) =>
+    insert.run(id, gameId, uploadId, verdictJson, location, folder, custom, size, settings, times.installed ?? null,
+      times.touched ?? null, times.run ?? null);
   const candidate = (p, depth, flavor, size) => ({ path: p, depth, flavor, arch: 'amd64', size });
   const verdict = (basePath, candidates) => JSON.stringify({ basePath, totalSize: 123456789, candidates });
 
@@ -69,7 +72,7 @@ const work = mkdtempSync(path.join(tmpdir(), 'lamplit-stores-'));
     candidate('UnityCrashHandler64.exe', 1, 'windows', 9000000),
     candidate('tools/editor.exe', 2, 'windows', 20000000),
     ...padding,
-  ]), 'loc-default', 'fennel', '', 150000000);
+  ]), 'loc-default', 'fennel', '', 150000000, '{}', { installed: '2026-10-25T09:00:00Z', touched: '2026-10-01T14:00:00+05:00' });
   db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
 
   db.exec('BEGIN');
@@ -80,6 +83,11 @@ const work = mkdtempSync(path.join(tmpdir(), 'lamplit-stores-'));
   game.run(1004, 'https://example.itch.io/clover', 'Clover™', 'default', 'game');
   cave('cave-custom', 1004, 5004, verdict('D:\\Games\\Clover', [candidate('bin/clover.exe', 2, 'windows', 100)]), '', 'clover', 'D:\\Games\\Clover', 100, '{"sandbox":false,"launchTarget":"play"}');
   game.run(1005, 'https://example.itch.io/share-game', 'Share Game', 'default', 'game');
+  // Fennel's beta, a second download of the same game. butler launches the cave used last, by the first of its
+  // local run, touched and installed times that is set: the beta (run 10:30 UTC) over the first download (touched
+  // 09:00 UTC). Compared as text, or by the latest of the three times, the first download would win instead.
+  cave('cave-fennel-beta', 1001, 5007, verdict(`${apps}\\fennel-beta`, [candidate('FennelBeta.exe', 1, 'windows', 100)]),
+    'loc-default', 'fennel-beta', '', 100, '{}', { installed: '2026-10-02T08:00:00Z', run: '2026-10-01T10:30:00.25Z' });
   cave('cave-share', 1005, 5005, verdict('\\\\nas\\itch\\share-game', [candidate('share.exe', 1, 'windows', 100)]), 'loc-share', 'share-game', '', 100);
   for (let id = 2000; id < 2200; id++) game.run(id, `https://example.itch.io/filler-${id}`, `Filler ${id}`, 'default', 'game');
   db.exec('COMMIT');

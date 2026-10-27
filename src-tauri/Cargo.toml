@@ -27,8 +27,9 @@ parking_lot = "0.13"
 log = "0.4"
 # The app's log. Its fern re-export also logs the supervisor and --setup, which run without Tauri.
 tauri-plugin-log = "2"
-# Local timestamps in the log lines (the version and features tauri-plugin-log already builds).
-time = { version = "0.3", features = ["formatting", "local-offset", "macros"] }
+# Local timestamps in the log lines, and the itch app's play times (the version and features tauri-plugin-log already
+# builds).
+time = { version = "0.3", features = ["formatting", "local-offset", "macros", "parsing"] }
 hidapi = { version = "2.6", default-features = false, features = ["windows-native"] }
 winreg = "0.56"
 sysinfo = "0.39"
