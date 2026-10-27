@@ -1,11 +1,11 @@
 // @ts-check
 // The screensaver in a normal browser, without Lamplit: every scene, coloured from the covers in the README's
-// screenshot of the home screen (docs/images/home.jpg) and from Lamplit's own colours, or from an image dropped on
-// the page. Serve the repository's folder (python3 -m http.server 8123) and open /ui/screensaver/preview.html.
+// screenshot of the home screen (docs/images/home.jpg), from Lamplit's own colours and from a grey palette, or from
+// an image dropped on the page. Serve the repository's folder (python3 -m http.server 8123) and open /ui/screensaver/preview.html.
 // The address can pick what shows: ?scene=dunes&look=2&at=40&hud=0 (at: seconds into the scene), and cap=0 draws as
 // fast as the GPU can, so the frame rate in the corner says what a scene costs.
 
-import { LAMPLIT, medianCut, scenePalette } from './palette.js';
+import { LAMPLIT, medianCut, paletteOf, scenePalette } from './palette.js';
 import { Saver, pixelsOf } from './saver.js';
 import { SCENES } from './scenes.js';
 
@@ -56,7 +56,12 @@ const params = new URLSearchParams(location.search);
 document.getElementById('served')?.remove();
 const saver = new Saver(/** @type {HTMLElement} */ (document.getElementById('saver')));
 /** @type {Look[]} */
-const looks = [...(await coverLooks()), { name: 'Lamplit', palette: LAMPLIT }];
+const looks = [
+  ...(await coverLooks()),
+  { name: 'Lamplit', palette: LAMPLIT },
+  // A game whose art is grey all over, the hardest palette to make something of.
+  { name: 'Grey', palette: paletteOf([[118, 118, 120], [160, 158, 154], [70, 71, 74], [205, 205, 200]]) },
+];
 let look = Math.min(looks.length - 1, Number(params.get('look') ?? 0));
 let scene = Math.max(0, SCENES.findIndex((s) => s.id === params.get('scene')));
 saver.setLooks(looks.slice(look).concat(looks.slice(0, look)));

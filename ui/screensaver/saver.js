@@ -317,7 +317,7 @@ export class Saver {
     if (this.next && blend >= 1) {
       this.current = this.next;
       this.next = null;
-      r?.targets.reverse();
+      r?.swap();
       return this.step();
     }
     const dark = this.clock > RUN_LIMIT_S;
