@@ -14,7 +14,10 @@ use crate::events::{self, Event, LaunchStep, Play, StepState};
 use crate::library::{Game, Launch};
 use crate::prefs;
 use crate::stores::{self, Account, Processes, Store, steam};
-use crate::win::{self, process::keep_awake};
+use crate::win::{
+    self,
+    process::{Held, keep_awake},
+};
 use parking_lot::Mutex;
 use std::ffi::OsStr;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -150,7 +153,7 @@ pub fn start(app: &AppHandle, game: Game) {
 }
 
 /// Starts the store apps the game needs and opens the game: the process its exe started, if Windows says.
-fn prepare(app: &AppHandle, game: &Game, generation: u64) -> Result<Option<(u32, u64)>, Stop> {
+fn prepare(app: &AppHandle, game: &Game, generation: u64) -> Result<Option<Held>, Stop> {
     for &store in &game.requires {
         ensure_store(app, game, store, generation)?;
     }
@@ -325,9 +328,9 @@ fn not_opened(file: &OsStr, code: isize) -> Error {
     })
 }
 
-/// Opens the game. For a game started from its exe, returns the process that started (id and start time), which may
-/// start the game proper and end before the watcher first looks.
-fn open_game(game: &Game) -> Result<Option<(u32, u64)>> {
+/// Opens the game. For a game started from its exe, returns the process that started, kept open, which may start the
+/// game proper and end before the watcher first looks.
+fn open_game(game: &Game) -> Result<Option<Held>> {
     let started = match &game.launch {
         Launch::Uri(_) => shell_open(&game.launch, None).map(|()| None),
         Launch::Exe(exe) | Launch::ExeArgs(exe, _) => {
@@ -346,7 +349,7 @@ fn open_game(game: &Game) -> Result<Option<(u32, u64)>> {
         Launch::Exe(p) => p.display().to_string(),
         Launch::ExeArgs(p, args) => format!("{} {args}", p.display()),
     };
-    let process = started.map_or(String::new(), |(pid, _)| format!(", process {pid}"));
+    let process = started.as_ref().map_or(String::new(), |s| format!(", process {}", s.pid));
     log::info!("launch {} ({}) via {target}{process}", game.name, game.id);
     Ok(started)
 }

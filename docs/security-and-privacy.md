@@ -122,7 +122,8 @@ These don't change any setting, but you may notice them:
   the processes it started. It is offered only when the game isn't responding or
   didn't close when asked, and Windows refuses it for a game run as administrator.
 - To know when a game runs, it reads the list of running processes and the folder each runs from. It doesn't inject
-  code into games or read their memory.
+  code into games or read their memory. For a game added by hand, it keeps the game's processes open while it watches
+  them, with the right to read their basic facts only, so Windows doesn't give their ids to other programs meanwhile.
 - **Settings > Power** asks Windows to sleep, restart or shut down (`SetSuspendState`, `InitiateShutdownW`). For
   that, Lamplit enables the shutdown privilege, which a standard account holds but has switched off, in its own
   process only. It doesn't force apps to close, and it doesn't sign out another account that is signed in.

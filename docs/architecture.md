@@ -144,9 +144,10 @@ controller is read into the same buttons, by position (south is Cross or A), so 
    - For a game added by hand, the game's processes are the exe Lamplit started and every process that came from it,
      wherever it runs from, leaving out Windows' own helpers (a shell, a console host) on the way, and the player's
      own programs it may open, with what they start: a browser, a store or chat app (`NOT_THE_GAME` in `watch.rs`).
-     Windows tells the started process's id and start time at launch, so a launcher that starts the game and exits
-     before the first poll still leads to it. A program that later gets the id of one of the game's processes is not
-     the game, and neither is what it starts, also after it exits.
+     Lamplit keeps each of the game's processes open until a poll finds it gone (the exe it started, from launch on),
+     so meanwhile Windows gives its id to no other program: a process whose parent has that id came from it. A
+     launcher that starts the game and exits before the first poll still leads to it, and a program that gets a
+     launcher's id once it has gone is not the game.
    - While it runs: the time between two polls that both see it counts as play time, at most 5 seconds per poll (a
      longer gap is the PC asleep). It is saved to `games.json` every minute and when the game's processes go.
    - Gone again within 20 seconds of starting: a launcher handing over to the game, or a crash at start. A `play`
