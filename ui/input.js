@@ -7,6 +7,7 @@ import { toast } from './hints.js';
 import { backToGame, cancelLaunch, play } from './launch.js';
 import { closeDetails, detailChoice, markGame, move, moveDetails, openDetails, showAllGames } from './library.js';
 import { narrowed } from './logic.js';
+import { wake } from './screensaver/index.js';
 import { adjustSetting, backSettings, closeSettings, moveSettings, openSettings, selectSetting } from './settings.js';
 import { actionableStep, els, state } from './state.js';
 
@@ -50,6 +51,8 @@ window.addEventListener('focus', stir);
  */
 export function act(action, source) {
   stir();
+  // The press that ends the screensaver does nothing else; keys and clicks it catches itself (screensaver/index.js).
+  if (wake(action)) return;
   const now = performance.now();
   if (source === 'pad') {
     state.lastPad = now;

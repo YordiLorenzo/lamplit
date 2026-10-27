@@ -89,13 +89,15 @@ const serveFile = (route, file, headers) =>
 
 /**
  * Opens the page in `uiDir` in a new tab and waits until it is ready. `opts` are the fake Tauri's (see fakeTauri),
- * plus `now`: a Date the page's clock stands still at.
+ * plus `now`: a Date the page's clock stands still at, and `clock`: Playwright's fake timers, so a test can move the
+ * page's time on with page.clock (the screensaver's minutes without input).
  * @param {import('playwright-core').Browser} browser
  * @param {string} uiDir
  */
 export async function open(browser, uiDir, opts, viewport = { width: 1920, height: 1080 }) {
   const page = await browser.newPage({ viewport });
   if (opts.now) await page.clock.setFixedTime(opts.now);
+  if (opts.clock) await page.clock.install();
   await page.route(`${pageOrigin}/**`, (route) =>
     serveFile(route, path.join(uiDir, new URL(route.request().url()).pathname), { 'Content-Security-Policy': cspHeader })
   );

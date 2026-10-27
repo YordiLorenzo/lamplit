@@ -6,6 +6,7 @@ import { setPadKind, toast } from './hints.js';
 import { act } from './input.js';
 import { onPlay, onStep, onSummoned } from './launch.js';
 import { layout, onArt, setGames } from './library.js';
+import { startScreensaver } from './screensaver/index.js';
 import { refreshAccessories, setSetup, setStores } from './settings.js';
 import { els, state } from './state.js';
 
@@ -47,13 +48,16 @@ async function init() {
     api.onNotice(toast),
     api.onSetup(setSetup),
   ]);
-  const [list, running, stores, kind] = await Promise.all([
+  const [list, running, stores, kind, prefs] = await Promise.all([
     api.libraryGames(),
     api.launchRunning(),
     api.storesStatus(),
     api.controllerKind(),
+    api.prefsState(),
   ]);
   state.running = running;
+  // The screensaver's delay and style; Settings may have read newer prefs meanwhile.
+  state.prefs ??= prefs;
   setStores(stores);
   // A "games" event that arrived while this answer was on its way is at least as new, with later art applied to it.
   if (list && !heardGames) setGames(list);
@@ -62,4 +66,5 @@ async function init() {
   api.log.info(`ready ${Math.round(performance.now())} ms after the page started, ${list?.length ?? 'no'} games yet`);
 }
 
+startScreensaver();
 init();

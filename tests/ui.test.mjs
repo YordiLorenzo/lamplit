@@ -482,7 +482,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('c');
   await idle(page);
   let v = await view();
-  check('settings open on the list of sections, Power last', v.open && v.title === 'Settings' && v.rows.length === 7 && v.rows[6].startsWith('Power'), JSON.stringify(v.rows));
+  check('settings open on the list of sections, Power last', v.open && v.title === 'Settings' && v.rows.length === 8 && v.rows[7].startsWith('Power'), JSON.stringify(v.rows));
   check('section summaries say what is going on', v.rows[0].includes('PRO X 2 headset · 45%') && v.rows[1].includes('On · 80% · charging') && v.rows[2].includes('2 connected · 65%, medium') && v.rows[4].includes('EA app: sign in'), JSON.stringify(v.rows));
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
@@ -1400,6 +1400,225 @@ const findView = (page) =>
   await emit(page, 'pad', 'right');
   const s = await state(page);
   check('a mirrored key counts once, and the next real press after it still moves', s.focusIndex === 2, `focus ${s.focusIndex}`);
+  await close(page);
+}
+
+/** The screensaver as the page shows it, and what is underneath. */
+const saverView = (page) =>
+  page.evaluate(() => {
+    const el = document.getElementById('saver');
+    return {
+      on: !!el?.classList.contains('on'),
+      mode: el?.dataset.mode ?? '',
+      scene: el?.dataset.scene ?? '',
+      focus: [...document.querySelectorAll('.cover')].findIndex((c) => c.classList.contains('focus')),
+      starting: document.getElementById('overlay').classList.contains('on'),
+      calls: window.__calls.map((c) => c[0]),
+    };
+  });
+/** Waits for the screensaver to show (it fades in once its first frame is drawn). */
+const saverOn = (page) => until(page, () => document.querySelector('#saver.on'));
+
+// 28. The screensaver: after five minutes without input it covers the screen, and the first press only ends it. The
+// key, the pad's own press of the same button (Steam mirrors one as the other), a held direction's repeats and a click
+// do nothing else. It stays away while a game runs or another window is in front.
+{
+  const page = await open({ games: [game(1), game(2), game(3), game(4)], clock: true });
+  await page.clock.fastForward('04:50');
+  await page.waitForTimeout(200);
+  let v = await saverView(page);
+  check('no screensaver before five minutes without input', !v.on, JSON.stringify(v));
+  await page.clock.fastForward('00:15');
+  await saverOn(page);
+  v = await saverView(page);
+  check('the screensaver shows after five minutes without input', v.on && ['webgl', 'css'].includes(v.mode), JSON.stringify(v));
+  await page.keyboard.press('ArrowRight');
+  await emit(page, 'pad', 'right');
+  v = await saverView(page);
+  check('a key ends the screensaver and moves nothing, nor does the pad press Steam mirrored it from', !v.on && v.focus === 0, JSON.stringify(v));
+  await page.clock.runFor(600);
+  await emit(page, 'pad', 'right');
+  v = await saverView(page);
+  check('the next press moves again', v.focus === 1, `focus ${v.focus}`);
+
+  await page.clock.fastForward('05:05');
+  await saverOn(page);
+  await emit(page, 'pad', 'ok');
+  v = await saverView(page);
+  check('✕ ends the screensaver without starting the game', !v.on && !v.starting && !v.calls.includes('launch_start'), JSON.stringify(v));
+
+  await page.clock.runFor(600);
+  await page.clock.fastForward('05:05');
+  await saverOn(page);
+  // Rust repeats a held direction after 380 ms, then every 110 ms, then faster.
+  await emit(page, 'pad', 'left');
+  for (const gap of [380, 110, 110, 70]) {
+    await page.clock.runFor(gap);
+    await emit(page, 'pad', 'left');
+  }
+  v = await saverView(page);
+  check('a direction held after the press that ended the screensaver moves nothing', !v.on && v.focus === 1, JSON.stringify(v));
+
+  // The pointer rests on the focused cover while the screensaver shows; a click there ends it and starts nothing.
+  const [x, y] = await page.evaluate(() => {
+    const r = document.querySelector('.cover.focus').getBoundingClientRect();
+    return [r.x + r.width / 2, r.y + r.height / 2];
+  });
+  await page.mouse.move(x, y);
+  await page.clock.runFor(600);
+  await page.clock.fastForward('05:05');
+  await saverOn(page);
+  await page.mouse.move(x + 3, y + 2);
+  v = await saverView(page);
+  check('a twitch of the pointer leaves the screensaver on', v.on, JSON.stringify(v));
+  await page.mouse.click(x + 3, y + 2);
+  v = await saverView(page);
+  check('a click ends the screensaver, and the cover under it starts nothing', !v.on && !v.starting && !v.calls.includes('launch_start'), JSON.stringify(v));
+
+  await page.clock.runFor(600);
+  await emit(page, 'play', play('running', 'pc:2'));
+  await page.clock.fastForward('10:00');
+  await page.waitForTimeout(200);
+  v = await saverView(page);
+  check('no screensaver while a game runs', !v.on, JSON.stringify(v));
+  await emit(page, 'play', play('ended', 'pc:2'));
+  await page.clock.fastForward('05:05');
+  await saverOn(page);
+  await emit(page, 'play', play('running', 'pc:2'));
+  await until(page, () => !document.querySelector('#saver.on'));
+  v = await saverView(page);
+  check('a game that starts ends the screensaver', !v.on, JSON.stringify(v));
+
+  await emit(page, 'play', play('ended', 'pc:2'));
+  await page.evaluate(() => {
+    document.hasFocus = () => false;
+    window.dispatchEvent(new Event('blur'));
+  });
+  await page.clock.fastForward('10:00');
+  await page.waitForTimeout(200);
+  v = await saverView(page);
+  check('no screensaver while another window is in front', !v.on, JSON.stringify(v));
+  await close(page);
+}
+
+// 29. Settings > Screensaver: ← and → step the delay (Off among them) and the scenes, saved through Rust; Off keeps it
+// away; Show it now shows it, in the scenes chosen, and the ✕ that asked for it doesn't end it.
+{
+  const page = await open({ games: [game(1), game(2)], clock: true });
+  await page.evaluate((prefs) => {
+    const s = (window.__settings = { prefs });
+    s.prefs_state = () => s.prefs;
+    s.prefs_set_screensaver_minutes = ({ minutes }) => ((s.prefs.screensaver_minutes = minutes), s.prefs);
+    s.prefs_set_screensaver_style = ({ style }) => ((s.prefs.screensaver_style = style), s.prefs);
+  }, ipc('prefs'));
+  const view = () =>
+    page.evaluate(() => ({
+      open: document.getElementById('settings').classList.contains('on'),
+      rows: [...document.querySelectorAll('#settingsList .row')].map((r) => r.textContent),
+      focus: document.querySelector('#settingsList .row.focus')?.textContent ?? null,
+      sent: window.__calls.filter((c) => c[0].startsWith('prefs_set_screensaver')),
+    }));
+  /** Moves focus down to the row that starts with `label`. */
+  const down = async (label) => {
+    for (let i = 0; i < 12 && !(await view()).focus?.startsWith(label); i++) await page.keyboard.press('ArrowDown');
+  };
+  await page.keyboard.press('c');
+  await idle(page);
+  await down('Screensaver');
+  let v = await view();
+  check('Settings lists the screensaver with its delay and scenes', v.focus === 'ScreensaverAfter 5 min · 2D and 3D', v.focus);
+  await page.keyboard.press('Enter');
+  await idle(page);
+  v = await view();
+  check(
+    'the Screensaver section: the delay, the scenes and Show it now',
+    JSON.stringify(v.rows.slice(0, 3)) === '["Starts after5 min","Scenes2D and 3D","Show it now"]' && v.focus === 'Starts after5 min',
+    JSON.stringify(v.rows)
+  );
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.press('ArrowLeft');
+    await idle(page);
+  }
+  v = await view();
+  check(
+    '← steps the delay down to Off and stops there',
+    JSON.stringify(v.sent) === '[["prefs_set_screensaver_minutes",{"minutes":2}],["prefs_set_screensaver_minutes",{"minutes":0}]]' && v.focus === 'Starts afterOff',
+    JSON.stringify(v)
+  );
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowRight');
+  await idle(page);
+  v = await view();
+  check('→ steps the scenes to 2D only', JSON.stringify(v.sent.at(-1)) === '["prefs_set_screensaver_style",{"style":"2d"}]' && v.focus === 'Scenes2D', JSON.stringify(v));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.clock.fastForward('30:00');
+  await page.waitForTimeout(200);
+  let s = await saverView(page);
+  check('with the screensaver Off, half an hour without input shows none', !s.on, JSON.stringify(s));
+
+  await page.keyboard.press('c');
+  await idle(page);
+  await down('Screensaver');
+  await page.keyboard.press('Enter');
+  await down('Show it now');
+  await page.keyboard.press('Enter');
+  // The pad's own press of the ✕ that Steam mirrored as Enter.
+  await emit(page, 'pad', 'ok');
+  await saverOn(page);
+  s = await saverView(page);
+  check("Show it now shows the screensaver in the scenes chosen, and the ✕ that asked doesn't end it", s.on && ['silk', 'waves', 'ink'].includes(s.scene), JSON.stringify(s));
+  await page.clock.runFor(600);
+  await page.keyboard.press('Escape');
+  v = await view();
+  s = await saverView(page);
+  check('a press ends it and leaves Settings where it was', !s.on && v.open && v.focus === 'Show it now', JSON.stringify({ s, v }));
+  await close(page);
+}
+
+// 30. Without WebGL2 the screensaver is a moving CSS gradient, still in the colours of the player's game art, with the
+// game's logo.
+{
+  const plain = await generateArt();
+  const page = await open({ games: [game(1, { art: plain })], clock: true });
+  await page.evaluate(() => {
+    const get = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+      return type === 'webgl2' ? null : get.call(this, type, ...rest);
+    };
+  });
+  await page.clock.fastForward('05:05');
+  await saverOn(page);
+  const v = await page.evaluate(() => {
+    const el = document.getElementById('saver');
+    const css = el.querySelector('.saver-css');
+    return {
+      on: el.classList.contains('on'),
+      mode: el.dataset.mode,
+      shown: getComputedStyle(css).display,
+      canvas: getComputedStyle(el.querySelector('canvas')).display,
+      moving: css.querySelector('i').getAnimations().length,
+      colours: [1, 2, 3].map((i) => getComputedStyle(css).getPropertyValue(`--c${i}`).trim()),
+      logo: el.querySelector('.saver-mark img').getAttribute('src'),
+      log: window.__logs.find((line) => line.includes('screensaver on')),
+    };
+  });
+  check('without WebGL2 the screensaver shows a moving CSS gradient', v.on && v.mode === 'css' && v.shown === 'block' && v.canvas === 'none' && v.moving > 0, JSON.stringify(v));
+  // The generated hero art is one red-orange (#b4432c); a main colour of the palette keeps its hue.
+  const hue = (css) => {
+    const [r, g, b] = css.match(/\d+/g).map(Number);
+    const max = Math.max(r, g, b), d = max - Math.min(r, g, b);
+    const h = !d ? 0 : max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return (h * 60 + 360) % 360;
+  };
+  const art = hue('rgb(180 67 44)');
+  check(
+    "the screensaver's colours come from the game's art",
+    v.colours.some((c) => c && Math.min(Math.abs(hue(c) - art), 360 - Math.abs(hue(c) - art)) < 12),
+    `${JSON.stringify(v.colours)} near ${Math.round(art)}`
+  );
+  check("the game's logo drifts over it", v.logo?.endsWith(encodeURIComponent(plain.logo)), v.logo);
+  check('the log says why there is no WebGL', /css \(WebGL2 is not available\), colours from 1 game$/.test(v.log ?? ''), v.log);
   await close(page);
 }
 

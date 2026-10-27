@@ -10,7 +10,7 @@ use crate::devices::{accessories, audio};
 use crate::error::{Error, Result};
 use crate::launch::{self, Launcher};
 use crate::library::{self, Game, Library};
-use crate::prefs::{self, Prefs};
+use crate::prefs::{self, Prefs, ScreensaverStyle};
 use crate::stores::steam::devtools;
 use crate::stores::{self, Store};
 use crate::system::{overlay, power, quiet, setup};
@@ -206,6 +206,17 @@ pub async fn prefs_set_steam_devtools(app: AppHandle, on: bool) -> Result<Prefs>
 #[tauri::command]
 pub async fn prefs_set_online_art(app: AppHandle, on: bool) -> Result<Prefs> {
     blocking(move || library::set_online_art(&app, on).map(|()| prefs::get(&app))).await?
+}
+
+/// Minutes without input before the screensaver, 0 for never. The page reads the prefs again, so nothing else follows.
+#[tauri::command]
+pub async fn prefs_set_screensaver_minutes(app: AppHandle, minutes: u32) -> Result<Prefs> {
+    blocking(move || prefs::change(&app, |p| p.screensaver_minutes = minutes).map(|()| prefs::get(&app))).await?
+}
+
+#[tauri::command]
+pub async fn prefs_set_screensaver_style(app: AppHandle, style: ScreensaverStyle) -> Result<Prefs> {
+    blocking(move || prefs::change(&app, |p| p.screensaver_style = style).map(|()| prefs::get(&app))).await?
 }
 
 /// Returns once the PC has woken up again.

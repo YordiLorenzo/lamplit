@@ -1,0 +1,43 @@
+/* The preview's page around the screensaver: a dark background and a corner with what shows and the keys. */
+
+html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: #eee; }
+body { font: 14px/1.4 system-ui, sans-serif; }
+
+#hud {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 60;
+  max-width: calc(100vw - 32px);
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgb(0 0 0 / .5);
+  backdrop-filter: blur(8px);
+}
+#hud[hidden] { display: none; }
+#now { font-weight: 600; margin-bottom: 6px; }
+#keys { display: flex; flex-wrap: wrap; gap: 4px 14px; color: #bbb; }
+#keys b {
+  display: inline-block;
+  min-width: 1.4em;
+  margin-right: 3px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / .14);
+  text-align: center;
+  font-weight: 600;
+}
+#drop { margin-top: 6px; color: #888; }
+
+#served {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  padding: 24px;
+  background: #0b0b12;
+  text-align: center;
+}
+#served pre, #served code { color: #fca545; }
