@@ -309,6 +309,46 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
+  // D11. The dock opens on what it knew of the game. A press of Close game made before Rust answers was for that
+  // offer: when the answer turns it into Force close, or names another game, the next press asks again.
+  {
+    const page = await openDock();
+    await emit(page, 'dock', closed);
+    // Rust answers when the test says so.
+    await page.evaluate((hung) => {
+      window.__answers = [];
+      window.__settings.dock_state = () => new Promise((resolve) => window.__answers.push(() => resolve(hung)));
+    }, ipc('dock-game'));
+    await emit(page, 'dock', opened);
+    for (let i = 0; i < 5; i++) await emit(page, 'dock-pad', 'right');
+    await emit(page, 'dock-pad', 'ok');
+    let v = await view(page);
+    check('before Rust answers, the dock asks about the game it knew', v.values.close === 'Close game|Press again', v.values.close);
+    await page.evaluate(() => window.__answers.forEach((answer) => answer()));
+    await idle(page);
+    v = await view(page);
+    check('an answer that turns Close game into Force close takes back the press', v.values.close === 'Force close|Not responding', v.values.close);
+    let from = v.calls.length;
+    await emit(page, 'dock-pad', 'ok');
+    await idle(page);
+    v = await view(page);
+    check('the next press asks again rather than forcing the game closed', !(await since(page, from)).some((c) => c.startsWith('dock_close_game')) && v.values.close === 'Force close|Press again', `${v.values.close} ${JSON.stringify(await since(page, from))}`);
+    // Another game runs now, with the same offer: a press asked for the old one asks again.
+    await page.evaluate((other) => {
+      window.__settings.dock_state = () => other;
+    }, like(ipc('dock-game'), { id: 'steam:80', name: 'Other game' }));
+    await emit(page, 'dock', closed);
+    await emit(page, 'dock', opened);
+    await idle(page);
+    for (let i = 0; i < 5; i++) await emit(page, 'dock-pad', 'right');
+    await emit(page, 'dock-pad', 'ok');
+    await page.evaluate((hung) => (window.__settings.dock_state = () => hung), like(ipc('dock-game'), { id: 'steam:90', name: 'Third game' }));
+    await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 2300)));
+    v = await view(page);
+    check('a press asked for one game is no press for the next', v.values.close === 'Force close|Not responding' && v.game === 'Third game', `${v.values.close} ${v.game}`);
+    await close(page);
+  }
+
   // D8. The dock draws the controller's buttons with index.html's own symbols.
   {
     const symbols = (file) => pageFile(file).match(/<symbol id="btn-[\s\S]*?<\/symbol>/g) ?? [];

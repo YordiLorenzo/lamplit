@@ -238,6 +238,17 @@ const orKeep = (call) => call.catch(() => undefined);
 /** Asked so far; only the newest answers are shown, since two refreshes can answer in either order. */
 let refreshes = 0;
 
+/**
+ * The game as Rust reads it now. A press of Close game already asked for was for the game and the offer the player
+ * saw: when the offer turned into Force close, or another game runs now, the next press asks again.
+ * @param {import('../api.js').DockGame | null} game
+ */
+function setGame(game) {
+  const was = state.data.game;
+  if (game?.id !== was?.id || game?.force_close !== was?.force_close) state.data.confirm = false;
+  state.data.game = game;
+}
+
 /** Everything the dock shows, read again each time it opens. */
 async function refresh() {
   const asked = ++refreshes;
@@ -250,7 +261,7 @@ async function refresh() {
   ]);
   if (asked !== refreshes) return;
   const d = state.data;
-  if (game !== undefined) d.game = game;
+  if (game !== undefined) setGame(game);
   d.sound = sound ?? d.sound;
   d.accessories = accessories ?? d.accessories;
   d.quiet = quiet ?? d.quiet;
@@ -268,9 +279,7 @@ async function rereadGame() {
   try {
     const game = await orKeep(api.dockState());
     if (game === undefined || state.mode !== 'open') return;
-    // Close game turned into Force close: a press already asked for was for the other one.
-    if (game?.force_close !== state.data.game?.force_close) state.data.confirm = false;
-    state.data.game = game;
+    setGame(game);
     render();
   } finally {
     readingGame = false;
