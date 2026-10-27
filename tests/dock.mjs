@@ -425,6 +425,34 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
+  // D14. The same game started again: a reading during a hold that names its new session lets go of the hold, and a
+  // hold sends the session it began on.
+  {
+    const page = await openDock();
+    await emit(page, 'dock', closed);
+    const restarted = like(game, { session: game.session + 1 });
+    const later = () =>
+      page.evaluate((now) => {
+        window.__answers = [];
+        window.__settings.dock_state = () => new Promise((resolve) => window.__answers.push(() => resolve(now)));
+      }, restarted);
+    const answer = () => page.evaluate(() => window.__answers.splice(0).forEach((a) => a()));
+    await later();
+    await emit(page, 'dock', opened);
+    for (let i = 0; i < 5; i++) await emit(page, 'dock-pad', 'right');
+    let from = (await view(page)).calls.length;
+    await emit(page, 'dock-pad', 'ok');
+    await answer();
+    await page.waitForTimeout(HELD_MS);
+    let v = await view(page);
+    check('a reading that names a new session of the game lets go of the hold', v.values.close === 'Close game' && (await closes(page, from)).length === 0, `${v.values.close} ${await closes(page, from)}`);
+    // Held again, on the new session: that is the session the close names.
+    from = v.calls.length;
+    await hold(page, HELD_MS);
+    check('a hold sends the session it began on', JSON.stringify(await closes(page, from)) === JSON.stringify([closing(false, restarted)]), JSON.stringify(await closes(page, from)));
+    await close(page);
+  }
+
   // D11. A hold of Close game was for the offer and the game the player saw: when an answer from Rust turns it into
   // Force close, or names another game, the hold is let go and nothing closes.
   {

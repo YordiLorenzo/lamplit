@@ -409,7 +409,8 @@ let refreshes = 0;
  */
 function setGame(game) {
   const was = state.data.game;
-  if (game?.id !== was?.id || game?.force_close !== was?.force_close) cancelHold();
+  const changed = game?.id !== was?.id || game?.session !== was?.session || game?.force_close !== was?.force_close;
+  if (changed) cancelHold();
   state.data.game = game;
 }
 
@@ -526,11 +527,14 @@ let holding = 0;
 
 function startHold() {
   const el = tileEl('close');
-  if (!el || !state.data.game) return;
+  const game = state.data.game;
+  if (!el || !game) return;
   el.style.setProperty('--hold-ms', `${HOLD_MS}ms`);
   el.classList.add('holding');
   sfx.move();
-  holding = setTimeout(closeGame, HOLD_MS);
+  // What the player holds Cross for: this game, in this session, with this offer, whatever is read meanwhile.
+  const target = { force: game.force_close, id: game.id, session: game.session };
+  holding = setTimeout(() => closeGame(target), HOLD_MS);
 }
 
 /** Let go before the ring was full, or the offer changed underneath: nothing closes. */
@@ -541,18 +545,17 @@ function cancelHold() {
   tileEl('close')?.classList.remove('holding');
 }
 
-function closeGame() {
+/** @param {{ force: boolean, id: string, session: number }} target */
+function closeGame(target) {
   holding = 0;
   const el = tileEl('close');
   el?.classList.remove('holding');
   el?.classList.add('closing');
   setTimeout(() => el?.classList.remove('closing'), 450);
-  const game = state.data.game;
-  if (!game) return;
   sfx.launch();
-  // The game as the dock shows it, which may be what it knew before Rust's answer: Rust closes nothing else. What
-  // Rust answers shows first; the game is read again after.
-  run(() => api.dockCloseGame(game.force_close, game.id, game.session)).then(rereadGame);
+  // The game as the dock showed it when the hold began, which may be what it knew before Rust's answer: Rust closes
+  // nothing else. What Rust answers shows first; the game is read again after.
+  run(() => api.dockCloseGame(target.force, target.id, target.session)).then(rereadGame);
 }
 
 function select() {
