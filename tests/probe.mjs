@@ -85,7 +85,7 @@ export async function probeTests({ open, close, check, games }) {
       JSON.stringify(lines)
     );
     const steps = lines.filter((l) => l.includes(' row-step '));
-    check('the first of each interaction is cold, the next one not', steps[0]?.endsWith(', cold') && !steps[1]?.includes('cold'), JSON.stringify(steps));
+    check('the first of each interaction is cold, the next one not', steps[0]?.includes(', cold,') && !steps[1]?.includes('cold'), JSON.stringify(steps));
     await close(page);
   }
   {

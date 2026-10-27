@@ -9,10 +9,11 @@
 // the press's own work counts. Then the main thread's work per frame, which tells a frame that would miss 120 Hz's
 // 8.3 ms on a screen running at 60 Hz. Then, where they apply: the long animation frames, the late frames and when
 // they came, the time from the press to its first frame and to the paint after it, how many presses it took (a held
-// direction, typing), `cold` for the first of its name since the page started, and `cut` when another press ended it
-// early. The longest frames get a line of their own (probe-detail), with the scripts that ran in them, and every
-// frame's gap and work follow in a probe-frames line, for percentiles over many runs. The interaction is named from
-// the press and what was on screen then: lift-open, row-step, settings-section-sound, dock-output-open.
+// direction, typing), `cold` for the first of its name since the page started, `cut` when another press ended it
+// early, and the wall-clock time of the press. The longest frames get a line of their own (probe-detail), with the
+// scripts that ran in them, and every frame's gap and work follow in a probe-frames line, for percentiles over many
+// runs. The interaction is named from the press and what was on screen then: lift-open, row-step,
+// settings-section-sound, dock-output-open.
 
 import * as api from './api.js';
 
@@ -148,6 +149,13 @@ const at = (sorted, share) => sorted[Math.min(sorted.length - 1, Math.max(0, Mat
 const ms = (n) => n.toFixed(1);
 /** @param {any[]} list */
 const longest = (list) => Math.round(Math.max(0, ...list.map((e) => e.duration)));
+/** @param {number} n */
+const two = (n) => String(n).padStart(2, '0');
+/** The wall clock at `t` on performance.now()'s clock, HH:MM:SS.mmm, to line the probe up with other tools. @param {number} t */
+function wall(t) {
+  const d = new Date(Date.now() - performance.now() + t);
+  return `${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}`;
+}
 
 /** @param {Run} r */
 function report(r) {
@@ -175,6 +183,7 @@ function report(r) {
   if (!named.has(r.name)) line += ', cold';
   if (r.cut) line += ', cut';
   if (r.hidden) line += ', hidden';
+  line += `, pressed ${wall(r.t0)}`;
   named.add(r.name);
   api.log.info(line);
   const list = (/** @type {number[]} */ values) => values.map((v) => v.toFixed(1)).join(' ');
