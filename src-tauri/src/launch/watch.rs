@@ -37,10 +37,11 @@ const ANSWER_WITHIN: Duration = Duration::from_millis(100);
 pub struct Watch {
     dirs: Vec<String>,
     names: Vec<String>,
-    /// A game the player added by hand: the exe Lamplit starts, and the processes seen coming from it. Its folder can
-    /// hold other programs too (Downloads, say), so the game is that exe and what it started, wherever that runs from
-    /// (a launcher in `Launcher\` starts the game in `bin\`), and not everything in the folder. Shared by the copies of
-    /// a watch: the watcher's polls and the dock's close requests add to it.
+    /// A game outside any store, added by hand or found (Windows' game list may name an exe in Downloads): the exe
+    /// Lamplit starts, and the processes seen coming from it. Its folder can hold other programs too, so the game is
+    /// that exe and what it started, wherever that runs from (a launcher in `Launcher\` starts the game in `bin\`), and
+    /// not everything in the folder, as for a store's game. Shared by the copies of a watch: the watcher's polls and
+    /// the dock's close requests add to it.
     launched: Option<(String, Arc<Mutex<Lineage>>)>,
     /// When this launch opened the game. What the player asked of the game before then was about an earlier session.
     pub opened: Instant,
@@ -50,7 +51,7 @@ impl Watch {
     fn of(g: &Game) -> Self {
         let dirs = std::iter::once(&g.dir).chain(&g.extra_dirs).map(|d| format!("{}\\", folder_key(d))).collect();
         let launched = match &g.launch {
-            Launch::Exe(exe) if g.manual => Some((folder_key(exe), Arc::default())),
+            Launch::Exe(exe) if g.store.is_none() => Some((folder_key(exe), Arc::default())),
             _ => None,
         };
         Watch { dirs, names: g.exe_names.clone(), launched, opened: Instant::now() }
@@ -82,7 +83,7 @@ impl Watch {
         watch
     }
 
-    /// The process Lamplit started for a game added by hand, kept open from the start: it may start the game proper
+    /// The process Lamplit started for a game outside any store, kept open from the start: it may start the game proper
     /// and end before the watcher first looks, which then has nothing else to tell the game's processes by.
     fn seed(&self, started: Held) {
         if let Some((_, lineage)) = &self.launched {
@@ -90,7 +91,7 @@ impl Watch {
         }
     }
 
-    /// For a game added by hand: its exe, and what that started, running now. Not the helpers of Windows' own a game
+    /// For a game outside any store: its exe, and what that started, running now. Not the helpers of Windows' own a game
     /// starts on the way (a shell, a console host), nor Xbox's GameLaunchHelper (see `select`), which aren't the game
     /// and mustn't be closed with it; what they start still counts.
     fn lineage((exe, lineage): &(String, Arc<Mutex<Lineage>>), procs: &[Proc]) -> HashSet<u32> {
@@ -131,8 +132,8 @@ impl Watch {
 }
 
 /// Programs a game may start that are the player's own, not the game: a browser (a store page, a sign-in, patch notes),
-/// and the store and chat apps. A game added by hand is what came from its exe (`Lineage`); these, and what they start
-/// in turn, stay out of that, so they neither keep the game's session going and count as play time, nor close with it.
+/// and the store and chat apps. A game outside any store is what came from its exe (`Lineage`); these, and what they
+/// start in turn, stay out of that, so they neither keep the game's session going and count as play time, nor close with it.
 const NOT_THE_GAME: &[&str] = &[
     "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "opera_gx.exe", "brave.exe", "vivaldi.exe", "iexplore.exe",
     "arc.exe", "steam.exe", "steamwebhelper.exe", "epicgameslauncher.exe", "eadesktop.exe", "upc.exe",
@@ -548,6 +549,23 @@ mod tests {
         let mut game = Game::new("manual:racer".into(), "Racer".into(), None, PathBuf::from(dir), Launch::Exe(exe));
         game.manual = true;
         Watch::of(&game)
+    }
+
+    #[test]
+    fn a_game_found_outside_any_store_is_its_exe_and_what_it_started() {
+        // Windows' game list has an exe in Downloads, which discovery takes as the game's folder.
+        let exe = PathBuf::from(r"D:\Downloads\Racer.exe");
+        let game = Game::new(r"pc:d:\downloads".into(), "Racer".into(), None, r"D:\Downloads".into(), Launch::Exe(exe));
+        let watch = Watch::of(&game);
+        let procs = [
+            proc(1, r"D:\Downloads\Racer.exe", 100, Some(900)),
+            proc(2, r"D:\Downloads\Racer\RacerGame.exe", 101, Some(1)),
+            // The player's own: an installer and an editor in Downloads.
+            proc(3, r"D:\Downloads\setup.exe", 102, Some(900)),
+            proc(4, r"D:\Downloads\Tools\editor.exe", 103, Some(900)),
+        ];
+        assert_eq!(watch.own_pids(&procs), [1, 2].into(), "closing the game would close the installer and the editor");
+        assert_eq!(watch.pids(&procs), [1, 2].into());
     }
 
     #[test]
