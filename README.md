@@ -150,12 +150,15 @@ How it works, and its limits:
 
 - **Art that moves while nobody plays.** After five minutes without a press on the controller, the keyboard or the
   mouse, while Lamplit is in front and no game runs, a screensaver covers the home screen, so a still picture can't
-  mark an OLED TV. It draws its scenes live: three in 2D (draped silk, layered waves, coloured ink) and four in 3D
-  (a desert at the end of the day, soft shapes that melt into each other, glass forms that bend the light behind
-  them, an aurora over a lake). Every minute and a half or so the next scene blends in.
-- **Coloured from your games.** Each scene takes its colours from the art of one of your games, favourites and the
-  most recently played first, and that game's logo or name drifts faintly through it. Night scenes keep a deep blue
-  dark, and no scene lets a yellow fade to olive.
+  mark an OLED TV. It draws its scenes live: five in 2D (draped silk, layered waves, coloured ink, fine lines of light
+  carried by a slow current, and your hero art coming apart into points of light) and seven in 3D (your covers in a
+  dark gallery, a desert at the end of the day, the open sea at sunset, a nebula to drift through, soft shapes that
+  melt into each other, glass forms that bend the light behind them, an aurora over a lake). Every minute and a half
+  or so the next scene comes in: in a crossfade, through the dark parts first, through drifting noise, or pushing in.
+- **Made from your games.** Each scene takes its colours from the art of one of your games, favourites and the most
+  recently played first, and that game's logo or name drifts faintly through it. Gallery shows your covers on a
+  glossy floor, and Drift turns one game's hero art into another's through thousands of points of light. Night scenes
+  keep a deep blue dark, and no scene lets a yellow fade to olive.
 - **Easy on the TV.** Nothing on it stands still, its average brightness is held down, and after an hour it fades to
   black. It draws at part of the screen's resolution and at most 30 frames a second, and stops the moment a game
   starts. Without WebGL2 it shows a slowly moving gradient instead.

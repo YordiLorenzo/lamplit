@@ -48,8 +48,9 @@ ui/
   logic.js         pure functions (the cover row's search and order, the Settings rows), tested in Node
   hints.js         the button hints and short messages
   sounds.js        interface sounds made with Web Audio
-  screensaver/     the screensaver: when it shows and what ends it (index.js), the show (saver.js), the WebGL2
-                   renderer, the scenes' shaders, palettes from the game art, and preview.html to view it in a browser
+  screensaver/     the screensaver: when it shows and what ends it (index.js), the show and the games' art it loads
+                   (saver.js), the WebGL2 renderer with its particles, the scenes' shaders, palettes from the game art,
+                   and preview.html to view it in a browser
   dock.html, dock/ the in-game dock's page: main.js draws it and acts on presses, logic.js (pure, tested in Node)
                    works out its tiles, hints and spring, dock.css
 tests/
