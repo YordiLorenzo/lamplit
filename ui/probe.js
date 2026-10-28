@@ -297,6 +297,7 @@ async function home() {
       row: s.rows[s.idx],
       section: s.section,
       findFocus: state.findFocus,
+      findList: !!state.findList,
       add: state.add.view,
       addKind: state.add.rows.filter((r) => r.kind)[state.add.idx]?.kind,
     };
@@ -333,12 +334,14 @@ async function home() {
       return null;
     }
     if (s.mode === 'find') {
-      if (action === 'back') return 'find-close';
+      // ○ closes the store list when it is open (find.js backFind), else Find.
+      if (action === 'back') return s.findList ? 'find-stores-close' : 'find-close';
       if (dir) return 'find-move';
       if (action === 'square' || action === 'triangle') return 'find-type';
       if (action !== 'ok') return null;
+      if (s.findFocus === 'store') return 'find-stores-open';
       const [kind] = s.findFocus.split(':');
-      return { done: 'find-close', clear: 'find-clear', store: 'find-store', sort: 'find-sort' }[kind] ?? 'find-type';
+      return { done: 'find-close', clear: 'find-clear', store: 'find-store-pick', sort: 'find-sort' }[kind] ?? 'find-type';
     }
     if (s.mode === 'add' && s.add === 'name') {
       return { back: 'add-name-back', ok: 'add-key-press', square: 'add-type', triangle: 'add-type' }[action] ?? (dir ? 'add-key-step' : null);
