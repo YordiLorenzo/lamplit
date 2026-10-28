@@ -6,12 +6,20 @@
 import * as api from '../api.js';
 import { accentOf, buttonFace, counts, nothingSeen, quietMode } from '../logic.js';
 import { meter } from '../frames.js';
+import { hold, holdRing } from '../hold.js';
+import { mountIcons } from '../icons.js';
+import { fillPill } from '../pill.js';
+import { focusRing } from '../ring.js';
+import { reduced } from '../morph.js';
+import { FADE_MS, SPRINGS, nameSprings } from '../springs.js';
 import { steady } from '../steady.js';
 import { sfx } from '../sounds.js';
-import { HOLD_MS, chips, hints, outputIcon, sessionText, spring, tiles, volumeText } from './logic.js';
+import { chips, hints, outputIcon, sessionText, tiles, volumeText } from './logic.js';
 
 /** @typedef {import('./logic.js').TileKey} TileKey */
 /** @typedef {import('../api.js').Action | import('../api.js').DockRelease} Step */
+
+mountIcons(document);
 
 /** @param {string} id */
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
@@ -21,8 +29,6 @@ const els = {
   shade: $('shade'),
   backdrop: /** @type {HTMLCanvasElement} */ ($('backdrop')),
   news: $('news'),
-  newsIcon: $('newsIcon'),
-  newsText: $('newsText'),
   dock: $('dock'),
   cover: /** @type {HTMLImageElement} */ ($('cover')),
   game: $('game'),
@@ -38,8 +44,10 @@ const els = {
   outputList: $('outputList'),
   message: $('message'),
   hint: $('hint'),
-  ring: $('ring'),
 };
+
+/** The focus ring, placed from the dock's bottom (dock.css). */
+const ring = focusRing(els.dock, { bottom: true });
 
 /** How long news stays before it folds; Rust hides the window a little later (dock/mod.rs NEWS_FOR). */
 const NEWS_HOLD_MS = 2600;
@@ -114,7 +122,7 @@ function shape(mode) {
   }
   els.island.style.setProperty('--fold-x', '0px');
   els.island.style.setProperty('--fold-y', '0px');
-  if (moves && mode === 'open') glassTimer = setTimeout(takeGlass, springMs + SETTLE_MS);
+  if (moves && mode === 'open') glassTimer = setTimeout(takeGlass, SPRINGS.lift.ms + SETTLE_MS);
 }
 
 /**
@@ -155,9 +163,10 @@ function squeeze() {
     const box = els.island.getBoundingClientRect();
     const k = devicePixelRatio;
     const to = { x: (box.x + x) * k, y: (box.y + y) * k, width: PILL.width * u * k, height: PILL.height * u * k, radius: PILL.round * u * k };
+    const close = SPRINGS.close;
     const fold = reduced()
       ? { to: glassShape(), ms: 1, curve: [0, 1], after: 0, fade: FADE_MS, drop: 0 }
-      : { to, ms: springMs, curve: springCurve, after: springMs * 0.5, fade: 200, drop: 2.4 * u * k };
+      : { to, ms: close.ms, curve: close.points, after: close.ms * 0.5, fade: 200, drop: 2.4 * u * k };
     api.dockGlassFold(fold).catch(() => {});
   }
   state.mode = 'gone';
@@ -167,9 +176,6 @@ function squeeze() {
 
 /** How long folding takes: the squeeze, then the drop (dock.css). Rust hides the window then (dock/mod.rs FOLD). */
 const FOLD_MS = 520;
-/** Windows' animation effects are off: the island fades in place in FADE_MS rather than springing (dock.css). */
-const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-const FADE_MS = 150;
 let restTimer = 0;
 
 /**
@@ -197,9 +203,6 @@ function rest() {
 
 /** After the island's spring (its delay and a frame or two): it rests, and real glass can go under it. */
 const SETTLE_MS = 140;
-let springMs = 520;
-/** The spring's way from 0 to 1, for Rust to squeeze the glass on (logic.js spring). @type {number[]} */
-let springCurve = [0, 1];
 let glassTimer = 0;
 /** Counts the asks for glass, so an answer to an earlier one is let go. */
 let glassAsks = 0;
@@ -251,8 +254,7 @@ function open() {
   cancelHold();
   say('');
   // The ring comes on Resume with Resume itself, rather than springing there from where it was last time (dock.css).
-  els.ring.classList.add('instant');
-  els.ring.classList.remove('on');
+  ring.hide();
   // Open at once for the controller, the keyboard and the answers drawn meanwhile.
   state.mode = 'open';
   render();
@@ -264,10 +266,12 @@ function open() {
   steady(
     () => {
       if (mine !== openings) return;
+      // The ring's fade starts with the tiles' (dock.css #dock .ring.instant); then it springs from what had the focus
+      // to what has it.
+      ring.el.classList.add('instant');
       shape('open');
-      meter('dock: open', springMs + 130);
-      // Its fade has started with the tiles': from here on it springs from what had the focus to what has it.
-      requestAnimationFrame(() => els.ring.classList.remove('instant'));
+      meter('dock: open', SPRINGS.lift.ms + 130);
+      requestAnimationFrame(() => ring.el.classList.remove('instant'));
     },
     { cap: STEADY_MS }
   );
@@ -314,9 +318,7 @@ function goHome() {
 /** @param {Extract<import('../api.js').DockShow, { mode: 'status' }>} news */
 function showNews(news) {
   if (state.mode === 'open') return;
-  els.newsIcon.setAttribute('href', `#i-${news.icon}`);
-  els.newsText.textContent = news.text;
-  els.news.classList.toggle('warn', news.warn);
+  fillPill(els.news, { icon: /** @type {import('../icons.js').IconId} */ (`i-${news.icon}`), text: news.text, warn: news.warn });
   measure();
   shape('news');
   clearTimeout(newsTimer);
@@ -401,7 +403,7 @@ function say(text) {
   }, MESSAGE_MS);
 }
 
-/** A symbol from dock.html. @param {string} id */
+/** One of the shared icons (icons.js). @param {string} id */
 function icon(id) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.classList.add('icon');
@@ -418,22 +420,6 @@ function span(cls, text) {
   s.className = cls;
   s.textContent = text;
   return s;
-}
-
-/** The ring that fills around Close game's icon while Cross is held. */
-function holdRing() {
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.classList.add('hold');
-  svg.setAttribute('viewBox', '0 0 40 40');
-  svg.setAttribute('aria-hidden', 'true');
-  for (const cls of ['track', 'fill']) {
-    const c = document.createElementNS(ns, 'circle');
-    c.classList.add(cls);
-    for (const [k, v] of [['cx', '20'], ['cy', '20'], ['r', '18'], ['pathLength', '100']]) c.setAttribute(k, v);
-    svg.append(c);
-  }
-  return svg;
 }
 
 /** The drawn PlayStation symbols and d-pad arrows; Xbox letters stay text. @type {Record<string, string>} */
@@ -530,7 +516,7 @@ function render() {
     el.classList.toggle('on', t.on);
     el.classList.toggle('warn', t.tone === 'warn');
     el.classList.toggle('focus', state.row === 'tiles' && state.tile === t.key);
-    el.classList.toggle('holding', t.key === 'close' && holding !== 0);
+    el.classList.toggle('holding', t.key === 'close' && letGo !== null);
     el.style.setProperty('--i', String(i + 1));
     setHref(/** @type {SVGUseElement} */ (el.querySelector('.icon use')), `#i-${t.icon}`);
     setText(/** @type {HTMLElement} */ (el.querySelector('.label')), t.label);
@@ -592,32 +578,13 @@ function focused() {
 }
 
 /**
- * Moves the focus ring onto what has the focus, from where it was: it springs there. Laid out from the dock's own
- * boxes, so a tile still coming in, or the island still opening, doesn't throw it off. The volume draws its own
- * ring, since it changes size as it opens.
+ * The focus ring (ring.js), on what has the focus while the dock is open. The volume draws its own, since it changes
+ * size as it opens.
  */
 function placeRing() {
   const el = focused();
-  els.ring.classList.toggle('on', !!el && state.row !== 'volume');
-  if (!el || state.mode !== 'open' || state.row === 'volume') return;
-  // After this frame's layout: a list of outputs that just opened has no boxes yet.
-  requestAnimationFrame(() => {
-    let [x, y, n] = [0, 0, /** @type {HTMLElement | null} */ (el)];
-    while (n && n !== els.dock) {
-      x += n.offsetLeft;
-      y += n.offsetTop;
-      n = /** @type {HTMLElement | null} */ (n.offsetParent);
-    }
-    if (els.outputList.contains(el)) y -= els.outputList.scrollTop;
-    const r = els.ring.style;
-    r.setProperty('--x', `${x}px`);
-    // From the dock's bottom (dock.css #ring).
-    r.setProperty('--y', `${y + el.offsetHeight - els.dock.offsetHeight}px`);
-    r.setProperty('--w', `${el.offsetWidth}px`);
-    r.setProperty('--h', `${el.offsetHeight}px`);
-    r.setProperty('--r', getComputedStyle(el).borderRadius);
-    els.ring.classList.add('on');
-  });
+  if (!el || state.row === 'volume') ring.el.classList.remove('on');
+  else if (state.mode === 'open') ring.move(el);
 }
 
 // ---------- what the dock knows ----------
@@ -771,34 +738,31 @@ function focusRow(row) {
   render();
 }
 
-/** Cross is held on Close game: the game closes once it has been held HOLD_MS. */
-let holding = 0;
+/** Cross is held on Close game (hold.js): letting go before the ring is full, while it fills. */
+let letGo = /** @type {(() => void) | null} */ (null);
 
 function startHold() {
   const el = tileEl('close');
   const game = state.data.game;
   if (!el || !game) return;
-  el.style.setProperty('--hold-ms', `${HOLD_MS}ms`);
-  el.classList.add('holding');
   sfx.move();
   // What the player holds Cross for: this game, in this session, with this offer, whatever is read meanwhile.
   const target = { force: game.force_close, id: game.id, session: game.session };
-  holding = setTimeout(() => closeGame(target), HOLD_MS);
+  letGo = hold(el, () => {
+    letGo = null;
+    closeGame(target);
+  });
 }
 
 /** Let go before the ring was full, or the offer changed underneath: nothing closes. */
 function cancelHold() {
-  if (!holding) return;
-  clearTimeout(holding);
-  holding = 0;
-  tileEl('close')?.classList.remove('holding');
+  letGo?.();
+  letGo = null;
 }
 
 /** @param {{ force: boolean, id: string, session: number }} target */
 function closeGame(target) {
-  holding = 0;
   const el = tileEl('close');
-  el?.classList.remove('holding');
   el?.classList.add('closing');
   setTimeout(() => el?.classList.remove('closing'), 450);
   sfx.launch();
@@ -976,13 +940,9 @@ window.addEventListener('unhandledrejection', (e) => api.log.error(`dock: unhand
 
 async function init() {
   measure();
-  // The island opens on a spring that overshoots a little and settles. The focus ring, the volume and a focused tile
-  // move on a quicker one that doesn't: a press, with nothing thrown.
-  for (const [name, { easing, ms, points }] of Object.entries({ spring: spring(0.46, 0.7), snap: spring(0.28, 0.9) })) {
-    document.documentElement.style.setProperty(`--${name}`, easing);
-    document.documentElement.style.setProperty(`--${name}-ms`, `${ms}ms`);
-    if (name === 'spring') [springMs, springCurve] = [ms, points];
-  }
+  // The island opens on the lift spring and folds on the close one; the focus ring, the volume and a focused tile move
+  // on the snap (springs.js).
+  nameSprings(document.documentElement);
   setInterval(() => state.mode === 'open' && tick(), 10_000);
   let heardKind = false;
   await Promise.all([

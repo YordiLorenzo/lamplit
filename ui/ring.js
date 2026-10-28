@@ -4,12 +4,14 @@
 // rather than from where it shows: something still moving in, or a layer still opening, doesn't throw it off.
 
 /**
- * Makes the ring in `layer`.
+ * Makes the ring in `layer`. `bottom`: placed from the layer's bottom, for a layer laid out from its bottom (the dock),
+ * where what grows above the focus doesn't move the ring on the screen.
  * @param {HTMLElement} layer
+ * @param {{ bottom?: boolean }} [options]
  */
-export function focusRing(layer) {
+export function focusRing(layer, { bottom = false } = {}) {
   const ring = document.createElement('div');
-  ring.className = 'ring instant';
+  ring.className = bottom ? 'ring instant from-bottom' : 'ring instant';
   ring.setAttribute('aria-hidden', 'true');
   layer.append(ring);
 
@@ -34,7 +36,7 @@ export function focusRing(layer) {
       }
       const r = ring.style;
       r.setProperty('--x', `${x}px`);
-      r.setProperty('--y', `${y}px`);
+      r.setProperty('--y', `${bottom ? y + target.offsetHeight - layer.clientHeight : y}px`);
       r.setProperty('--w', `${target.offsetWidth}px`);
       r.setProperty('--h', `${target.offsetHeight}px`);
       r.setProperty('--r', getComputedStyle(target).borderRadius);

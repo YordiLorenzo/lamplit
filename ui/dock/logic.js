@@ -1,7 +1,7 @@
 // @ts-check
 // What the dock shows, worked out from plain data: its tiles, the volume, the top line (how long the game has been
-// played, the batteries), the button hints, and the springs it moves with. Nothing here touches the DOM or Tauri, so
-// tests/dock-logic.test.mjs runs it in Node.
+// played, the batteries) and the button hints. Nothing here touches the DOM or Tauri, so tests/dock-logic.test.mjs runs
+// it in Node.
 
 import { playTimeText, quietMode } from '../logic.js';
 
@@ -31,14 +31,12 @@ import { playTimeText, quietMode } from '../logic.js';
  * One tile in the dock's row: an icon that shows its state (quiet mode and the stats light up when on), and one label.
  * @typedef {object} Tile
  * @property {TileKey} key
- * @property {string} icon  a symbol in dock.html, without its "i-"
+ * @property {string} icon  one of the shared icons (ui/icons.js), without its "i-"
  * @property {string} label
  * @property {boolean} on  a switch that is on
  * @property {'' | 'warn'} tone  partly on, or a game to force closed
  */
 
-/** How long Cross is held on Close game to close the game. */
-export const HOLD_MS = 900;
 /** A battery at this percent or below, running on its battery, is low (dock/news.rs warns at the same level). */
 const LOW = 15;
 
@@ -60,7 +58,7 @@ export function tiles(d) {
   const out = d.sound?.outputs.find((o) => o.default);
   /** @type {Tile[]} */
   const row = [
-    { key: 'resume', icon: 'resume', label: 'Resume', on: false, tone: '' },
+    { key: 'resume', icon: 'play', label: 'Resume', on: false, tone: '' },
     { key: 'output', icon: outputIcon(out?.kind), label: outputLabel(out), on: false, tone: '' },
     { key: 'quiet', icon: quiet.on ? 'quiet-on' : 'quiet', label: quiet.label, on: quiet.on, tone: quiet.tone === 'warn' ? 'warn' : '' },
   ];
@@ -70,7 +68,7 @@ export function tiles(d) {
   // A game whose processes Lamplit can't be sure of is left to close itself: the dock would reach another program.
   if (d.game?.closable) {
     const force = d.game.force_close;
-    row.push({ key: 'close', icon: 'close', label: force ? 'Force close' : 'Close game', on: false, tone: force ? 'warn' : '' });
+    row.push({ key: 'close', icon: 'close-game', label: force ? 'Force close' : 'Close game', on: false, tone: force ? 'warn' : '' });
   }
   return row;
 }
@@ -146,24 +144,5 @@ export function hints(row, tile, d) {
   }[tile];
   // On Resume, ○ would say the same as ✕.
   return tile === 'resume' ? [['ok', ok], ['up', 'Volume']] : [['ok', ok], ['up', 'Volume'], ['back', 'Back to game']];
-}
-
-/**
- * A damped spring's way from 0 to 1, as a CSS linear() easing, and how long it takes to come to rest. `response` is
- * the undamped spring's period in seconds, `damping` its damping ratio: below 1 it overshoots a little and settles.
- * @param {number} response
- * @param {number} damping
- */
-export function spring(response, damping) {
-  const omega = (2 * Math.PI) / response;
-  const decay = damping * omega;
-  const ringing = omega * Math.sqrt(1 - damping * damping);
-  /** @param {number} t */
-  const at = (t) => 1 - Math.exp(-decay * t) * (Math.cos(ringing * t) + (decay / ringing) * Math.sin(ringing * t));
-  // At rest once the swing left is under half a percent of the way.
-  const seconds = Math.log(200 / Math.sqrt(1 - damping * damping)) / decay;
-  const steps = 40;
-  const points = Array.from({ length: steps + 1 }, (_, i) => (i === steps ? 1 : Number(at((seconds * i) / steps).toFixed(4))));
-  return { easing: `linear(${points.join(', ')})`, ms: Math.round(seconds * 1000), points };
 }
 

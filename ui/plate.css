@@ -47,6 +47,7 @@
     opacity 200ms ease;
 }
 .ring.on { opacity: 1; }
+.ring.from-bottom { top: auto; bottom: 0; }
 /* Appearing, it shows where the focus is rather than springing there from where it was last. */
 .ring.instant { transition: opacity 200ms ease; }
 
