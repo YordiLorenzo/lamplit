@@ -40,6 +40,7 @@ ui/
   library.js       the cover row, the focused game and its menu
   lift.js          a game's menu lifting its cover over the blurred screen, with one plate beside it that grows out
                    of the card's edge and holds the menu and Change art as its two faces
+  veil.js          the game menu's veil: what was behind it, drawn once small, blurred and dimmed, and scaled up
   art.js           Change art, in a game's menu
   add.js           Add a game, a face of Settings' plate: the programs Lamplit passed over, browsing the drives,
                    naming the game
@@ -53,8 +54,8 @@ ui/
   status.js        the status capsule, top right: batteries, volume, quiet mode and the time
   morph.js         one plate changing shape, for both pages: its clip and place spring between boxes on screen
                    (growing out of what it opens from, from its middle or keeping an end or a corner there, turning
-                   from one face to another, going back on close); with Reduce Motion it fades in place; each morph
-                   logs its frames in measurement builds (probe.js)
+                   from one face to another, going back on close); with Reduce Motion it fades in place; the hero's
+                   drift holds while one plays; each morph logs its frames in measurement builds (probe.js)
   springs.js       the springs both pages move on, named for what they move (tap, lift, snap, close), and Reduce
                    Motion's fade; set on each page's CSS as --tap and --tap-ms and so on
   steady.js        waits for the frames to come on time before an animation starts (the dock's spring, the

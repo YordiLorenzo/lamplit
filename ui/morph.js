@@ -12,8 +12,28 @@ import { SPRINGS } from './springs.js';
 /** Reduce Motion is on: a plate fades in place rather than moving or changing shape. */
 export const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-/** Tells the probe that morph `name` plays for `ms`. @param {string} name @param {number} ms */
-const tell = (name, ms) => document.dispatchEvent(new CustomEvent('morph', { detail: { name, ms } }));
+/** When the last morph playing ends, on performance.now()'s clock, and the drift runs again. */
+let heldUntil = 0;
+let holdTimer = 0;
+
+/**
+ * Morph `name` plays for `ms`. The hero's drift holds meanwhile (style.css body.morphing): the drift moves every pixel
+ * of the screen on every frame, so a frame of a morph over it draws the whole screen, where without it the plate's
+ * region would do. Held for as long as the last morph to end, it is too short a pause to see (the drift moves a tenth
+ * of a pixel a frame), and too short for the GPU to drop to its idle clocks. The probe hears of it too (probe.js, in
+ * measurement builds only).
+ * @param {string} name @param {number} ms
+ */
+function tell(name, ms) {
+  const end = performance.now() + ms;
+  if (end > heldUntil) {
+    heldUntil = end;
+    document.body.classList.add('morphing');
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => document.body.classList.remove('morphing'), ms);
+  }
+  document.dispatchEvent(new CustomEvent('morph', { detail: { name, ms } }));
+}
 
 /**
  * Each plate's last morph: the one running, or the shape it holds after going back into what it came from. A morph
