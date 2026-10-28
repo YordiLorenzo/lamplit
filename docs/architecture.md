@@ -195,7 +195,9 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   thread then waited with it. Should Windows still keep the foreground with the game, the controller works in the
   open dock all the same: Lamplit reads it whatever window is in front.
 - **Folding**, the island keeps its size and a `clip-path` squeezes it into the pill at its bottom centre on the
-  opening's spring, which then drops onto the edge and goes; its shadow, a layer of its own, fades at once. The clip,
+  opening's spring, which then drops onto the edge and goes; its shadow, a layer of its own, fades at once. What it
+  shows fades in the squeeze's first 110 ms, tiles, top line and hints with it, which only then take their places for
+  the next opening, out of sight. The clip,
   translate and opacity run on the compositor (Chromium animates `clip-path` there), so nothing on the full-screen
   window is laid out or painted again per frame. The page sends Rust the pill and the spring's curve
   (`dock_glass_fold`), and Rust squeezes the real glass's clip the same way with Windows.UI.Composition key frames,

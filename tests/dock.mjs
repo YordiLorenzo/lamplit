@@ -635,6 +635,35 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
+  // D20. Folding, what the dock shows goes with its face as that fades: the tiles, the top line and the hints stay on it
+  // to the end, rather than leaving the focus ring alone on an empty island, and only then take their places for the
+  // next opening, out of sight.
+  {
+    const page = await openDock();
+    await page.waitForTimeout(800);
+    const frames = page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const opacity = (el) => Number(getComputedStyle(el).opacity);
+          const [face, parts] = [document.getElementById('dock'), [...document.querySelectorAll('#top, .tile, #hint')]];
+          const seen = [];
+          const start = performance.now();
+          const step = () => {
+            seen.push({ face: opacity(face), parts: Math.min(...parts.map(opacity)), ring: opacity(document.getElementById('ring')) });
+            if (performance.now() - start < 250) requestAnimationFrame(step);
+            else resolve(seen);
+          };
+          requestAnimationFrame(step);
+        })
+    );
+    await emit(page, 'dock', closed);
+    const seen = await frames;
+    const showing = seen.filter((f) => f.face > 0.05);
+    const fades = new Set(showing.map((f) => f.face.toFixed(2))).size;
+    check('folding, the tiles, top line and hints fade with the face, and take their places once it has gone', showing.length > 1 && fades > 1 && showing.every((f) => f.parts === 1) && seen.at(-1).face === 0 && seen.at(-1).parts === 0, JSON.stringify(seen.map((f) => `${f.face.toFixed(2)}/${f.parts.toFixed(2)}`)));
+    await close(page);
+  }
+
   // D19. A game starting gets the hidden dock ready: it reads what it shows and draws it then. Its first opening then
   // springs open on a clip at its own size, with nothing laid out frame by frame.
   {

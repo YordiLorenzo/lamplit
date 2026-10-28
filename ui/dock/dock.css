@@ -214,6 +214,8 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
     translate 520ms var(--glide) calc(120ms + var(--i, 0) * 32ms),
     background 160ms ease;
 }
+/* Folding, they go with the face as it fades (.face, 110 ms), and only then take their places for the next opening. */
+#island:not([data-mode='open']) :is(#top, .tile, #hint) { transition: opacity 0s linear 120ms, translate 0s linear 120ms; }
 
 /* The top line: the game's cover, its name and how long it has been played, then the volume, the batteries and the
    time. */

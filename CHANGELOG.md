@@ -9,7 +9,8 @@ Every release of Lamplit, newest first. The format follows
 ### Added
 
 - The in-game dock: holding PS over a game (View and Menu on an Xbox controller) opens a small dock along the bottom
-  of the screen instead of the whole home screen. It holds the volume, the sound output, quiet mode, NVIDIA's stats,
+  of the screen instead of the whole home screen. It springs open out of a pill on the bottom edge and folds back
+  into it, what it shows fading as it goes. It holds the volume, the sound output, quiet mode, NVIDIA's stats,
   Home and Close game, and shows the game with its cover and play time, the batteries and the time, in the colours of
   the game's art. On Windows 11 22H2 or later, with transparency effects on, it rests on Windows' own glass: a live
   blur of the game behind it. Holding Cross on Close game asks the game to close, and the dock offers Force close,
