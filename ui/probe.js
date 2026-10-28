@@ -393,6 +393,9 @@ async function home() {
       begin('screensaver-show');
       if (!Number.isNaN(waitFrom)) run.after = performance.now() - waitFrom;
       waitFrom = NaN;
+      // flipped compares with the classes as they are now, so every class change in this batch would look like .on
+      // arriving: one start is all there is.
+      break;
     }
   }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true });
   // A toast, and the screensaver woken (by a key it keeps to itself), start interactions of their own.
