@@ -12,6 +12,13 @@
   visibility: hidden;
   transition: opacity 400ms ease, visibility 0s linear 400ms;
 }
+/* Waiting for its frames to come on time (saver.js shown): drawn, so the GPU comes up to speed on the work it does
+   once the screensaver shows, but too faint to see. Chromium leaves out a layer at opacity 0. The fade starts here. */
+.saver.waiting {
+  opacity: 0.004;
+  visibility: visible;
+  transition: none;
+}
 .saver.on {
   opacity: 1;
   visibility: visible;

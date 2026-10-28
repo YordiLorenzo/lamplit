@@ -2165,11 +2165,16 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
       fading.whileFading === 0 && fading.once > 0 && fading.freed && fading.canvas === 1,
       JSON.stringify(fading)
     );
-    // The fade-in waits for the frames to come on time (a GPU coming up from its idle clocks takes up to 100 ms a
-    // frame at first), half a second at most from the first frame drawn. Here the page holds each frame 40 ms, for
-    // 300 ms and then for 1.5 s from the start.
+    // The fade-in waits for the frames to come on time for 450 ms (a GPU coming up from its idle clocks takes up to
+    // 265 ms a frame at first), 750 ms at most from the first frame drawn. Meanwhile the screensaver is drawn but too
+    // faint to see, so the GPU does the work it will do once it shows, and the fade starts from there. Here the page
+    // holds each frame 40 ms for a while from the start: not at all, for 100 ms, and for 1.5 s.
     const fadeIn = await page.evaluate(async () => {
       const { saver } = window.preview;
+      const look = () => {
+        const style = getComputedStyle(saver.root);
+        return `${style.visibility} ${Number(style.opacity).toFixed(3)}`;
+      };
       const fadesInAfter = async (/** @type {number} */ lateFor) => {
         const until = performance.now() + lateFor;
         const hold = () => {
@@ -2178,24 +2183,37 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
           while (performance.now() - t < 40);
           requestAnimationFrame(hold);
         };
-        requestAnimationFrame(hold);
+        if (lateFor) requestAnimationFrame(hold);
         const start = performance.now();
         saver.start(saver.current.scene);
+        /** How the screensaver looks while it waits, and as the fade starts. */
+        const seen = { waiting: '', fading: '' };
+        const peek = setInterval(() => saver.root.classList.contains('waiting') && (seen.waiting = look()), 50);
         await new Promise((resolve) =>
-          new MutationObserver((_, watch) => saver.root.classList.contains('on') && (watch.disconnect(), resolve(null))).observe(saver.root, {
-            attributes: true,
-          })
+          new MutationObserver((_, watch) => {
+            if (!saver.root.classList.contains('on')) return;
+            seen.fading = look();
+            watch.disconnect();
+            resolve(null);
+          }).observe(saver.root, { attributes: true })
         );
+        clearInterval(peek);
         const at = Math.round(performance.now() - start);
         saver.stop();
         await new Promise((resolve) => setTimeout(resolve, Math.max(0, until - performance.now()) + 1300));
-        return at;
+        return { at, ...seen };
       };
-      return { late300: await fadesInAfter(300), late1500: await fadesInAfter(1500) };
+      return { onTime: await fadesInAfter(0), late100: await fadesInAfter(100), late1500: await fadesInAfter(1500) };
     });
+    const faint = (/** @type {{ waiting: string, fading: string }} */ f) => f.waiting === 'visible 0.004' && f.fading === 'visible 0.004';
     check(
-      'the screensaver fades in once its frames come on time, or half a second in at the latest',
-      fadeIn.late300 >= 300 && fadeIn.late300 < 550 && fadeIn.late1500 >= 500 && fadeIn.late1500 < 900,
+      'the screensaver waits drawn but unseen until its frames come on time for 450 ms, 750 ms at most, then fades in from there',
+      [fadeIn.onTime, fadeIn.late100, fadeIn.late1500].every(faint) &&
+        fadeIn.onTime.at >= 450 &&
+        fadeIn.late100.at >= 550 &&
+        fadeIn.late100.at < fadeIn.late1500.at &&
+        fadeIn.late1500.at >= 750 &&
+        fadeIn.late1500.at < 1200,
       JSON.stringify(fadeIn)
     );
   }
@@ -2598,7 +2616,8 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
         if (type === 'webgl2') window.__renderers++;
         return get.call(this, type, ...rest);
       };
-      // Draws, and those made while the screensaver isn't on yet could be seen all the same.
+      // Draws, and those made while the screensaver isn't on yet but could be seen all the same: neither hidden nor
+      // faint, as while it waits for its frames to come on time.
       window.__draws = 0;
       window.__seen = 0;
       for (const name of ['drawArrays', 'drawArraysInstanced']) {
@@ -2606,7 +2625,8 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
         WebGL2RenderingContext.prototype[name] = function (...args) {
           window.__draws++;
           const root = document.getElementById('saver');
-          if (root && !root.classList.contains('on') && getComputedStyle(root).visibility !== 'hidden') window.__seen++;
+          const look = root && getComputedStyle(root);
+          if (look && !root.classList.contains('on') && look.visibility !== 'hidden' && Number(look.opacity) > 0.004) window.__seen++;
           return draw.apply(this, args);
         };
       }
