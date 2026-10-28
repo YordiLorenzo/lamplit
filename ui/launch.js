@@ -7,7 +7,7 @@ import { closeAdd } from './add.js';
 import { closeFind } from './find.js';
 import { meter } from './frames.js';
 import { buttonBadge, showHints, stepAction, toast } from './hints.js';
-import { closeDetails, focusGame, paintCover, render, showRow } from './library.js';
+import { closeDetails, focusGame, paintCover, refreshChoices, render, showRow } from './library.js';
 import { buttonFace } from './logic.js';
 import { sfx } from './sounds.js';
 import { actionableStep, byId, els, focused, icon, state, storeName, withStoreLogo } from './state.js';
@@ -214,6 +214,8 @@ export function onPlay(play) {
   }
   state.all.forEach(paintCover);
   render();
+  // A game's menu still open offers what the game's state allows now: Close game only while it runs.
+  refreshChoices();
 }
 
 /** A controller brought Lamplit forward while `runningId` runs. @param {string | null} runningId */

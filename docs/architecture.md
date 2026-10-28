@@ -64,8 +64,9 @@ ui/
                    brightness, rim, shadow, concentric corners), the focus ring, hold to confirm, the pill, and the
                    chips with their batteries
   ring.js          the focus ring: one ring that springs from what had the focus to what has it
-  hold.js          hold to confirm: a ring fills round the icon, and the action happens once it is full; one hold
-                   at a time, which Cross let go (the pad's "ok-up", Enter's keyup, the mouse button up) ends
+  hold.js          hold to confirm: a ring fills round the icon, and the action happens once it is full, to what
+                   it began on; one hold at a time, which Cross let go (the pad's "ok-up", Enter's keyup, the mouse
+                   button up) ends, as do any other press, the menu or Settings closing, and Lamplit losing focus
   pill.js          the pill a short message shows in, with its icon in a round badge: the dock's news and the
                    home screen's messages
   logic.js         pure functions (the cover row's search and order, the Settings rows), tested in Node

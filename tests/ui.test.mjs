@@ -3757,6 +3757,115 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await close(page);
 }
 
+// 51. A hold finishes only in the place it began: Lamplit losing the keyboard to another window, going behind a game,
+// or the menu or Settings closing, ends it, and a hold acts on the game it began on. A running game that ends with
+// its menu's Close game in focus takes that choice away, and the menu keeps a choice in focus.
+{
+  const page = await open({ games: [game(1, { name: 'Racer' }), game(2, { name: 'Rally' })], running: 'pc:1' });
+  await page.evaluate(() => (window.__settings = {}));
+  const calls = (name) => page.evaluate((name) => window.__calls.filter((c) => c[0] === name).map((c) => JSON.stringify(c[1] ?? null)), name);
+  const restartRow = async () => {
+    await emit(page, 'pad', 'triangle');
+    await settled(page);
+    const k = await page.evaluate(() => document.querySelectorAll('#settingsList .row').length - 1);
+    for (let i = 0; i < k; i++) await emit(page, 'pad', 'down');
+    await emit(page, 'pad', 'ok');
+    await settled(page);
+    await emit(page, 'pad', 'down');
+    await settled(page);
+  };
+  // Cross held on Restart, then another window comes in front: Cross let go there never comes here (Rust sends it to
+  // Lamplit only while Lamplit is in front), as an Enter's keyup wouldn't.
+  await restartRow();
+  await emit(page, 'pad', 'ok');
+  await page.waitForTimeout(250);
+  const filling = await page.evaluate(() => !!document.querySelector('#settingsList .row.holding'));
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await page.waitForTimeout(1000);
+  check('a hold ends when another window comes in front of Lamplit', filling && (await calls('power_restart')).length === 0 && !(await page.evaluate(() => !!document.querySelector('.holding'))), JSON.stringify({ filling, calls: await calls('power_restart') }));
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  // Held, then Settings closes under it.
+  await emit(page, 'pad', 'ok');
+  await page.waitForTimeout(250);
+  await emit(page, 'pad', 'triangle');
+  await page.waitForTimeout(1000);
+  await emit(page, 'pad', 'ok-up');
+  check('... and when Settings closes under it', (await calls('power_restart')).length === 0 && !(await page.evaluate(() => document.getElementById('settings').classList.contains('on'))), JSON.stringify(await calls('power_restart')));
+  await close(page);
+}
+{
+  // Two games added by hand: Remove held on the first, then its menu closes and focus moves to the second.
+  const games = [game(1, { name: 'Racer', manual: true }), game(2, { name: 'Rally', manual: true }), game(3, { name: 'Rover', manual: true })];
+  const page = await open({ games });
+  // Rust's answer: the games left.
+  await page.evaluate((list) => {
+    const s = (window.__settings = { list });
+    s.library_remove_game = ({ id }) => (s.list = s.list.filter((g) => g.id !== id));
+  }, games);
+  const removes = () => page.evaluate(() => window.__calls.filter((c) => c[0] === 'library_remove_game').map((c) => c[1].id));
+  const removeRow = async () => {
+    await emit(page, 'pad', 'menu');
+    await settled(page);
+    for (let i = 0; i < 4; i++) await emit(page, 'pad', 'down');
+    await settled(page);
+  };
+  const focusName = () => page.evaluate(() => document.querySelector('.cover.focus .name')?.textContent);
+  await removeRow();
+  const first = await focusName();
+  await emit(page, 'pad', 'ok');
+  await page.waitForTimeout(250);
+  await emit(page, 'pad', 'back');
+  await emit(page, 'pad', 'right');
+  await page.waitForTimeout(1000);
+  await emit(page, 'pad', 'ok-up');
+  const second = await focusName();
+  check('a hold ends when its menu closes, and moving to another game removes nothing', first !== second && (await removes()).length === 0, JSON.stringify({ first, second, removed: await removes() }));
+  // Held to the end on the game now in focus: that game goes, and only it.
+  await removeRow();
+  await emit(page, 'pad', 'ok');
+  await page.waitForTimeout(1100);
+  await emit(page, 'pad', 'ok-up');
+  await idle(page);
+  check('... and a hold held to the end removes the game it began on', JSON.stringify(await removes()) === JSON.stringify(['pc:2']), JSON.stringify(await removes()));
+  // Behind a game, a hold ends too.
+  await removeRow();
+  await emit(page, 'pad', 'ok');
+  await page.waitForTimeout(250);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await page.waitForTimeout(1000);
+  const behind = await page.evaluate(() => document.getElementById('lift').classList.contains('on'));
+  check('... and when Lamplit goes behind a game', behind && JSON.stringify(await removes()) === JSON.stringify(['pc:2']), JSON.stringify({ behind, removed: await removes() }));
+  await close(page);
+}
+{
+  // The running game ends while its menu's Close game is in focus.
+  const page = await open({ games: [game(1), game(2)], running: 'pc:1' });
+  await page.evaluate((reading) => (window.__settings = { dock_state: reading }), like(ipc('dock-game'), { id: 'pc:1', name: 'Game 001', closable: true, force_close: false, responding: true, session: 7 }));
+  await emit(page, 'pad', 'menu');
+  await until(page, () => [...document.querySelectorAll('#dChoices .row')].some((r) => r.textContent.startsWith('Close game')));
+  for (let i = 0; i < 4; i++) await emit(page, 'pad', 'down');
+  const thrown = await page.evaluate((ended) => {
+    try {
+      window.__emit('play', ended);
+      return null;
+    } catch (e) {
+      return e.message;
+    }
+  }, play('ended', 'pc:1'));
+  await idle(page);
+  const after = await page.evaluate(() => ({
+    errors: window.__errors.length,
+    hint: document.getElementById('hint').textContent,
+    rows: [...document.querySelectorAll('#dChoices .row')].map((r) => r.querySelector('.label').firstChild.textContent),
+    mode: document.getElementById('lift').classList.contains('on'),
+  }));
+  check('a game that ends with Close game in focus closes its menu without an error', thrown === null && after.errors === 0 && !after.mode && after.hint.length > 0, JSON.stringify({ thrown, ...after }));
+  await close(page);
+}
+
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));
 check('every command Rust registers is called by a test', untested.length === 0, untested.join(', '));
