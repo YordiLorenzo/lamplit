@@ -303,7 +303,7 @@ export class Renderer {
       up: [UP, ['uSrc', 'uTexel', 'uRes']],
       final: [FINAL, ['uMixed', 'uBloom', 'uTime', 'uRes']],
     };
-    /** @type {Record<keyof passes, Program>} */
+    /** @type {Record<keyof typeof passes, Program>} */
     this.pass = /** @type {any} */ (
       Object.fromEntries(
         Object.entries(passes).map(([name, [source, uniforms]]) => [
