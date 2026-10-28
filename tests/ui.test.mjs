@@ -2255,7 +2255,7 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
   await idle(page);
   await emit(page, 'launch-step', step({ id: 'pc:1', key: 'window', state: 'warn', label: 'Game 001 may need you', store: null }));
   let s = await state(page);
-  check('a window that may need the player offers to show it', s.hint.startsWith('✕Show it'), s.hint);
+  check('a window that may need the player offers to show it', s.hint.startsWith('✕Show the window'), s.hint);
   await page.waitForTimeout(350);
   await page.keyboard.press('Enter');
   await idle(page);
@@ -2297,7 +2297,7 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
   await emit(page, 'launch-step', step({ id: 'pc:2', key: 'hint', state: 'warn', label: 'Still waiting: Steam may need you', store: 'steam' }));
   await emit(page, 'launch-step', step({ id: 'pc:2', key: 'window', state: 'warn', label: 'A window opened that may need you', store: null }));
   s = await state(page);
-  check('... which still offers to show a window that may need the player', s.hint.startsWith('✕Show it'), s.hint);
+  check('... which still offers to show a window that may need the player', s.hint.startsWith('✕Show the window'), s.hint);
   // That window closes: ✕ goes back to the store app, which may still need the player.
   await emit(page, 'launch-step', step({ id: 'pc:2', key: 'window', state: 'ok', label: 'That window has closed', store: null }));
   s = await state(page);
@@ -3329,6 +3329,62 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await page.evaluate(() => document.querySelectorAll('#toast, #gameNews').forEach((el) => el.classList.remove('on')));
   const going = await curves();
   check('... they come in on the tap spring and go on the close spring', coming.every((c) => on(c, 'tap')) && going.every((c) => on(c, 'close')), JSON.stringify({ coming, going }).slice(0, 300));
+  await close(page);
+}
+
+// 47. The starting screen: the step the player can act on carries its action as a chip on its line, ✕ and what it
+// does, as well as in the hints, and a click on it does it; only the newest such step has one. Every step's icon is
+// one of the icons both pages share, not a text character.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await emit(page, 'stores', ipc('stores'));
+  await page.evaluate(() => (window.__settings = { launch_start: () => new Promise(() => {}) }));
+  await page.keyboard.press('Enter');
+  await idle(page);
+  /** Each line: its state, its icon, and its chip's text if it has one. */
+  const lines = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('#steps li')].map((li) => ({
+        state: li.className,
+        icon: li.querySelector('.icon use')?.getAttribute('href') ?? null,
+        text: li.querySelector('.icon').textContent,
+        chip: li.querySelector('.chip')?.textContent ?? null,
+        glyph: li.querySelector('.chip b')?.className ?? null,
+      }))
+    );
+  for (const st of values.step_state) {
+    await emit(page, 'launch-step', step({ id: 'pc:1', key: st, state: st, label: st, store: null }));
+  }
+  let l = await lines();
+  const want = { ok: '#i-check', warn: '#i-warn', block: '#i-next', error: '#i-error', busy: null };
+  check(
+    "every step's icon is a shared one, not a text character, and a busy step spins",
+    l.every((x) => x.icon === want[x.state] && x.text === '') && values.step_state.every((st) => l.some((x) => x.state === st)),
+    JSON.stringify(l)
+  );
+  check('steps the player can do nothing about have no chip', l.every((x) => x.chip === null), JSON.stringify(l));
+  await emit(page, 'launch-step', step({ id: 'pc:1', key: 'store:ea', state: 'block', label: 'Sign in to EA app', store: 'ea' }));
+  await emit(page, 'launch-step', step({ id: 'pc:1', key: 'window', state: 'warn', label: 'A window opened. It may need you.', store: null }));
+  l = await lines();
+  const hint = await page.evaluate(() => document.getElementById('hint').textContent);
+  const chips = l.filter((x) => x.chip !== null);
+  check(
+    'the newest step the player can act on carries ✕ Show the window on its line, as the hints say',
+    chips.length === 1 && l.at(-1).chip === '✕Show the window' && l.at(-1).glyph === 'cross' && hint.startsWith('✕Show the window'),
+    JSON.stringify({ chips, hint })
+  );
+  await page.click('#steps .chip');
+  await idle(page);
+  const call = await page.evaluate(() => window.__calls.at(-1));
+  check('a click on the chip shows the window', JSON.stringify(call) === '["launch_show",{"store":null}]', JSON.stringify(call));
+  // The window closes: the store app's sign-in has the chip again.
+  await emit(page, 'launch-step', step({ id: 'pc:1', key: 'window', state: 'ok', label: 'The window closed', store: null }));
+  l = await lines();
+  check('then the store sign-in carries ✕ Open EA app', l.filter((x) => x.chip).map((x) => x.chip).join() === '✕Open EA app', JSON.stringify(l));
+  await page.click('#steps .chip');
+  await idle(page);
+  const open2 = await page.evaluate(() => window.__calls.at(-1));
+  check('... and a click on it opens the store app', JSON.stringify(open2) === '["launch_show",{"store":"ea"}]', JSON.stringify(open2));
   await close(page);
 }
 

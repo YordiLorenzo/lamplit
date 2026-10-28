@@ -13,19 +13,28 @@ import { actionableStep, els, focused, state, storeName } from './state.js';
  */
 const SHAPES = { '✕': 'btn-cross', '○': 'btn-circle', '△': 'btn-triangle', '□': 'btn-square', '≡': 'btn-menu', '↔': 'btn-adjust' };
 
+/**
+ * A controller button as the hints draw it, in a round badge: the PlayStation symbol's shape or the letter of the
+ * controller in use. The glyph stays in the text, hidden, for screen readers.
+ * @param {import('./logic.js').HintButton} button
+ */
+export function buttonBadge(button) {
+  const [cls, glyph] = buttonFace(state.padKind, button);
+  const face = SHAPES[glyph] ? `<svg aria-hidden="true"><use href="#${SHAPES[glyph]}"/></svg><i>${glyph}</i>` : glyph;
+  return `<b class="${cls}">${face}</b>`;
+}
+
+/** What ✕ does for a step the player can act on (state.js actionableStep). @param {import('./api.js').LaunchStep} s */
+export const stepAction = (s) => (s.key === 'window' ? 'Show the window' : `Open ${storeName(s.store) ?? 'the store app'}`);
+
 export function showHints() {
   /** @param {import('./logic.js').HintButton} button @param {string} label */
-  const b = (button, label) => {
-    const [cls, glyph] = buttonFace(state.padKind, button);
-    // The glyph stays in the text, hidden, for screen readers.
-    const face = SHAPES[glyph] ? `<svg aria-hidden="true"><use href="#${SHAPES[glyph]}"/></svg><i>${glyph}</i>` : glyph;
-    return `<span><b class="${cls}">${face}</b>${label}</span>`;
-  };
+  const b = (button, label) => `<span>${buttonBadge(button)}${label}</span>`;
   const g = focused();
   let html = '';
   if (state.mode === 'starting') {
     const s = actionableStep();
-    if (s) html += b('ok', s.key === 'window' ? 'Show it' : `Open ${storeName(s.store) ?? 'the store app'}`);
+    if (s) html += b('ok', stepAction(s));
     if (s?.state === 'block') html += b('triangle', 'Try anyway');
     html += b('back', 'Cancel');
   } else if (state.mode === 'details' && state.art.open) {

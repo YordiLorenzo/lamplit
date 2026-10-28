@@ -169,6 +169,11 @@ els.track.addEventListener('click', (e) => {
   else move(k - state.idx);
 });
 
+// A click on the starting screen's chip does what ✕ does there: shows the window, or opens the store app.
+els.steps.addEventListener('click', (e) => {
+  if (/** @type {Element} */ (e.target).closest('.chip') && state.mode === 'starting') act('ok', 'mouse');
+});
+
 // A click on a choice in a game's menu picks it; one on the blurred screen around it closes it.
 els.dChoices.addEventListener('click', (e) => {
   const k = [...els.dChoices.children].indexOf(/** @type {Element} */ (e.target).closest('.row'));

@@ -311,9 +311,8 @@ body.still .hero, body:has(#lift.on) .hero { animation-play-state: paused; }
   width: 3vh;
   height: 3vh;
   border-radius: 50%;
-  font-size: 1.8vh;
-  font-weight: 700;
 }
+#steps .icon svg { width: 2vh; height: 2vh; margin: 0; vertical-align: 0; }
 #steps .busy .icon { border: .4vh solid rgb(255 255 255 / .18); border-top-color: rgb(var(--accent)); animation: spin 900ms linear infinite; }
 #steps .ok .icon { background: rgb(80 200 120 / .25); color: #7be09a; }
 #steps .warn .icon { background: rgb(255 190 80 / .22); color: #ffc75e; }
@@ -321,6 +320,23 @@ body.still .hero, body:has(#lift.on) .hero { animation-play-state: paused; }
 #steps .error .icon { background: rgb(255 100 100 / .25); color: #ff8a8a; }
 #steps .ok { color: var(--ink-dim); }
 #steps .block, #steps .warn { font-weight: 600; }
+/* The step the player can act on carries its action as a chip on its line (launch.js renderSteps): ✕ and what it
+   does, on the plate's glass, as Find's chips. It takes clicks, though the starting screen lets them through. */
+#steps .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.2vh;
+  height: 4.6vh;
+  margin-left: 1vh;
+  padding: 0 2vh 0 .8vh;
+  border-radius: 2.3vh;
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  font-size: 2.1vh;
+  font-weight: 600;
+  color: var(--ink);
+  pointer-events: auto;
+}
 
 .spinner {
   width: 5vh;
@@ -968,7 +984,7 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
   color: var(--ink-dim);
 }
 #hint span { display: inline-flex; align-items: center; gap: 1vh; }
-#hint b {
+:is(#hint, #steps .chip) b {
   display: inline-grid;
   place-items: center;
   width: 3.2vh;
@@ -979,16 +995,16 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
   font-weight: 700;
   line-height: 1;
 }
-#hint b svg { width: 2vh; height: 2vh; }
+:is(#hint, #steps .chip) b svg { width: 2vh; height: 2vh; }
 /* The symbol as text, for screen readers: the drawn shape shows instead. */
-#hint b i { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-#hint b.cross { color: #8fb0ff; }
-#hint b.circle { color: #ff7a7a; }
-#hint b.options { color: var(--ink); }
-#hint b.xbox-a { color: #7fd36e; }
-#hint b.xbox-b { color: #ff7a7a; }
-#hint b.xbox-x { color: #8fb0ff; }
-#hint b.xbox-y { color: #ffd166; }
+:is(#hint, #steps .chip) b i { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+:is(#hint, #steps .chip) b.cross { color: #8fb0ff; }
+:is(#hint, #steps .chip) b.circle { color: #ff7a7a; }
+:is(#hint, #steps .chip) b.options { color: var(--ink); }
+:is(#hint, #steps .chip) b.xbox-a { color: #7fd36e; }
+:is(#hint, #steps .chip) b.xbox-b { color: #ff7a7a; }
+:is(#hint, #steps .chip) b.xbox-x { color: #8fb0ff; }
+:is(#hint, #steps .chip) b.xbox-y { color: #ffd166; }
 
 /* ---------- messages: pills (pill.js, hints.js toast) ----------
    A message about a game stands on the line above the row, after what narrows it; any other at the top right, under

@@ -6,11 +6,11 @@ import * as api from './api.js';
 import { closeAdd } from './add.js';
 import { closeFind } from './find.js';
 import { meter } from './frames.js';
-import { showHints, toast } from './hints.js';
+import { buttonBadge, showHints, stepAction, toast } from './hints.js';
 import { closeDetails, focusGame, paintCover, render, showRow } from './library.js';
 import { buttonFace } from './logic.js';
 import { sfx } from './sounds.js';
-import { byId, els, focused, state, storeName, withStoreLogo } from './state.js';
+import { actionableStep, byId, els, focused, icon, state, storeName, withStoreLogo } from './state.js';
 
 /**
  * @param {import('./state.js').Shown} g @param {string} sub
@@ -44,18 +44,32 @@ export async function play() {
   }
 }
 
+/** Each step state's icon, from the icons both pages share; a busy step spins instead. */
+const STEP_ICONS = { ok: 'i-check', warn: 'i-warn', block: 'i-next', error: 'i-error' };
+
+/**
+ * The launch's steps, one line each. The step the player can act on carries its action as a chip, ✕ and what it does
+ * (Show the window, Open Steam), as well as in the hints; a click on it does it too (input.js).
+ */
 function renderSteps() {
-  const icon = { busy: '', ok: '✓', warn: '!', block: '→', error: '✕' };
+  const act = actionableStep();
   els.steps.textContent = '';
   for (const s of state.steps) {
     const li = document.createElement('li');
     li.className = s.state;
     const i = document.createElement('span');
     i.className = 'icon';
-    i.textContent = icon[s.state] ?? '';
+    if (STEP_ICONS[s.state]) i.append(icon(STEP_ICONS[s.state]));
     const t = document.createElement('span');
     t.textContent = s.label;
     li.append(i, ...withStoreLogo(s.store, t));
+    if (s === act) {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.innerHTML = buttonBadge('ok');
+      chip.append(stepAction(s));
+      li.append(chip);
+    }
     els.steps.append(li);
   }
 }

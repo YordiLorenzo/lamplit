@@ -45,7 +45,8 @@ ui/
   keyboard.js      the on-screen keyboards: Find's, and the one for names and art searches
   find.js          Find, on the filter line above the row: the search field and the store and sort chips stand
                    there, the on-screen keyboard grows up out of the field and the store list out of its chip
-  launch.js        the starting screen
+  launch.js        the starting screen: the launch's steps with the shared icons, and on the step the player can
+                   act on a chip with what ✕ does there (Show the window, Open Steam)
   settings.js      the Settings panel, a plate with two faces: Settings and Add a game
   morph.js         one plate changing shape, for both pages: its clip and place spring between boxes on screen
                    (growing out of what it opens from, from its middle or keeping an end or a corner there, widening
