@@ -728,7 +728,7 @@ body:has(#settings.on) #empty { opacity: 0; }
   padding: .4vh;
   scrollbar-width: none;
 }
-#settingsList h3, #find h3, #addList h3 {
+#settingsList h3, #addList h3 {
   margin-top: 2vh;
   font-size: 1.8vh;
   font-weight: 650;
@@ -755,18 +755,110 @@ body:has(#settings.on) #empty { opacity: 0; }
 .row.adjust.focus .value::before { content: '‹  '; color: var(--ink-dim); }
 .row.adjust.focus .value::after { content: '  ›'; color: var(--ink-dim); }
 
-/* ---------- find ---------- */
+/* ---------- find (find.js) ----------
+   Find works on the filter line above the row, in #filters' place: the field, the store and sort chips and the count
+   stand there. The keyboard plate grows up out of the field, and the store list up out of the store chip (morph.js
+   grow); one focus ring (ring.js) moves across keys and chips. The row stays sharp below: it is the result list. The
+   game's info fades while Find is open. The hero keeps drifting: held still, the GPU drops to its idle clocks, and
+   Find's close then stutters while they come back. */
+#find {
+  --line: calc(12vh + var(--cover-h) * 1.2 + 1.6vh);
+  --line-h: 5.6vh;
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+#findPlate, #findLine, #findStores { opacity: 0; transition: opacity 160ms ease; }
+#find.on #findPlate, #find.on #findLine, #find.on #findStores.on { opacity: 1; pointer-events: auto; }
+/* Going, the field and the keyboard go back into the search's pill (or the field's glass) and fade there; the chips,
+   the count and the list fade at once. */
+#find.going :is(#findStore, #findSort, #findCount, #findStores) { opacity: 0; transition: opacity 120ms ease; }
+#find.going :is(#findPlate, #findLine, #findStores), #findStores.going { pointer-events: none; }
+body:has(#find.on:not(.going)) #info { opacity: 0; transition-duration: 160ms; }
+body:has(#find.on) #filters { opacity: 0; transition: none; }
 
-/* Wider than Settings for a keyboard ten keys across; the row's first covers stay in view beside it. With every store
-   it fits a 16:9 screen without scrolling: one closed while scrolled took the GPU most of a frame and more on a 4K
-   TV. On a 4:3 screen it scrolls. */
-#find { width: 46vw; padding: 3.6vh 4vh; overflow-y: auto; scroll-padding: 3.6vh 0; scrollbar-width: none; }
-#find.on { pointer-events: auto; }
-#find h2 { margin-bottom: 2vh; }
-#find h3 { margin: 2vh 0 1vh; }
+#findLine {
+  position: absolute;
+  left: var(--safe-x);
+  bottom: var(--line);
+  display: flex;
+  gap: 1.4vh;
+  align-items: center;
+  font-size: 2.2vh;
+  color: var(--ink-dim);
+  text-shadow: 0 .2vh 1vh rgb(0 0 0 / .5);
+}
+#findField, #find .chip {
+  display: flex;
+  align-items: center;
+  height: var(--line-h);
+  border-radius: calc(var(--line-h) / 2);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  color: var(--ink);
+  text-shadow: none;
+  white-space: nowrap;
+}
+#findField { gap: 1.2vh; width: 30vw; padding: 0 2.2vh; font-size: 2.6vh; backdrop-filter: var(--plate-blur); }
+#findField .glass { flex: none; width: 2.6vh; height: 2.6vh; color: var(--ink-dim); }
+#find .chip { gap: 1vh; padding: 0 2.2vh; font-size: 2.2vh; font-weight: 600; }
+#find .chip .store-logo { margin-right: 0; }
+/* The store chip's list opens upward. */
+#find .chip .up { width: 1.8vh; height: 1.8vh; rotate: 90deg; color: var(--ink-dim); }
+
+/* The keyboard, grown up out of the field: ten keys across, its first row level with the game's name. */
+#findPlate {
+  position: absolute;
+  left: var(--safe-x);
+  bottom: calc(var(--line) + var(--line-h) + 1.4vh);
+  width: 46vw;
+  padding: 2.2vh;
+  border-radius: var(--plate-radius);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  backdrop-filter: var(--plate-blur);
+}
 #findKeys .key { height: 4.8vh; }
+/* The ring shows the focused key. */
+#findKeys .key.focus { box-shadow: none; }
 
-#findField, .field {
+/* The store chip's list: a logo and a name each, grown up out of the chip, in a second column past six. */
+#findStores {
+  position: absolute;
+  left: var(--store-x, var(--safe-x));
+  bottom: calc(var(--line) + var(--line-h) + 1.4vh);
+  /* At least as wide as its chip, which it grows out of. */
+  min-width: var(--store-w, 0);
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(var(--rows, 6), auto);
+  gap: .6vh 1vh;
+  padding: 1.2vh;
+  border-radius: var(--plate-radius);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  backdrop-filter: var(--plate-blur);
+}
+#findStores .choice {
+  gap: 1.2vh;
+  height: 4.6vh;
+  padding: 0 1.8vh;
+  border: none;
+  border-radius: var(--plate-inner);
+  background: none;
+  font-size: 2.1vh;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+#findStores .choice.on { background: rgb(var(--accent) / .3); }
+#findStores .choice.focus { box-shadow: none; }
+#findStores .store-logo { margin-right: 0; }
+
+/* Shared by the names keyboard's fields: Change art's search and Add a game's name. */
+.field {
   display: flex;
   align-items: center;
   gap: 1.4vh;
@@ -777,7 +869,7 @@ body:has(#settings.on) #empty { opacity: 0; }
   border: .12vh solid rgb(255 255 255 / .2);
   font-size: 3.4vh;
 }
-#findField .glass, .field .glass { flex: none; width: 3vh; height: 3vh; color: var(--ink-dim); }
+.field .glass { flex: none; width: 3vh; height: 3vh; color: var(--ink-dim); }
 /* The caret follows the search; with nothing typed, it stands before the dimmed placeholder. */
 #findQuery, .typed { display: flex; align-items: center; min-height: 1.3em; white-space: pre; overflow: hidden; }
 #findQuery::after, .typed::after {
@@ -793,10 +885,14 @@ body:has(#settings.on) #empty { opacity: 0; }
 @keyframes blink { 50% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
   #findQuery::after, .typed::after { animation: none; }
+  /* Find fades in place: nothing grows or goes back (morph.js), and the game's info fades on the same 150 ms. */
+  #findPlate, #findLine, #findStores, #find.going :is(#findStore, #findSort, #findCount, #findStores), #info {
+    transition: opacity var(--fade-ms) ease;
+  }
 }
 
 /* Half-key columns, so the QWERTY rows can step right by half a key (keyboard.js). */
-#findKeys, .keys { display: grid; grid-template-columns: repeat(20, 1fr); gap: .8vh; }
+.keys { display: grid; grid-template-columns: repeat(20, 1fr); gap: .8vh; }
 .key {
   display: grid;
   place-items: center;
@@ -812,7 +908,7 @@ body:has(#settings.on) #empty { opacity: 0; }
 /* Shift: the next letter is a capital. */
 .key.on { color: rgb(var(--accent)); }
 
-/* Store and sort choices, drawn like the store pill on the home screen. */
+/* Change art's choices, drawn like the store pill on the home screen. */
 .choices { display: flex; flex-wrap: wrap; gap: 1vh; }
 .choice {
   display: inline-flex;

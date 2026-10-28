@@ -384,9 +384,12 @@ export function showAllGames() {
   showRow(focused()?.id);
 }
 
+/** How many of the games the row holds, while the search or the store leaves some out: "2 of 6 games". */
+export const rowCount = () => (narrowed(state.find) ? `${state.games.length} of ${shownCount()} games` : '');
+
 /**
  * Above the row, while it isn't every game by last played: the search, the store and the sort that shape it, and how
- * many games it holds.
+ * many games it holds. Find works on this line (find.js), and its field grows out of the search's pill.
  */
 function showFilters() {
   const { query, store, sort } = state.find;
@@ -402,7 +405,7 @@ function showFilters() {
   if (words(query).length) parts.push(pill('query', icon('i-search'), query.trim()));
   if (store) parts.push(pill('', ...withStoreLogo(store === 'pc' ? null : store, store)));
   if (sort === 'name') parts.push(pill('quiet', 'A to Z'));
-  if (narrowed(state.find)) parts.push(document.createTextNode(`${state.games.length} of ${shownCount()} games`));
+  if (narrowed(state.find)) parts.push(document.createTextNode(rowCount()));
   els.filters.replaceChildren(...parts);
 }
 

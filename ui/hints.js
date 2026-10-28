@@ -45,6 +45,8 @@ export function showHints() {
     if (row?.adjust) html += b('adjust', 'Adjust');
     else if (row?.kind) html += b('ok', row.kind === 'section' ? 'Open' : 'Select');
     html += b('back', state.settings.section ? 'Back' : 'Close');
+  } else if (state.mode === 'find' && state.findList) {
+    html = b('ok', 'Select') + b('back', 'Back');
   } else if (state.mode === 'find') {
     html = b('ok', 'Select') + b('square', 'Delete') + b('triangle', 'Space') + b('back', 'Done');
   } else {

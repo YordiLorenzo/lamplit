@@ -98,15 +98,19 @@
     </section>
   </aside>
 
-  <aside id="find" class="panel">
-    <h2>Find a game</h2>
-    <div id="findField"><svg class="glass" aria-hidden="true"><use href="#i-search"/></svg><span id="findQuery" data-placeholder="A name, or its first letters"></span></div>
-    <div id="findKeys"></div>
-    <h3>Store</h3>
-    <div id="findStores" class="choices"></div>
-    <h3>Sort</h3>
-    <div id="findSort" class="choices"></div>
-  </aside>
+  <!-- Find (find.js) works on the filter line above the row: the field and the store and sort chips stand there, the
+       keyboard grows up out of the field, and the store chip's list of logos up out of the chip. The row stays sharp
+       below: it is the result list. -->
+  <div id="find">
+    <div id="findPlate"><div id="findKeys" class="keys"></div></div>
+    <div id="findLine">
+      <div id="findField"><svg class="glass" aria-hidden="true"><use href="#i-search"/></svg><span id="findQuery" data-placeholder="A name, or its first letters"></span></div>
+      <div id="findStore" class="chip" data-id="store"></div>
+      <div id="findSort" class="chip" data-id="sort"></div>
+      <span id="findCount"></span>
+    </div>
+    <div id="findStores"></div>
+  </div>
 
   <div id="toast"></div>
   <!-- Black between the starting screen and the game's window (launch.js handOver). -->

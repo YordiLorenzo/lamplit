@@ -43,12 +43,14 @@ ui/
   add.js           Add a game, a face of Settings' plate: the programs Lamplit passed over, browsing the drives,
                    naming the game
   keyboard.js      the on-screen keyboards: Find's, and the one for names and art searches
-  find.js          the Find panel: the on-screen keyboard, the store filter and the sort
+  find.js          Find, on the filter line above the row: the search field and the store and sort chips stand
+                   there, the on-screen keyboard grows up out of the field and the store list out of its chip
   launch.js        the starting screen
   settings.js      the Settings panel, a plate with two faces: Settings and Add a game
   morph.js         one plate changing shape, for both pages: its clip and place spring between boxes on screen
-                   (growing out of what it opens from, widening for another face, going back on close); with Reduce
-                   Motion it fades in place; each morph logs its frames in measurement builds (probe.js)
+                   (growing out of what it opens from, from its middle or keeping an end or a corner there, widening
+                   for another face, going back on close); with Reduce Motion it fades in place; each morph logs its
+                   frames in measurement builds (probe.js)
   springs.js       the springs both pages move on, named for what they move (tap, lift, snap, close), and Reduce
                    Motion's fade; set on each page's CSS as --tap and --tap-ms and so on
   steady.js        waits for the frames to come on time before an animation starts (the dock's spring, the

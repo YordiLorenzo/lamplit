@@ -891,7 +891,8 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
       focus: [...document.querySelectorAll('#track .cover')].findIndex((c) => c.classList.contains('focus')),
       details: document.getElementById('details').classList.contains('on'),
       settings: document.getElementById('settings').classList.contains('on'),
-      find: document.getElementById('find').classList.contains('on'),
+      // On, and not on its way back into the filter line.
+      find: document.getElementById('find').matches('.on:not(.going)'),
       overlay: document.getElementById('overlay').classList.contains('on'),
       calls: window.__calls.map((c) => c[0]),
     }));
@@ -1147,11 +1148,11 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await close(page);
 }
 
-// 24. Find a game: the on-screen keyboard narrows the row as it types, the store and sort choices order it, and ○
-// brings every game back. With a controller, the mouse and the keyboard.
+// 24. Find a game: the on-screen keyboard narrows the row as it types, the store chip's list and the sort chip order
+// it, and ○ brings every game back. With a controller, the mouse and the keyboard.
 const findView = (page) =>
   page.evaluate(() => ({
-    open: document.getElementById('find').classList.contains('on'),
+    open: document.getElementById('find').classList.contains('on') && !document.getElementById('find').classList.contains('going'),
     query: document.getElementById('findQuery').textContent,
     focus: /** @type {HTMLElement} */ (document.querySelector('#find .focus'))?.dataset.id ?? null,
     row: [...document.querySelectorAll('#track .cover .name')].map((n) => n.textContent),
@@ -1159,6 +1160,10 @@ const findView = (page) =>
     filters: document.getElementById('filters').textContent,
     stores: [...document.querySelectorAll('#findStores .choice')].map((c) => c.textContent),
     chosen: [...document.querySelectorAll('#find .choice.on')].map((c) => /** @type {HTMLElement} */ (c).dataset.id),
+    list: document.getElementById('findStores').classList.contains('on') && !document.getElementById('findStores').classList.contains('going'),
+    store: document.getElementById('findStore').textContent,
+    sort: document.getElementById('findSort').textContent,
+    count: document.getElementById('findCount').textContent,
     noMatch: !document.getElementById('noMatch').hidden,
     info: !document.getElementById('info').classList.contains('off'),
     hint: document.getElementById('hint').textContent,
@@ -1186,7 +1191,7 @@ const findView = (page) =>
   const pad = async (...steps) => {
     for (const s of steps) await emit(page, 'pad', s);
   };
-  /** Moves focus with the d-pad to the key or choice `id`, a row at a time, then presses ✕ on it. */
+  /** Moves focus with the d-pad to the key, chip or store `id`, a row at a time, then presses ✕ on it. */
   const pick = async (id) => {
     for (let i = 0; i < 30; i++) {
       const way = await page.evaluate((id) => {
@@ -1227,13 +1232,29 @@ const findView = (page) =>
   await pick('clear');
   v = await seen();
   check('Clear empties the search', v.query === '' && v.row.length === 6, `${v.query} ${v.row.length}`);
+  await pick('store');
+  v = await seen();
+  check(
+    "✕ on the store chip opens its list on the store chosen now, with its hints",
+    v.list && v.focus === 'store:all' && v.hint === '✕Select○Back' && v.store === 'All stores',
+    `${v.list} ${v.focus} ${v.hint}`
+  );
+  await pad('back');
+  v = await seen();
+  check('○ closes only the list, with focus on its chip', v.open && !v.list && v.focus === 'store', `${v.open} ${v.list} ${v.focus}`);
+  await pick('store');
   await pick('store:steam');
   v = await seen();
-  check('the store choices: All, then the stores with games, games outside any store last', JSON.stringify(v.stores) === '["All","steam","epic","ubisoft","rockstar","pc"]', JSON.stringify(v.stores));
-  check('a store keeps its own games', JSON.stringify(v.row) === '["Titanfall 2","Portal 2"]' && v.chosen.includes('store:steam') && v.focus === 'store:steam', `${JSON.stringify(v.row)} ${v.chosen}`);
-  await pick('sort:name');
+  check('the store choices: All stores, then the stores with games, games outside any store last as PC', JSON.stringify(v.stores) === '["All stores","steam","epic","ubisoft","rockstar","PC"]', JSON.stringify(v.stores));
+  check(
+    'a store keeps its own games, the list closes and the chip names the store',
+    JSON.stringify(v.row) === '["Titanfall 2","Portal 2"]' && v.chosen.includes('store:steam') && !v.list && v.focus === 'store' && v.store === 'steam',
+    `${JSON.stringify(v.row)} ${v.chosen} ${v.list} ${v.store}`
+  );
+  check("the count stands on Find's line beside the chips", v.count === '2 of 6 games', v.count);
+  await pick('sort');
   v = await seen();
-  check('A to Z sorts the row by name', JSON.stringify(v.row) === '["Portal 2","Titanfall 2"]' && v.chosen.includes('sort:name'), JSON.stringify(v.row));
+  check('✕ on the sort chip sorts the row A to Z', JSON.stringify(v.row) === '["Portal 2","Titanfall 2"]' && v.sort === 'A to Z' && v.focus === 'sort', `${JSON.stringify(v.row)} ${v.sort}`);
   await page.screenshot({ path: path.join(shots, 'find-choices.png') });
   await pad('back');
   v = await seen();
@@ -1267,7 +1288,8 @@ const findView = (page) =>
 
   // A game the filter hides comes into view when Lamplit points at it: when it ends, and when PS is held.
   await pad('square');
-  await pick('sort:played');
+  await pick('sort');
+  await pick('store');
   await pick('store:steam');
   await pad('back');
   await running(page, 'pc:2');
@@ -1314,44 +1336,17 @@ const findView = (page) =>
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await page.keyboard.press('f');
+  await page.click('#findStore');
+  v = await findView(page);
+  check('a click on the store chip opens its list', v.list && v.focus === 'store:all', `${v.list} ${v.focus}`);
   await page.click('#find [data-id="store:all"]');
   v = await findView(page);
-  check('a click on the choice already made still moves focus there', v.focus === 'store:all' && v.chosen.includes('store:all'), v.focus);
+  check('a click on the store already chosen closes the list, with focus on its chip', !v.list && v.focus === 'store' && v.chosen.includes('store:all'), `${v.list} ${v.focus}`);
   await page.keyboard.press('Backspace');
   v = await findView(page);
   check('Backspace on an empty search moves focus to Done too', v.open && v.focus === 'done' && v.query === '', `${v.focus} ${v.query}`);
   await close(page);
 }
-{
-  // A 4:3 screen and a game from every store: the store choices take several lines and the panel scrolls, and the
-  // focused choice stays in view.
-  const stores = ['steam', 'epic', 'ea', 'ubisoft', 'rockstar', 'battlenet', 'gog', 'amazon', 'itch', 'xbox', null];
-  const page = await open({ games: stores.map((store, i) => game(i + 1, { store, requires: store ? [store] : [] })) }, { width: 1440, height: 1080 });
-  await emit(page, 'pad', 'square');
-  for (let i = 0; i < 12; i++) await emit(page, 'pad', 'down');
-  await settled(page);
-  const seen = await page.evaluate(() => {
-    const panel = document.getElementById('find');
-    const focus = document.querySelector('#find .focus');
-    const [p, f] = [panel.getBoundingClientRect(), focus.getBoundingClientRect()];
-    // Inside the panel's padding, not pressed against its rounded edge.
-    const pad = parseFloat(getComputedStyle(panel).paddingBottom);
-    return { id: /** @type {HTMLElement} */ (focus).dataset.id, scrolls: panel.scrollHeight > panel.clientHeight, inside: f.top >= p.top + pad && f.bottom <= p.bottom - pad + 1, pageX: scrollX };
-  });
-  check('4:3: the panel scrolls to keep the focused choice in view, clear of its edge', seen.id.startsWith('sort:') && seen.scrolls && seen.inside && seen.pageX === 0, JSON.stringify(seen));
-  const logos = await page.evaluate(() =>
-    [...document.querySelectorAll('#find [data-id^="store:"]')].map((c) => {
-      const use = c.querySelector('svg.store-logo use');
-      // A logo drawn from a symbol that isn't there would be an empty gap.
-      return `${c.getAttribute('data-id')}=${use ? Boolean(document.querySelector(use.getAttribute('href') ?? '')) : 'none'}`;
-    })
-  );
-  const expected = ['all=none', ...stores.map((s) => (s === 'amazon' || !s ? `${s ?? 'pc'}=none` : `${s}=true`))].map((s) => `store:${s}`);
-  check('each store choice has its logo, the Amazon Games app its name alone', JSON.stringify(logos) === JSON.stringify(expected), JSON.stringify(logos));
-  await page.screenshot({ path: path.join(shots, 'find-4x3.png') });
-  await close(page);
-}
-
 // 25. A game hidden while the player moves on: Rust's late answer leaves focus on the game they moved to, whose
 // Details are open, so ✕ there plays the game they name.
 {
@@ -2701,22 +2696,47 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await close(page);
 }
 
-// 38. Find with every store fits a 16:9 screen: with focus on Sort, below three rows of store choices, the panel
-// doesn't scroll. A Find closed while scrolled, after a sort, took the GPU 17 to 29 ms a frame on a 4K TV.
-for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2194, height: 1234 }, 1.75]]) {
-  const stores = ['steam', 'epic', 'ea', 'ubisoft', 'rockstar', 'xbox', 'battlenet', 'gog', 'itch', 'amazon', null];
+// 38. Find with every store fits the screen at 16:9 (1080p and 4K) and at 4:3: the keyboard, the line of field, chips
+// and count, and the store list, which takes a second column past six stores, each store with its logo and the Amazon
+// Games app with its name alone.
+for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2194, height: 1234 }, 1.75], [{ width: 1440, height: 1080 }, 1]]) {
+  // In the order the list shows them (logic.js STORE_ORDER).
+  const stores = ['steam', 'epic', 'ea', 'ubisoft', 'rockstar', 'battlenet', 'gog', 'amazon', 'itch', 'xbox', null];
   const games = stores.map((store, i) => game(i + 1, { store, requires: store ? [store] : [] }));
   const page = await open({ games, screen: viewport, scale }, viewport);
   await page.keyboard.press('f');
-  await idle(page);
-  await page.evaluate(() => document.querySelector('[data-id="sort:name"]').click());
-  await idle(page);
+  await page.click('#findStore');
+  await settled(page);
   await page.waitForTimeout(100);
   const f = await page.evaluate(() => {
-    const find = document.getElementById('find');
-    return { scrolled: find.scrollTop, over: find.scrollHeight - find.clientHeight, stores: document.querySelectorAll('#findStores .choice').length };
+    const box = (el) => el.getBoundingClientRect();
+    const inside = (el) => {
+      const b = box(el);
+      return b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight;
+    };
+    const list = document.getElementById('findStores');
+    const entries = [...list.querySelectorAll('.choice')];
+    return {
+      stores: entries.length,
+      columns: new Set(entries.map((c) => Math.round(box(c).left))).size,
+      fits: ['findPlate', 'findLine', 'findStores', 'findCount'].filter((id) => !inside(document.getElementById(id))),
+      above: box(list).bottom <= box(document.getElementById('findStore')).top,
+      logos: entries.map((c) => {
+        const use = c.querySelector('svg.store-logo use');
+        // A logo drawn from a symbol that isn't there would be an empty gap.
+        return `${c.getAttribute('data-id')}=${use ? Boolean(document.querySelector(use.getAttribute('href') ?? '')) : 'none'}`;
+      }),
+    };
   });
-  check(`${viewport.width}x${viewport.height}: Find with every store fits, and Sort needs no scrolling`, f.stores === 12 && f.scrolled === 0 && f.over <= 0, JSON.stringify(f));
+  const at = `${viewport.width}x${viewport.height}`;
+  check(
+    `${at}: Find with every store fits the screen, the store list in two columns above its chip`,
+    f.stores === 12 && f.columns === 2 && f.fits.length === 0 && f.above,
+    JSON.stringify({ ...f, logos: undefined })
+  );
+  const expected = ['all=true', ...stores.map((s) => (s === 'amazon' || !s ? `${s ?? 'pc'}=none` : `${s}=true`))].map((s) => `store:${s}`);
+  check(`${at}: each store has its logo, the Amazon Games app its name alone`, JSON.stringify(f.logos) === JSON.stringify(expected), JSON.stringify(f.logos));
+  await page.screenshot({ path: path.join(shots, `find-stores-${at}.png`) });
   await close(page);
 }
 
@@ -2854,7 +2874,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await settled(page);
   await emit(page, 'pad', 'back');
   await settled(page);
-  f = await watch("window.__emit('pad', 'square')", '#find');
+  f = await watch("window.__emit('pad', 'square')", '#findPlate, #findLine');
   check('... Find fades in place for 150 ms', still(f), JSON.stringify(f.slice(0, 3)));
   await emit(page, 'pad', 'back');
   await settled(page);
@@ -2911,24 +2931,19 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   };
   const vars = await page.evaluate(() => ['tap', 'lift', 'snap', 'close'].map((n) => getComputedStyle(document.documentElement).getPropertyValue(`--${n}`).trim()));
   check('the page has the springs both pages share', vars.every((v, i) => v === SPRINGS[['tap', 'lift', 'snap', 'close'][i]].easing), vars.map((v) => v.slice(0, 30)).join(' | '));
-  const seen = { step: named(await curve('.cover')), panelGoes: named(await curve('#find')), toastGoes: named(await curve('#toast')), cardLowers: named(await curve('#card')) };
+  const seen = { step: named(await curve('.cover')), toastGoes: named(await curve('#toast')), cardLowers: named(await curve('#card')) };
   await emit(page, 'pad', 'triangle');
   await settled(page);
   seen.settingsOpens = named(await curve('#settings'));
   await emit(page, 'pad', 'back');
   await settled(page);
   seen.settingsGoes = named(await curve('#settings'));
-  await emit(page, 'pad', 'square');
-  await settled(page);
-  seen.findOpens = named(await curve('#find'));
-  await emit(page, 'pad', 'back');
-  await settled(page);
   await page.evaluate(() => window.__emit('notice', 'Hello'));
   seen.toastOpens = named(await curve('#toast'));
   await emit(page, 'pad', 'menu');
   await settled(page);
   seen.cardLifts = named(await curve('#lift.on #card'));
-  const want = { step: 'snap', panelGoes: 'close', toastGoes: 'close', cardLowers: 'close', settingsOpens: 'tap', settingsGoes: 'close', findOpens: 'tap', toastOpens: 'tap', cardLifts: 'lift' };
+  const want = { step: 'snap', toastGoes: 'close', cardLowers: 'close', settingsOpens: 'tap', settingsGoes: 'close', toastOpens: 'tap', cardLifts: 'lift' };
   const wrong = Object.keys(want).filter((k) => seen[k] !== want[k]);
   check('... a step on snap, panels and the toast open on tap and go on close, the card lifts on lift and lowers on close', wrong.length === 0, JSON.stringify(Object.fromEntries(wrong.map((k) => [k, String(seen[k]).slice(0, 40)]))));
   const tiles = await page.evaluate(() => [...document.styleSheets].flatMap((s) => [...s.cssRules]).filter((r) => r.selectorText === '.tile .art').map((r) => r.style.transition));
@@ -2978,7 +2993,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   const page = await open({ games: [game(1), game(2, { noArt: true })] });
   const looks = () =>
     page.evaluate(() =>
-      ['#settings', '#find', '#details', '#artPick', '#toast'].map((sel) => {
+      ['#settings', '#findPlate', '#details', '#artPick', '#toast'].map((sel) => {
         const st = getComputedStyle(document.querySelector(sel));
         return { sel, fill: st.backgroundColor, shadow: st.boxShadow, round: st.borderTopLeftRadius, border: st.borderTopWidth };
       })
@@ -3091,6 +3106,140 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     return out;
   });
   check("a pill is the plate's glass round its icon's badge and its text", pill.drawn === 'icons' && pill.text === 'Controller battery low' && pill.warn && pill.round && pill.glass, JSON.stringify(pill));
+  await close(page);
+}
+
+// 45. Find on the filter line (the menu audit's first finding). With a search set, its pill above the row widens into
+// the field, and the keyboard rises out of the field's bottom-left corner; the store chip's list grows up out of the
+// chip. They open on the tap spring and go back on the close spring. The row stays sharp below them, with nothing over
+// it; the game's info fades while Find is open, and the hero keeps drifting. One focus ring moves across keys and chips.
+{
+  const page = await open({ games: [game(1, { name: 'Portal 2' }), game(2, { name: 'Red Dead Redemption 2' }), game(3, { name: 'Celeste' })] });
+  /** The box each named element shows on the first or last frame of its morph (morph.js), its spring, and its own box. */
+  const morphs = (ids, which) =>
+    page.evaluate(
+      ([ids, which]) =>
+        Object.fromEntries(
+          ids.map((id) => {
+            const el = document.getElementById(id);
+            const a = el.getAnimations().find((x) => !('transitionProperty' in x) && !('animationName' in x));
+            if (!a) return [id, null];
+            const frames = a.effect.getKeyframes();
+            const k = which === 'first' ? frames[0] : frames.at(-1);
+            // Its own box: where it is laid out, less the translate it has now, part of the way.
+            const rect = el.getBoundingClientRect();
+            const [nx, ny = 0] = getComputedStyle(el).translate.split(' ').map(parseFloat);
+            const own = { left: rect.left - (nx || 0), top: rect.top - ny, width: rect.width, height: rect.height };
+            const [tx, ty = 0] = k.translate.split(' ').map(parseFloat);
+            const v = k.clipPath.match(/inset\(([^)]*?)\s*round/)[1].trim().split(/\s+/).map(parseFloat);
+            const [top, right, bottom, left] = [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]];
+            const t = a.effect.getTiming();
+            const r = (n) => Math.round(n);
+            return [
+              id,
+              {
+                box: [r(own.left + left + tx), r(own.top + top + ty), r(own.width - left - right), r(own.height - top - bottom)],
+                own: [r(own.left), r(own.top), r(own.width), r(own.height)],
+                // Which part of it shows there: its bottom-left corner when nothing is cut off below or on the left.
+                corner: bottom === 0 && left === 0,
+                leftEnd: left === 0,
+                easing: t.easing,
+                ms: t.duration,
+              },
+            ];
+          })
+        ),
+      [ids, which]
+    );
+  const boxOf = (sel) =>
+    page.evaluate((sel) => {
+      const b = document.querySelector(sel).getBoundingClientRect();
+      return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)];
+    }, sel);
+  const near = (a, b) => a && b && a.every((n, i) => Math.abs(n - b[i]) <= 2);
+  /** Whether a morph ran on spring `name`: its stops (the browser writes each with its place along the way) and length. */
+  const spring = (m, name) =>
+    m &&
+    m.ms === SPRINGS[name].ms &&
+    JSON.stringify(m.easing.match(/^linear\((.*)\)$/)?.[1].split(',').map((v) => parseFloat(v))) === JSON.stringify(SPRINGS[name].points);
+
+  // No search yet: the field grows out of its own glass, at its left end.
+  await page.keyboard.press('f');
+  let m = await morphs(['findField'], 'first');
+  const glass = m.findField && [m.findField.own[0], m.findField.own[1], m.findField.own[3], m.findField.own[3]];
+  check('with no search, the field grows out of its glass at its left end', near(m.findField?.box, glass), JSON.stringify({ m, glass }));
+  await page.keyboard.type('po');
+  await page.keyboard.press('Enter');
+  await settled(page);
+  await page.waitForTimeout(500);
+  const pill = await boxOf('#filters .pill.query');
+  await page.keyboard.press('f');
+  m = await morphs(['findField', 'findPlate'], 'first');
+  check(
+    "the search's pill widens into the field from its left end, and the keyboard rises out of it, bottom row first, on the tap spring",
+    near(m.findField?.box, pill) && m.findField.leftEnd && near(m.findPlate?.box, pill) && m.findPlate.corner && spring(m.findField, 'tap') && spring(m.findPlate, 'tap'),
+    JSON.stringify({ pill, m })
+  );
+  const plate = m.findPlate.own;
+  const field = m.findField.own;
+  check('the keyboard stands on the field, from its left end up', plate[0] === field[0] && plate[1] + plate[3] <= field[1], JSON.stringify({ plate, field }));
+  await settled(page);
+  await page.waitForTimeout(500);
+  const open1 = await page.evaluate(() => {
+    const covers = [...document.querySelectorAll('#track .cover')].map((c) => c.getBoundingClientRect().top);
+    const bottoms = ['findPlate', 'findLine', 'findStores'].map((id) => document.getElementById(id).getBoundingClientRect().bottom);
+    return {
+      info: getComputedStyle(document.getElementById('info')).opacity,
+      drift: [...document.querySelectorAll('.hero')].map((h) => getComputedStyle(h).animationPlayState),
+      over: Math.max(...bottoms) - Math.min(...covers),
+      blurred: [...document.querySelectorAll('#row, #track, .cover')].some((el) => getComputedStyle(el).filter !== 'none'),
+    };
+  });
+  check(
+    "while Find is open the game's info fades, the hero keeps drifting, and nothing of Find covers or blurs the row",
+    open1.info === '0' && open1.drift.every((d) => d === 'running') && open1.over <= 0 && !open1.blurred,
+    JSON.stringify(open1)
+  );
+  const ringOn = async (sel) => near(await boxOf('#find .ring'), await boxOf(sel));
+  const onKey = await ringOn('#findKeys .key.focus');
+  for (let i = 0; i < 6 && (await page.evaluate(() => document.querySelector('#find .focus')?.dataset.id)) !== 'store'; i++) await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(450);
+  const onChip = await ringOn('#findStore');
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(450);
+  const onSort = await ringOn('#findSort');
+  check('one focus ring moves across the keys and the chips', onKey && onChip && onSort, JSON.stringify({ onKey, onChip, onSort }));
+  await page.keyboard.press('ArrowLeft');
+  const chip = await boxOf('#findStore');
+  await page.keyboard.press('Enter');
+  m = await morphs(['findStores'], 'first');
+  const list = m.findStores?.own;
+  check(
+    "the store chip's list grows up out of the chip on the tap spring, and stands above it",
+    near(m.findStores?.box, chip) && m.findStores.corner && spring(m.findStores, 'tap') && list[0] === chip[0] && list[1] + list[3] <= chip[1],
+    JSON.stringify({ chip, m })
+  );
+  await settled(page);
+  await page.keyboard.press('Escape');
+  m = await morphs(['findStores'], 'last');
+  check('... and goes back into it on the close spring', near(m.findStores?.box, chip) && spring(m.findStores, 'close'), JSON.stringify({ chip, m }));
+  await settled(page);
+  await page.keyboard.press('Escape');
+  m = await morphs(['findField', 'findPlate'], 'last');
+  check(
+    'closing, the field and the keyboard go back into the pill on the close spring',
+    near(m.findField?.box, pill) && near(m.findPlate?.box, pill) && spring(m.findField, 'close') && spring(m.findPlate, 'close'),
+    JSON.stringify({ pill, m })
+  );
+  await settled(page);
+  await page.waitForTimeout(500);
+  const closed = await page.evaluate(() => ({
+    info: getComputedStyle(document.getElementById('info')).opacity,
+    filters: getComputedStyle(document.getElementById('filters')).opacity,
+    find: getComputedStyle(document.getElementById('findLine')).opacity,
+    pill: document.querySelector('#filters .pill.query')?.textContent,
+  }));
+  check("... then the pill is back above the row, and the game's info", closed.info === '1' && closed.filters === '1' && closed.find === '0' && closed.pill === 'po', JSON.stringify(closed));
   await close(page);
 }
 

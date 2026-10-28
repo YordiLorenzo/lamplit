@@ -4,7 +4,7 @@
 import * as api from './api.js';
 import { actAdd, openAdd } from './add.js';
 import { actArt, openArt } from './art.js';
-import { closeFind, moveFind, openFind, pressFind, typeFromKeyboard, typeKey } from './find.js';
+import { backFind, closeFind, moveFind, openFind, pressFind, typeFromKeyboard, typeKey } from './find.js';
 import { showHints, toast } from './hints.js';
 import * as keyboard from './keyboard.js';
 import { backToGame, cancelLaunch, play } from './launch.js';
@@ -84,7 +84,7 @@ export function act(action, source) {
   if (state.mode === 'add') return actAdd(action);
   if (state.mode === 'find') {
     // □ and △ delete and space, as on a console's own keyboard.
-    if (action === 'back') closeFind();
+    if (action === 'back') backFind();
     else if (action === 'ok') pressFind();
     else if (action === 'square') typeKey('delete');
     else if (action === 'triangle') typeKey('space');
