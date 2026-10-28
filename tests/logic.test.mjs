@@ -13,6 +13,7 @@ import {
   detailChoices,
   focusIndex,
   folderParts,
+  lightOf,
   liftLayout,
   matcher,
   nameAfter,
@@ -28,7 +29,6 @@ import {
   rowOf,
   sectionRows,
   sectionSummary,
-  spring,
   stepAutoOff,
   stepSaverMinutes,
   storeChoices,
@@ -158,6 +158,17 @@ describe('detailChoices', () => {
   });
 });
 
+describe('lightOf', () => {
+  test("a picture's brightness, from black to white, which the plates over it take their fill from", () => {
+    const px = (...colours) => new Uint8ClampedArray(colours.flatMap((c) => [...c, 255]));
+    assert.equal(lightOf(px([0, 0, 0])), 0);
+    assert.equal(lightOf(px([255, 255, 255])), 1);
+    assert.equal(lightOf(px([0, 0, 0], [255, 255, 255])), 0.5);
+    // Green looks brighter than red, and red than blue.
+    assert.ok(lightOf(px([0, 255, 0])) > lightOf(px([255, 0, 0])) && lightOf(px([255, 0, 0])) > lightOf(px([0, 0, 255])));
+  });
+});
+
 describe('folderParts', () => {
   test('the path to a folder, and its own name, which the game menu shows on a line of its own', () => {
     assert.deepEqual(folderParts('C:\\Program Files\\WindowsApps\\Tomb_1.0'), ['C:\\Program Files\\WindowsApps\\', 'Tomb_1.0']);
@@ -167,22 +178,6 @@ describe('folderParts', () => {
 });
 
 describe('the lifted game menu', () => {
-  test('the lift springs past its place and settles back; the way down only settles', () => {
-    const stops = (s) => s.easing.match(/^linear\((.*)\)$/)[1].split(', ').map(Number);
-    const up = spring(210, 22);
-    const down = spring(500, 45);
-    for (const s of [up, down]) {
-      const p = stops(s);
-      assert.deepEqual([p[0], p.at(-1)], [0, 1]);
-      assert.ok(s.ms > 300 && s.ms < 800, `${s.ms} ms`);
-    }
-    const peak = Math.max(...stops(up));
-    assert.ok(peak > 1.01 && peak < 1.05, `overshoot ${peak}`);
-    assert.ok(Math.max(...stops(down)) <= 1, 'no overshoot on the way down');
-    // Most of the way in the first quarter, so it reads as quick.
-    assert.ok(stops(down)[10] > 0.7, String(stops(down)[10]));
-  });
-
   const screen = { width: 1920, height: 1080 };
   // The focused cover in the row, at 1080p: in the first slot, grown by 1.14.
   const cover = { x: 96, y: 1080 * 0.88 - 369.36, width: 246.24, height: 369.36 };

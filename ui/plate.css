@@ -1,0 +1,109 @@
+/* The pieces both pages draw (index.html and dock.html link this before their own sheet). Sizes are in --u, a
+   hundredth of the screen's height: 1vh on the home screen, set by the dock's main.js on the dock, whose window covers
+   only part of the screen. Springs come from springs.js (--tap, --snap and so on), icons from icons.js. */
+
+:root {
+  --u: 1vh;
+  /* The plate: the glass every sheet, panel, popover and toast is drawn on. Its fill is darker and more opaque over
+     bright art, so text on it stays readable: --plate-light is the art's brightness, 0 to 1, which each page sets from
+     the art behind it. A thin rim of light along its top edge and a dark hairline round it, as on glass, and a soft
+     shadow under it. */
+  --plate-light: .5;
+  --plate-fill: rgb(14 13 22 / calc(.7 + .22 * var(--plate-light)));
+  --plate-rim:
+    inset 0 calc(var(--u) * .14) 0 rgb(255 255 255 / .2),
+    inset 0 0 0 calc(var(--u) * .1) rgb(255 255 255 / .1),
+    inset 0 0 0 calc(var(--u) * .2) rgb(0 0 0 / .3);
+  --plate-shadow: 0 calc(var(--u) * 3) calc(var(--u) * 8) rgb(0 0 0 / .4);
+  --plate-blur: blur(calc(var(--u) * 3)) saturate(1.4);
+  /* Concentric corners: something inset by --plate-inset from the plate's edge, as a focused row is, rounds its
+     corners by --plate-inner, so the two curves keep one distance all the way round. */
+  --plate-radius: calc(var(--u) * 2.2);
+  --plate-inset: calc(var(--u) * 1.2);
+  --plate-inner: calc(var(--plate-radius) - var(--plate-inset));
+}
+
+/* ---------- the focus ring (ring.js) ----------
+   One ring that springs from what had the focus to what has it, laid out in the layer it was made in. */
+.ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  width: var(--w, 0);
+  height: var(--h, 0);
+  border-radius: var(--r, 0);
+  translate: var(--x, 0) var(--y, 0);
+  box-shadow:
+    0 0 0 calc(var(--u) * .34) #fff,
+    0 0 calc(var(--u) * 3) calc(var(--u) * .3) rgb(var(--ring-glow, 252 165 69) / .5);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    translate var(--snap-ms) var(--snap),
+    width var(--snap-ms) var(--snap),
+    height var(--snap-ms) var(--snap),
+    border-radius var(--snap-ms) var(--snap),
+    opacity 200ms ease;
+}
+.ring.on { opacity: 1; }
+/* Appearing, it shows where the focus is rather than springing there from where it was last. */
+.ring.instant { transition: opacity 200ms ease; }
+
+/* ---------- hold to confirm (hold.js) ----------
+   Holding the button fills a ring round the icon, and the action happens once it is full. Let go early, it drains. */
+.hold {
+  position: absolute;
+  width: calc(var(--u) * 7.6);
+  height: calc(var(--u) * 7.6);
+  rotate: -90deg;
+  fill: none;
+  stroke-width: 2.2;
+  pointer-events: none;
+}
+.hold .track { stroke: rgb(255 255 255 / .16); }
+/* Empty, the fill is hidden outright: even a stroke of no length leaves a mark at its start. */
+.hold .fill {
+  stroke: rgb(var(--hold-colour, 252 165 69));
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  opacity: 0;
+  transition: stroke-dashoffset 240ms ease-out, opacity 0s linear 240ms;
+}
+.holding .hold .fill { stroke-dashoffset: 0; opacity: 1; transition: stroke-dashoffset var(--hold-ms, 900ms) linear, opacity 0s; }
+
+/* ---------- the pill (pill.js) ----------
+   A short message on the plate: its icon in a round badge, then the text, as the dock's news. Named .news, as the
+   home screen's .pill is its filter line's chips. */
+.news {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--u) * 1.4);
+  height: calc(var(--u) * 6.6);
+  max-width: 100%;
+  padding: 0 calc(var(--u) * 3) 0 calc(var(--u) * 1);
+  border-radius: calc(var(--u) * 3.3);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  font-size: calc(var(--u) * 2.3);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.news .badge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(var(--u) * 4.6);
+  height: calc(var(--u) * 4.6);
+  border-radius: 50%;
+  background: rgb(255 255 255 / .12);
+}
+.news .badge svg { width: calc(var(--u) * 2.7); height: calc(var(--u) * 2.7); }
+.news.warn .badge { background: rgb(252 165 69 / .26); color: rgb(252 165 69); }
+.news .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* Reduce Motion: the ring is where the focus is at once, and a let-go hold empties at once. */
+@media (prefers-reduced-motion: reduce) {
+  .ring { transition: opacity var(--fade-ms, 150ms) ease; }
+  .hold .fill { transition: none; }
+}

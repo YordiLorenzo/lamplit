@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test logic.test.mjs dock-logic.test.mjs contract.test.mjs screensaver.test.mjs steady.test.mjs && node ui.test.mjs",
+    "test": "node --test logic.test.mjs dock-logic.test.mjs contract.test.mjs screensaver.test.mjs steady.test.mjs shared.test.mjs && node ui.test.mjs",
     "typecheck": "tsc -p ../ui/jsconfig.json"
   },
   "devDependencies": {

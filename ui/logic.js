@@ -129,6 +129,17 @@ export function accentOf(rgba) {
   return readable([r / w, g / w, b / w]);
 }
 
+/**
+ * How bright a picture is, 0 for black to 1 for white: the average of its pixels' luma. The plates over it take
+ * their fill from it (plate.css --plate-light).
+ * @param {ArrayLike<number>} rgba  the pixels as a canvas gives them back
+ */
+export function lightOf(rgba) {
+  let sum = 0;
+  for (let i = 0; i < rgba.length; i += 4) sum += 0.2126 * rgba[i] + 0.7152 * rgba[i + 1] + 0.0722 * rgba[i + 2];
+  return rgba.length ? Number((sum / (rgba.length / 4) / 255).toFixed(3)) : 0;
+}
+
 /** @param {number} ts Unix seconds, 0 for never @param {number} [now] Unix seconds */
 export function playedText(ts, now = Date.now() / 1000) {
   if (!ts) return '';
@@ -195,30 +206,6 @@ export function folderParts(dir) {
 }
 
 // ---------- the lifted game menu ----------
-
-/**
- * A damped spring from 0 to 1 (mass 1), as a CSS linear() easing and the time it takes to come to rest. Below
- * critical damping (2 × √stiffness) it overshoots and settles back, as a card lifted by hand would.
- * @param {number} stiffness
- * @param {number} damping
- */
-export function spring(stiffness, damping) {
-  const dt = 1 / 1000;
-  let x = 0, v = 0, t = 0;
-  /** @type {number[]} position every millisecond */
-  const path = [0];
-  // At rest: within 0.1% of the end and barely moving. Semi-implicit Euler is stable at this step for these springs.
-  while (t < 3 && (Math.abs(1 - x) > 0.001 || Math.abs(v) > 0.01)) {
-    v += (stiffness * (1 - x) - damping * v) * dt;
-    x += v * dt;
-    t += dt;
-    path.push(x);
-  }
-  path[path.length - 1] = 1;
-  const stops = 40;
-  const points = Array.from({ length: stops + 1 }, (_, i) => +path[Math.round((i / stops) * (path.length - 1))].toFixed(4));
-  return { easing: `linear(${points.join(', ')})`, ms: Math.round(t * 1000) };
-}
 
 /**
  * Where a lifted cover and its menu go. The cover grows from its place in the row (`from`) to `height` and rises to

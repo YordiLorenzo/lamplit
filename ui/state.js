@@ -149,7 +149,7 @@ export const state = {
   heroLayer: 0,
   /** @type {string | null} */
   heroKey: null,
-  /** @type {Map<string, number[]>} accent colour per game, sampled from its art */
+  /** @type {Map<string, { rgb: number[], light: number }>} accent colour and brightness per game, sampled from its art */
   accents: new Map(),
   /** @type {LaunchStep[]} checks of the launch in progress */
   steps: [],
@@ -199,7 +199,7 @@ export function withStoreLogo(key, text) {
   return key && document.getElementById(`store-${key}`) ? [icon(`store-${key}`), text] : [text];
 }
 
-/** A symbol from index.html, sized and coloured like the text beside it. @param {string} id */
+/** A store's logo from index.html, or an icon both pages share (icons.js), sized and coloured like the text beside it. @param {string} id */
 export function icon(id) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.classList.add('store-logo');

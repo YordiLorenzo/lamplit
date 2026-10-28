@@ -16,6 +16,7 @@ import { dockTests } from './dock.mjs';
 import { probeTests } from './probe.mjs';
 import { assetOrigin, commands, cspHeader, emit, idle, open as openPage, pageOrigin, serveFile, settled, until } from './page.mjs';
 import { SCENES } from '../ui/screensaver/scenes.js';
+import { SPRINGS } from '../ui/springs.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const uiDir = process.argv[2] ?? path.join(here, '..', 'ui');
@@ -2716,6 +2717,380 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     return { scrolled: find.scrollTop, over: find.scrollHeight - find.clientHeight, stores: document.querySelectorAll('#findStores .choice').length };
   });
   check(`${viewport.width}x${viewport.height}: Find with every store fits, and Sort needs no scrolling`, f.stores === 12 && f.scrolled === 0 && f.over <= 0, JSON.stringify(f));
+  await close(page);
+}
+
+// 39. Add a game is a section pushed inside Settings' plate: one plate on screen the whole way, the two titles never
+// shown at once, the plate widening from Settings' width to Add a game's, and Back popping to Settings on its row.
+// From the empty home screen the plate grows out of the "No games found" line, and Back returns it there.
+{
+  const page = await open({ games: [game(1)] });
+  await page.evaluate(() => (window.__settings = { library_programs: [] }));
+  await page.keyboard.press('c');
+  await idle(page);
+  const k = await page.evaluate(() => [...document.querySelectorAll('#settingsList .row')].findIndex((r) => r.textContent.startsWith('Add a game')));
+  for (let i = 0; i < k; i++) await page.keyboard.press('ArrowDown');
+  await settled(page);
+  /** Every frame for `ms` after `action` is pressed: the glass plates showing, and the titles' opacity on screen. */
+  const watch = (action, ms) =>
+    page.evaluate(
+      async ([action, ms]) => {
+        const seen = (el) => {
+          let o = 1;
+          for (let e = el; e && e !== document.body; e = e.parentElement) o *= parseFloat(getComputedStyle(e).opacity);
+          return o;
+        };
+        const frames = [];
+        const t0 = performance.now();
+        window.__emit('pad', action);
+        while (performance.now() - t0 < ms) {
+          await new Promise((r) => requestAnimationFrame(r));
+          const plates = [...document.querySelectorAll('.panel')].filter((p) => parseFloat(getComputedStyle(p).opacity) > 0.01).length;
+          const scrolled = document.getElementById('settings').scrollLeft;
+          frames.push({ plates, scrolled, settings: seen(document.getElementById('settingsTitle')), add: seen(document.getElementById('addTitle')) });
+        }
+        return frames;
+      },
+      [action, ms]
+    );
+  const plate = () => page.evaluate(() => Math.round((document.getElementById('settings').getBoundingClientRect().width / innerWidth) * 100));
+  let frames = await watch('ok', 500);
+  await settled(page);
+  let s = await state(page);
+  check(
+    'Add a game is pushed inside the Settings plate: one plate on screen, never both titles, the plate never scrolled',
+    frames.every((f) => f.plates === 1 && f.scrolled === 0 && Math.min(f.settings, f.add) < 0.1) && (await page.evaluate(() => !!document.querySelector('#settings #add.on'))),
+    JSON.stringify(frames.filter((f) => f.plates !== 1 || f.scrolled || Math.min(f.settings, f.add) >= 0.1).slice(0, 3))
+  );
+  check('... and the plate widens to Add a game\'s width', (await plate()) === 46, String(await plate()));
+  frames = await watch('back', 500);
+  await settled(page);
+  s = await state(page);
+  check(
+    'Back pops to Settings in the same plate, narrowed, on Add a game',
+    frames.every((f) => f.plates === 1 && Math.min(f.settings, f.add) < 0.1) && (await plate()) === 38 && s.hint.endsWith('Close') && (await page.evaluate(() => document.querySelector('#settingsList .row.focus')?.textContent.startsWith('Add a game'))),
+    `${await plate()} ${s.hint} ${await page.evaluate(() => document.querySelector('#settingsList .row.focus')?.textContent)} ${JSON.stringify(frames.filter((f) => f.plates !== 1).slice(0, 2))}`
+  );
+  await close(page);
+}
+{
+  const page = await open({ games: [] });
+  await page.evaluate(() => (window.__settings = { library_programs: [] }));
+  await until(page, () => document.getElementById('empty').textContent === 'No games found');
+  /** The plate as it shows on screen: its box moved by its translate, cut by its clip. */
+  const shown = () =>
+    page.evaluate(() => {
+      const plate = document.getElementById('settings');
+      const box = plate.getBoundingClientRect();
+      // inset() as written: one value for every side, two for top and bottom then the sides, and so on.
+      const v = (getComputedStyle(plate).clipPath.match(/inset\(([^r)]*)/)?.[1] ?? '0px').trim().split(/\s+/).map(parseFloat);
+      const inset = [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]];
+      const text = document.createRange();
+      text.selectNodeContents(document.getElementById('empty'));
+      const line = text.getBoundingClientRect();
+      return {
+        plate: [box.left + inset[3], box.top + inset[0], box.right - inset[1], box.bottom - inset[2]].map(Math.round),
+        line: [line.left, line.top, line.right, line.bottom].map(Math.round),
+        on: plate.classList.contains('on'),
+      };
+    });
+  await page.evaluate(() => {
+    window.__emit('pad', 'ok');
+    for (const a of document.getAnimations()) if (a.effect?.target?.id === 'settings') a.pause();
+  });
+  let at = await shown();
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 2);
+  check('from the empty home screen, the plate grows out of the "No games found" line', near(at.plate, at.line), JSON.stringify(at));
+  await page.evaluate(() => document.getAnimations().forEach((a) => a.play()));
+  await settled(page);
+  const grown = await page.evaluate(() => Math.round((document.getElementById('settings').getBoundingClientRect().width / innerWidth) * 100));
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  at = await shown();
+  check('... to Add a game\'s width, and Back returns it into the line', grown === 46 && near(at.plate, at.line) && !at.on, JSON.stringify({ grown, ...at }));
+  await close(page);
+}
+
+// 40. Reduce Motion: Settings, Find, Add a game and the toast fade in place for 150 ms instead of sliding, Add a game
+// takes its width at once with the faces fading where they are, the plate doesn't grow from the empty screen's line,
+// and the covers move without overshoot and don't bump at the end of the row.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.evaluate(() => (window.__settings = { library_programs: [] }));
+  /** Every frame for `ms` after `run` (in the page): what moves on `selector`, and its transition. */
+  const watch = (run, selector, ms = 300) =>
+    page.evaluate(
+      async ([run, selector, ms]) => {
+        const frames = [];
+        const t0 = performance.now();
+        new Function(run)();
+        while (performance.now() - t0 < ms) {
+          await new Promise((r) => requestAnimationFrame(r));
+          const els = [...document.querySelectorAll(selector)];
+          frames.push(els.map((el) => {
+            const st = getComputedStyle(el);
+            const ms = (v) => parseFloat(v) * (v.endsWith('ms') ? 1 : 1000);
+            return { el: el.id, place: `${st.transform} ${st.translate}`, clip: st.clipPath, fade: ms(st.transitionDuration.split(',')[0]) + ms(st.transitionDelay.split(',')[0]) };
+          }));
+        }
+        return frames.flat();
+      },
+      [run, selector, ms]
+    );
+  /** Nothing moves: each element keeps one place on every frame, unclipped, and has faded within 150 ms. */
+  const still = (frames) =>
+    frames.every((f) => f.place === frames.find((g) => g.el === f.el).place && f.clip === 'none' && f.fade > 0 && f.fade <= 150);
+  let f = await watch("window.__emit('pad', 'triangle')", '#settings');
+  check('Reduce Motion: Settings fades in place for 150 ms', still(f), JSON.stringify(f.slice(0, 3)));
+  await settled(page);
+  const k = await page.evaluate(() => [...document.querySelectorAll('#settingsList .row')].findIndex((r) => r.textContent.startsWith('Add a game')));
+  for (let i = 0; i < k; i++) await emit(page, 'pad', 'down');
+  await settled(page);
+  f = await watch("window.__emit('pad', 'ok')", '#settings, #settingsFace, #add');
+  const wide = await page.evaluate(() => Math.round((document.getElementById('settings').getBoundingClientRect().width / innerWidth) * 100));
+  check('... Add a game takes its width at once, its faces fading where they are', still(f) && wide === 46, `${wide} ${JSON.stringify(f.filter((x) => !still([x])).slice(0, 3))}`);
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  f = await watch("window.__emit('pad', 'square')", '#find');
+  check('... Find fades in place for 150 ms', still(f), JSON.stringify(f.slice(0, 3)));
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  f = await watch("window.__emit('notice', 'Hello')", '#toast');
+  check('... a toast fades in place for 150 ms', still(f), JSON.stringify(f.slice(0, 3)));
+  const covers = await page.evaluate(() => {
+    const ease = getComputedStyle(document.querySelector('.cover')).transitionTimingFunction;
+    // A cubic-bezier with a y beyond 0 to 1 overshoots.
+    return { ease, overshoot: [...ease.matchAll(/cubic-bezier\(([^)]*)\)/g)].some((m) => m[1].split(',').map(Number).some((v, i) => i % 2 === 1 && (v > 1 || v < 0))) };
+  });
+  await emit(page, 'pad', 'left');
+  const bumps = await page.evaluate(() => document.querySelector('.cover.focus').getAnimations().filter((a) => !('transitionProperty' in a)).length);
+  check('... the covers move without overshoot, and the end of the row doesn\'t bump', !covers.overshoot && bumps === 0, JSON.stringify({ ...covers, bumps }));
+  await close(page);
+}
+{
+  const page = await open({ games: [] });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.evaluate(() => (window.__settings = { library_programs: [] }));
+  await until(page, () => document.getElementById('empty').textContent === 'No games found');
+  const grows = await page.evaluate(() => {
+    window.__emit('pad', 'ok');
+    return document.getAnimations().filter((a) => a.effect?.target?.id === 'settings' && !('transitionProperty' in a)).length;
+  });
+  await settled(page);
+  const at = await page.evaluate(() => ({ translate: getComputedStyle(document.getElementById('settings')).translate, on: document.getElementById('settings').classList.contains('on') }));
+  check('Reduce Motion: from the empty home screen the plate fades in at its place', grows === 0 && at.on && at.translate === 'none', JSON.stringify({ grows, ...at }));
+  await close(page);
+}
+
+// 41. One set of named springs for both pages (springs.js): the page's CSS has each of them, a step along the row moves
+// the covers on snap, which shows no overshoot, Change art's tiles too; Settings, Find and the toast open on tap and go
+// on close; the card lifts on lift and lowers on close.
+{
+  const page = await open({ games: [game(1), game(2), game(3)] });
+  await page.evaluate(() => (window.__settings = { library_programs: [] }));
+  /** The timing function and duration `selector` has for `prop` now. */
+  const curve = (selector, prop = 'transform') =>
+    page.evaluate(
+      ([selector, prop]) => {
+        const st = getComputedStyle(document.querySelector(selector));
+        const i = st.transitionProperty.split(', ').indexOf(prop);
+        const fns = st.transitionTimingFunction.match(/(linear|cubic-bezier|steps)\([^)]*\)|ease(-in-out|-in|-out)?|linear|step-start|step-end/g);
+        const ms = (v) => parseFloat(v) * (v.endsWith('ms') ? 1 : 1000);
+        return { fn: fns[i] ?? null, ms: Math.round(ms(st.transitionDuration.split(', ')[i] ?? '0s')) };
+      },
+      [selector, prop]
+    );
+  /** Which named spring a timing function and duration are, or what they are. Tap and close share a shape, critically
+   * damped both, and differ in how long they take. */
+  const named = ({ fn, ms }) => {
+    const stops = fn?.match(/^linear\((.*)\)$/)?.[1].split(',').map((v) => parseFloat(v));
+    return Object.keys(SPRINGS).find((n) => JSON.stringify(stops) === JSON.stringify(SPRINGS[n].points) && ms === SPRINGS[n].ms) ?? `${fn} ${ms}ms`;
+  };
+  const vars = await page.evaluate(() => ['tap', 'lift', 'snap', 'close'].map((n) => getComputedStyle(document.documentElement).getPropertyValue(`--${n}`).trim()));
+  check('the page has the springs both pages share', vars.every((v, i) => v === SPRINGS[['tap', 'lift', 'snap', 'close'][i]].easing), vars.map((v) => v.slice(0, 30)).join(' | '));
+  const seen = { step: named(await curve('.cover')), panelGoes: named(await curve('#find')), toastGoes: named(await curve('#toast')), cardLowers: named(await curve('#card')) };
+  await emit(page, 'pad', 'triangle');
+  await settled(page);
+  seen.settingsOpens = named(await curve('#settings'));
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  seen.settingsGoes = named(await curve('#settings'));
+  await emit(page, 'pad', 'square');
+  await settled(page);
+  seen.findOpens = named(await curve('#find'));
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  await page.evaluate(() => window.__emit('notice', 'Hello'));
+  seen.toastOpens = named(await curve('#toast'));
+  await emit(page, 'pad', 'menu');
+  await settled(page);
+  seen.cardLifts = named(await curve('#lift.on #card'));
+  const want = { step: 'snap', panelGoes: 'close', toastGoes: 'close', cardLowers: 'close', settingsOpens: 'tap', settingsGoes: 'close', findOpens: 'tap', toastOpens: 'tap', cardLifts: 'lift' };
+  const wrong = Object.keys(want).filter((k) => seen[k] !== want[k]);
+  check('... a step on snap, panels and the toast open on tap and go on close, the card lifts on lift and lowers on close', wrong.length === 0, JSON.stringify(Object.fromEntries(wrong.map((k) => [k, String(seen[k]).slice(0, 40)]))));
+  const tiles = await page.evaluate(() => [...document.styleSheets].flatMap((s) => [...s.cssRules]).filter((r) => r.selectorText === '.tile .art').map((r) => r.style.transition));
+  check('... Change art\'s tiles move on snap, nothing on the overshooting curve', tiles.length === 1 && tiles[0].includes('var(--snap)') && !(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--spring'))), JSON.stringify(tiles));
+  await close(page);
+}
+
+// 42. One stroked icon file for both pages (icons.js): the home screen draws every icon from it, its hints, Find's
+// field and Add a game's rows among them, and keeps only the store logos as its own.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.evaluate(() => (window.__settings = { library_programs: [] }));
+  /** Every <use> on the page now: where its symbol comes from, and how it is drawn. */
+  const uses = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('use')].map((u) => {
+        const id = u.getAttribute('href').slice(1);
+        const symbol = document.getElementById(id);
+        const from = symbol?.closest('svg')?.id === 'icons' ? 'shared' : id.startsWith('store-') && symbol ? 'store' : 'missing';
+        return { id, from, stroke: symbol?.querySelector('g')?.getAttribute('stroke-width') ?? null };
+      })
+    );
+  const seen = await uses();
+  await emit(page, 'pad', 'square');
+  await settled(page);
+  seen.push(...(await uses()));
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  await emit(page, 'pad', 'triangle');
+  await settled(page);
+  const k = await page.evaluate(() => [...document.querySelectorAll('#settingsList .row')].findIndex((r) => r.textContent.startsWith('Add a game')));
+  for (let i = 0; i < k; i++) await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  await settled(page);
+  seen.push(...(await uses()));
+  const ids = [...new Set(seen.map((u) => u.id))];
+  const wrong = seen.filter((u) => u.from === 'missing' || (u.from === 'shared' && !u.stroke && !['i-play', 'i-star-on', 'i-quiet-on'].includes(u.id)));
+  const own = await page.evaluate(() => [...document.querySelectorAll('symbol')].filter((s) => s.closest('svg').id !== 'icons').map((s) => s.id).filter((id) => !id.startsWith('store-')));
+  check('the home screen draws its icons from the shared file, stroked', wrong.length === 0 && ['i-search', 'i-drive', 'btn-cross', 'btn-circle'].every((id) => ids.includes(id)), JSON.stringify({ wrong, ids }));
+  check('... and keeps only the store logos as its own', own.length === 0 && (await page.evaluate(() => document.querySelectorAll('#icons').length)) === 1, own.join(', '));
+  await close(page);
+}
+
+// 43. One glass for every plate (plate.css): Settings, Find, the game menu, Change art and the toast have the same
+// fill, rim, shadow and corners, and the fill is more opaque over brighter art.
+{
+  const page = await open({ games: [game(1), game(2, { noArt: true })] });
+  const looks = () =>
+    page.evaluate(() =>
+      ['#settings', '#find', '#details', '#artPick', '#toast'].map((sel) => {
+        const st = getComputedStyle(document.querySelector(sel));
+        return { sel, fill: st.backgroundColor, shadow: st.boxShadow, round: st.borderTopLeftRadius, border: st.borderTopWidth };
+      })
+    );
+  const light = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--plate-light').trim());
+  // The first game's hero is sampled: its brightness is the plate's light.
+  await until(page, () => document.documentElement.style.getPropertyValue('--plate-light') !== '');
+  const lit = { light: await light(), looks: await looks() };
+  const same = (l) => l.every((x) => ['fill', 'shadow', 'round'].every((k) => x[k] === l[0][k]) && x.border === '0px' && x.shadow.includes('inset'));
+  check('every plate has one glass: fill, rim, shadow and corners', same(lit.looks), JSON.stringify(lit.looks.filter((x) => !same([lit.looks[0], x]))));
+  await emit(page, 'pad', 'right');
+  await until(page, () => document.documentElement.style.getPropertyValue('--plate-light') === '0');
+  const dark = { light: await light(), looks: await looks() };
+  const alpha = (c) => Number(c.match(/rgba?\([^)]*[,/]\s*([\d.]+)\)/)?.[1] ?? 1);
+  const [a, b] = [alpha(lit.looks[0].fill), alpha(dark.looks[0].fill)];
+  check(
+    '... its fill more opaque over brighter art',
+    Number(lit.light) > 0.2 && Math.abs(a - (0.7 + 0.22 * Number(lit.light))) < 0.01 && Math.abs(b - 0.7) < 0.01 && same(dark.looks),
+    JSON.stringify({ lit: lit.light, dark: dark.light, a, b })
+  );
+  await close(page);
+}
+
+// 44. The focus ring, hold to confirm and the pill, generalised from the dock's for both pages (ring.js, hold.js,
+// pill.js): the ring springs from one target to the next on snap and ends on the new one's box and corners, and with
+// Reduce Motion is there at once; a hold fills its ring and acts once full, and let go early never acts; a pill is the
+// plate's glass round its icon's badge and its text.
+{
+  const page = await open({ games: [game(1)] });
+  const ring = (reduce) =>
+    page.evaluate(async (reduce) => {
+      const { focusRing } = await import('./ring.js');
+      const frame = () => new Promise((r) => requestAnimationFrame(r));
+      const layer = document.createElement('div');
+      layer.style.cssText = 'position: fixed; left: 100px; top: 100px; width: 600px; height: 300px; z-index: 9';
+      const a = document.createElement('div');
+      a.style.cssText = 'position: absolute; left: 10px; top: 20px; width: 100px; height: 40px; border-radius: 8px';
+      const b = document.createElement('div');
+      b.style.cssText = 'position: absolute; left: 300px; top: 200px; width: 160px; height: 60px; border-radius: 20px';
+      layer.append(a, b);
+      document.body.append(layer);
+      const r = focusRing(layer);
+      const box = () => {
+        const o = r.el.getBoundingClientRect();
+        return { x: Math.round(o.x - 100), y: Math.round(o.y - 100), w: Math.round(o.width), h: Math.round(o.height) };
+      };
+      r.move(a);
+      for (let i = 0; i < 4; i++) await frame();
+      const atA = box();
+      r.move(b);
+      const way = [];
+      for (let i = 0; i < 45; i++) {
+        await frame();
+        way.push(box());
+      }
+      const st = getComputedStyle(r.el);
+      const out = { atA, between: way.filter((p) => p.x > 12 && p.x < 298).length, end: way.at(-1), round: st.borderTopLeftRadius, on: r.el.classList.contains('on'), ease: st.transitionTimingFunction.split(', linear(')[0], reduce };
+      layer.remove();
+      return out;
+    }, reduce);
+  let r = await ring(false);
+  const snapStops = (fn) => fn.match(/^linear\((.*)/)?.[1].split(',').slice(0, 4).map((v) => parseFloat(v));
+  check(
+    'the focus ring springs from one target to the next on snap, and ends on its box and corners',
+    JSON.stringify(r.atA) === JSON.stringify({ x: 10, y: 20, w: 100, h: 40 }) && r.between >= 3 && JSON.stringify(r.end) === JSON.stringify({ x: 300, y: 200, w: 160, h: 60 }) && r.round === '20px' && r.on && JSON.stringify(snapStops(r.ease)) === JSON.stringify(SPRINGS.snap.points.slice(0, 4)),
+    JSON.stringify(r)
+  );
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  r = await ring(true);
+  check('... with Reduce Motion it is on the next one at once', r.between === 0 && JSON.stringify(r.end) === JSON.stringify({ x: 300, y: 200, w: 160, h: 60 }), JSON.stringify(r));
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const held = await page.evaluate(async () => {
+    const { hold, holdRing } = await import('./hold.js');
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const el = document.createElement('div');
+    el.append(holdRing());
+    document.body.append(el);
+    // On screen a frame or two before the button goes down, as an action's row is.
+    for (let i = 0; i < 2; i++) await new Promise((r) => requestAnimationFrame(r));
+    let acted = 0;
+    const letGo = hold(el, () => acted++, 300);
+    await wait(150);
+    const filling = parseFloat(getComputedStyle(el.querySelector('.fill')).strokeDashoffset);
+    letGo();
+    await wait(400);
+    const early = acted;
+    const after = el.classList.contains('holding');
+    hold(el, () => acted++, 300);
+    await wait(450);
+    el.remove();
+    return { filling, early, after, full: acted, holding: el.classList.contains('holding') };
+  });
+  check('a hold fills its ring and acts once full; let go early, it never acts', held.filling > 5 && held.filling < 95 && held.early === 0 && !held.after && held.full === 1 && !held.holding, JSON.stringify(held));
+  const pill = await page.evaluate(async () => {
+    const { fillPill } = await import('./pill.js');
+    const el = document.createElement('div');
+    document.body.append(el);
+    fillPill(el, { icon: 'i-warn', text: 'Controller battery low', warn: true });
+    const st = getComputedStyle(el);
+    const href = el.querySelector('.badge use').getAttribute('href');
+    const out = {
+      href,
+      drawn: document.querySelector(href)?.closest('svg')?.id,
+      text: el.querySelector('.text').textContent,
+      warn: el.classList.contains('warn'),
+      round: Math.abs(parseFloat(st.borderTopLeftRadius) - el.offsetHeight / 2) < 0.5,
+      glass: st.backgroundColor === getComputedStyle(document.getElementById('settings')).backgroundColor && st.boxShadow.includes('inset'),
+    };
+    el.remove();
+    return out;
+  });
+  check("a pill is the plate's glass round its icon's badge and its text", pill.drawn === 'icons' && pill.text === 'Controller battery low' && pill.warn && pill.round && pill.glass, JSON.stringify(pill));
   await close(page);
 }
 

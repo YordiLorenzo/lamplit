@@ -13,7 +13,7 @@
 // early, and the wall-clock time of the press. The longest frames get a line of their own (probe-detail), with the
 // scripts that ran in them, and every frame's gap and work follow in a probe-frames line, for percentiles over many
 // runs. The interaction is named from the press and what was on screen then: lift-open, row-step,
-// settings-section-sound, dock-output-open.
+// settings-section-sound, dock-output-open. A plate changing shape (morph.js) adds a probe-morph line of its own.
 
 import * as api from './api.js';
 
@@ -215,6 +215,25 @@ function detail(r, e) {
     (scripts.join('; ') || 'no scripts')
   );
 }
+
+// A plate changing shape (morph.js) logs its own frames too, whatever interaction it plays in: from the frame it
+// starts on until its spring has ended.
+//
+//   probe-morph: <page> <name> frames N, p50 A, p95 B, worst C ms, over D ms
+document.addEventListener('morph', (e) => {
+  const { name, ms: span } = /** @type {CustomEvent<{ name: string, ms: number }>} */ (e).detail;
+  const start = performance.now();
+  /** @type {number[]} */
+  const times = [];
+  /** @param {number} t */
+  const step = (t) => {
+    times.push(t);
+    if (t - start < span) return requestAnimationFrame(step);
+    const gaps = times.slice(1).map((t, i) => t - times[i]).sort((a, b) => a - b);
+    api.log.info(`probe-morph: ${page} ${name} frames ${gaps.length}, p50 ${ms(at(gaps, 0.5))}, p95 ${ms(at(gaps, 0.95))}, worst ${ms(gaps.at(-1) ?? 0)} ms, over ${Math.round(t - times[0])} ms`);
+  };
+  requestAnimationFrame(step);
+});
 
 // A page that goes out of sight (Lamplit behind a game) draws no more frames: what it played ends there.
 document.addEventListener('visibilitychange', () => {

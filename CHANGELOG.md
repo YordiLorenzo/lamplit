@@ -59,6 +59,18 @@ Every release of Lamplit, newest first. The format follows
 
 ### Changed
 
+- Everything on the home screen moves on one set of springs, named for what they move. A step along the row no longer
+  overshoots its place; Settings, Find and messages open on one spring and close on a quicker one; the game menu's card
+  lifts a little past its place and settles, and lowers without.
+- The home screen's icons are drawn in the dock's style, with thin round strokes: the search field's glass, the
+  controller's buttons and Add a game's drives, folders and programs.
+- Settings, Find, the game menu, Change art and messages are drawn on one glass: the same fill, rim of light,
+  shadow and corners. The glass is a little darker over bright art, so text on it stays readable.
+- With Reduce Motion on, Settings, Find, Add a game and messages fade in place rather than sliding, the covers move
+  without overshooting, and the end of the row no longer bumps.
+- Add a game opens inside the Settings panel rather than as a second panel over it: Settings moves out, the panel
+  widens, and Add a game comes in. Back returns to Settings on Add a game. On the empty home screen the panel grows
+  out of the "No games found" line, and goes back into it.
 - Lamplit coming forward over a running game (holding PS, or the dock's Home) no longer appears at once: the home
   screen settles in under a veil in the game's colours, on the game. From the dock, the veil first comes over the game.
   Back to game does the reverse: the home screen eases out under the veil before the game comes forward.

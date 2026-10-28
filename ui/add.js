@@ -8,6 +8,7 @@ import { openArt } from './art.js';
 import { showHints, toast } from './hints.js';
 import { clickable, moveKey, nameField, pressKey, setText } from './keyboard.js';
 import { focusGame, openDetails, render as renderRow, setGames } from './library.js';
+import { grow, rest, widen } from './morph.js';
 import { sfx } from './sounds.js';
 import { els, icon, state } from './state.js';
 
@@ -15,20 +16,39 @@ import { els, icon, state } from './state.js';
 
 const field = nameField(els.addKeys, els.addName, 40);
 
-/** What Back on the first list goes back to: Settings, when Add a game was opened there. @type {(() => void) | null} */
+/** What Back on the first list goes back to: Settings, when Add a game was pushed inside its plate. @type {(() => void) | null} */
 let backTo = null;
 /** Folder listings asked for so far: an older answer, after the player has moved on, is dropped. */
 let listings = 0;
 
-/** @param {(() => void) | null} [back] */
+/**
+ * Add a game, in Settings' plate. From Settings (`back`, which Back on the first list returns to) it is pushed inside
+ * the plate, which widens; from the empty home screen the plate grows out of its line.
+ * @param {(() => void) | null} [back]
+ */
 export function openAdd(back = null) {
   backTo = back;
   state.mode = 'add';
   state.add = { ...state.add, view: 'list', programs: null, folder: null, idx: 0, exe: '', from: 'list', busy: false };
+  const plate = els.settings;
+  if (back) widen(plate, true);
+  else {
+    rest(plate);
+    plate.classList.remove('moving');
+    plate.classList.add('grown', 'wide', 'on');
+    grow(plate, lineBox());
+  }
   els.add.classList.add('on');
   sfx.open();
   render();
   loadPrograms();
+}
+
+/** The empty home screen's line: its text, not the whole screen that centres it. */
+function lineBox() {
+  const text = document.createRange();
+  text.selectNodeContents(els.empty);
+  return text.getBoundingClientRect();
 }
 
 async function loadPrograms() {
@@ -80,7 +100,7 @@ function rows() {
 }
 
 /** Icons in front of a row, by its kind. */
-const ICONS = { browse: 'icon-drive', drive: 'icon-drive', folder: 'icon-folder', exe: 'icon-exe', program: 'icon-exe' };
+const ICONS = { browse: 'i-drive', drive: 'i-drive', folder: 'i-folder', exe: 'i-app', program: 'i-app' };
 
 function render() {
   const a = state.add;
@@ -167,17 +187,27 @@ function back() {
     Object.assign(a, { view: 'list', folder: null, idx: 0 });
     sfx.back();
     render();
+  } else if (backTo) {
+    state.typing = null;
+    els.add.classList.remove('on');
+    backTo();
   } else {
-    closeAdd();
-    backTo?.();
+    closeAdd(false, !state.all.length);
   }
 }
 
-/** Closes Add a game, also when a game's news takes the screen (launch.js). @param {boolean} [quiet]  no sound */
-export function closeAdd(quiet = false) {
+/**
+ * Closes Add a game and its plate, also when a game's news takes the screen (launch.js).
+ * @param {boolean} [quiet]  no sound
+ * @param {boolean} [toLine]  the plate returns into the empty home screen's line it grew from
+ */
+export function closeAdd(quiet = false, toLine = false) {
   state.mode = 'browse';
   state.typing = null;
   els.add.classList.remove('on');
+  const plate = els.settings;
+  if (toLine) grow(plate, lineBox(), { back: true, done: () => plate.classList.remove('on') });
+  else plate.classList.remove('on');
   if (!quiet) sfx.back();
   showHints();
 }

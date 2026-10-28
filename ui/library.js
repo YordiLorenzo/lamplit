@@ -5,7 +5,8 @@
 import { assetUrl, libraryRemoveGame, librarySetFavourite, librarySetHidden } from './api.js';
 import { showHints, toast } from './hints.js';
 import { face, lift, lower, settle, showSheet } from './lift.js';
-import { accentOf, detailChoices, folderParts, narrowed, playTimeText, playedText, rowOf, storeWarning, words } from './logic.js';
+import { accentOf, detailChoices, lightOf, folderParts, narrowed, playTimeText, playedText, rowOf, storeWarning, words } from './logic.js';
+import { reduced } from './morph.js';
 import { sfx } from './sounds.js';
 import { byId, els, focused, icon, state, storeName, withStoreLogo } from './state.js';
 
@@ -21,9 +22,9 @@ const fileUrl = (path) => (path ? assetUrl(path) : null);
 // ---------- accent colour from the art ----------
 
 /**
- * The accent colour of the image at `url`. It is read as a file and decoded straight to 64x36 off the main thread:
- * drawing the 4K hero itself, or an ImageBitmap of the loaded image, decodes it on the main thread, most of a frame or
- * more. The asset protocol sends the CORS header, so the canvas can be read back.
+ * The accent colour of the image at `url`, and how bright it is. It is read as a file and decoded straight to 64x36
+ * off the main thread: drawing the 4K hero itself, or an ImageBitmap of the loaded image, decodes it on the main
+ * thread, most of a frame or more. The asset protocol sends the CORS header, so the canvas can be read back.
  * @param {string} url
  */
 async function sampleAccent(url) {
@@ -35,12 +36,19 @@ async function sampleAccent(url) {
   const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d', { willReadFrequently: true }));
   ctx.drawImage(small, 0, 0);
   small.close();
-  return accentOf(ctx.getImageData(0, 0, 64, 36).data);
+  const { data } = ctx.getImageData(0, 0, 64, 36);
+  return { rgb: accentOf(data), light: lightOf(data) };
 }
 
-/** @param {number[] | null | undefined} rgb */
-function applyAccent(rgb) {
-  document.documentElement.style.setProperty('--accent', (rgb ?? [140, 170, 255]).join(' '));
+/**
+ * The focused game's colour, and its art's brightness for the plates over it (plate.css); without art, the screen
+ * behind them is dark.
+ * @param {{ rgb: number[], light: number } | undefined} look
+ */
+function applyAccent(look) {
+  const root = document.documentElement.style;
+  root.setProperty('--accent', (look?.rgb ?? [140, 170, 255]).join(' '));
+  root.setProperty('--plate-light', String(look?.light ?? 0));
 }
 
 // ---------- hero, logo and details of the focused game ----------
@@ -75,9 +83,9 @@ function setHero(g) {
   if (accent) applyAccent(accent);
   else {
     sampleAccent(url).then(
-      (rgb) => {
-        state.accents.set(g.id, rgb);
-        if (focused()?.id === g.id) applyAccent(rgb);
+      (look) => {
+        state.accents.set(g.id, look);
+        if (focused()?.id === g.id) applyAccent(look);
       },
       () => {}
     );
@@ -391,7 +399,7 @@ function showFilters() {
   };
   /** @type {Node[]} */
   const parts = [];
-  if (words(query).length) parts.push(pill('query', icon('icon-search'), query.trim()));
+  if (words(query).length) parts.push(pill('query', icon('i-search'), query.trim()));
   if (store) parts.push(pill('', ...withStoreLogo(store === 'pc' ? null : store, store)));
   if (sort === 'name') parts.push(pill('quiet', 'A to Z'));
   if (narrowed(state.find)) parts.push(document.createTextNode(`${state.games.length} of ${shownCount()} games`));
@@ -403,10 +411,13 @@ export function move(delta) {
   const next = Math.max(0, Math.min(state.games.length - 1, state.idx + delta));
   if (next === state.idx) {
     sfx.edge();
-    focused().el.animate([{ translate: '0 0' }, { translate: `${Math.sign(delta) * 1.2}vh 0` }, { translate: '0 0' }], {
-      duration: 200,
-      easing: 'ease-out',
-    });
+    // The end of the row: the cover bumps against it, and with Reduce Motion only the sound says so.
+    if (!reduced()) {
+      focused().el.animate([{ translate: '0 0' }, { translate: `${Math.sign(delta) * 1.2}vh 0` }, { translate: '0 0' }], {
+        duration: 200,
+        easing: 'ease-out',
+      });
+    }
     return;
   }
   state.idx = next;
