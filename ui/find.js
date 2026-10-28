@@ -9,7 +9,7 @@ import { showHints } from './hints.js';
 import { SEARCH, buildKeys } from './keyboard.js';
 import { rowCount, showRow } from './library.js';
 import { nearest, storeChoices, typed } from './logic.js';
-import { grow } from './morph.js';
+import { grow, rest } from './morph.js';
 import { focusRing } from './ring.js';
 import { sfx } from './sounds.js';
 import { els, icon, state, storeName, withStoreLogo } from './state.js';
@@ -125,6 +125,8 @@ export function closeFind() {
   sfx.back();
   showHints();
   els.find.classList.add('going');
+  // The store list may still be growing: it goes with Find, and what its opening was to do once it ended with it.
+  rest(els.findStores);
   const to = fieldSource();
   grow(els.findPlate, to, { back: true, anchor: 'bottom-left' });
   grow(els.findField, to, {
@@ -179,11 +181,25 @@ export function backFind() {
   else closeFind();
 }
 
+/**
+ * Where `el` is laid out in Find's layer, from its offsets: a press while the keyboard or the list still grows (and so
+ * still moves) goes where it would once they are in place, not to the chip a moving key happens to be beside.
+ * @param {HTMLElement} el
+ */
+function laidOut(el) {
+  let [x, y, n] = [0, 0, /** @type {HTMLElement | null} */ (el)];
+  for (; n && n !== els.find; n = /** @type {HTMLElement | null} */ (n.offsetParent)) {
+    x += n.offsetLeft;
+    y += n.offsetTop;
+  }
+  return { x, y, width: el.offsetWidth, height: el.offsetHeight };
+}
+
 /** @param {'up' | 'down' | 'left' | 'right'} dir */
 export function moveFind(dir) {
   const all = targets();
   const from = all.find((t) => t.dataset.id === state.findFocus);
-  const to = all[nearest(from.getBoundingClientRect(), all.map((t) => t.getBoundingClientRect()), dir)];
+  const to = all[nearest(laidOut(from), all.map(laidOut), dir)];
   if (!to) return sfx.edge();
   state.findFocus = /** @type {string} */ (to.dataset.id);
   sfx.move();
