@@ -221,11 +221,14 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   asked 10 seconds ago hasn't happened. With none of those processes, `GameState::closable` is false and the dock has
   no Close game at all.
 
-The page sizes the dock in hundredths of the screen's height (`--u`, from `screen.height`), as the home screen is
-sized in `vh`. The island's width and height follow the face it shows, with a spring easing built as a CSS `linear()`
-curve; one focus ring springs from tile to tile on a quicker one that settles without going past (a press throws
-nothing), and opening, it comes on Resume with Resume's own fade. Behind the faces, the game's own art is drawn small
-(`createImageBitmap` scales it down off the page's thread) and blurred into a canvas, which the page scales up to the island: a blur that costs nothing while the island moves,
+The page sizes the dock in hundredths of the screen's height (`--u`, from `screen.height`), as the home screen is sized
+in `vh`. The island opens and folds on a spring built as a CSS `linear()` curve, which overshoots once. Resized while
+open, it follows the face it shows on a quicker one that settles without going past (a press throws nothing), and so
+does the one focus ring, from tile to tile; opening, the ring comes on Resume with Resume's own fade. The ring is placed
+from the dock's bottom, as the dock is laid out, so what grows above doesn't move it. The list of sound outputs grows out of
+its tile: clipped to the tile and on its fill at first, it opens with the island and the ring. Behind the faces, the
+game's own art is drawn small (`createImageBitmap` scales it down off the page's thread) and blurred into a canvas,
+which the page scales up to the island: a blur that costs nothing while the island moves,
 where CSS `backdrop-filter` couldn't see the game behind a transparent window at all. Once the island rests open,
 Windows' real glass takes the art's place where Windows 11 22H2 or later has transparency effects on (`dock/glass.rs`,
 `win/glass.rs`): a Windows.UI.Composition visual in the dock's own window, behind the page, filled with the host

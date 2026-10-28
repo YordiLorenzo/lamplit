@@ -482,6 +482,8 @@ const tileEl = (key) => /** @type {HTMLElement | null} */ (els.tiles.querySelect
 
 function render() {
   const d = state.data;
+  // The list of outputs opening grows out of its tile (grow): where the tile is, before anything moves.
+  const tile = state.row === 'outputs' && els.outputs.hidden ? tileEl('output')?.getBoundingClientRect() : undefined;
   setText(els.game, d.game?.name ?? '');
   showArt(d.game);
   tick();
@@ -562,9 +564,24 @@ function render() {
       })
     );
   }
+  if (tile) grow(tile);
   renderHints();
   if (shown()) shape('open');
   placeRing();
+}
+
+/**
+ * The list of outputs grows out of its tile: clipped to the tile and on the tile's fill at first, it springs open with
+ * the island as its rows fade in (dock.css #outputs).
+ * @param {DOMRect} tile
+ */
+function grow(tile) {
+  const list = els.outputs.getBoundingClientRect();
+  const from = { top: tile.top - list.top, right: list.right - tile.right, bottom: list.bottom - tile.bottom, left: tile.left - list.left };
+  for (const [side, px] of Object.entries(from)) els.outputs.style.setProperty(`--from-${side}`, `${px}px`);
+  els.outputs.classList.add('from-tile');
+  void els.outputs.offsetWidth;
+  els.outputs.classList.remove('from-tile');
 }
 
 /** What has the focus now: the volume, a tile, or an output. */
@@ -594,7 +611,8 @@ function placeRing() {
     if (els.outputList.contains(el)) y -= els.outputList.scrollTop;
     const r = els.ring.style;
     r.setProperty('--x', `${x}px`);
-    r.setProperty('--y', `${y}px`);
+    // From the dock's bottom (dock.css #ring).
+    r.setProperty('--y', `${y + el.offsetHeight - els.dock.offsetHeight}px`);
     r.setProperty('--w', `${el.offsetWidth}px`);
     r.setProperty('--h', `${el.offsetHeight}px`);
     r.setProperty('--r', getComputedStyle(el).borderRadius);

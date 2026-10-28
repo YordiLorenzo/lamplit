@@ -55,9 +55,11 @@ body.pointer { cursor: default; }
   border-radius: var(--round);
   translate: -50% 0;
   transform-origin: 50% 100%;
+  /* Opening and folding move the clip on the island's spring; resized while open (the list of outputs), it moves on the
+     quicker snap, as the focus ring and the list do. */
   transition:
-    width var(--spring-ms) var(--spring) 70ms,
-    height var(--spring-ms) var(--spring) 70ms,
+    width var(--snap-ms) var(--snap),
+    height var(--snap-ms) var(--snap),
     clip-path var(--spring-ms) var(--spring) 70ms,
     opacity 140ms ease,
     scale 380ms var(--spring),
@@ -92,8 +94,8 @@ body.pointer { cursor: default; }
 /* Opening, the shadow comes once the clip has nearly sprung open around it. */
 #shade:is([data-mode='open'], [data-mode='news']) {
   transition:
-    width var(--spring-ms) var(--spring) 70ms,
-    height var(--spring-ms) var(--spring) 70ms,
+    width var(--snap-ms) var(--snap),
+    height var(--snap-ms) var(--snap),
     opacity 240ms ease 160ms,
     scale 380ms var(--spring),
     translate 380ms var(--spring);
@@ -440,10 +442,12 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
 @keyframes closing { 30% { background: rgb(var(--lamp) / .35); } }
 
 /* The focus: one ring that springs from what had it to what has it (main.js places it). */
+/* Placed from the dock's bottom, as the dock is laid out: what grows above it (the list of outputs, the volume) doesn't
+   move it on the screen. */
 #ring {
   position: absolute;
   left: 0;
-  top: 0;
+  bottom: 0;
   z-index: 1;
   width: var(--w, 0);
   height: var(--h, 0);
@@ -468,8 +472,22 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
 /* Folding, it goes with the face, as the tiles do. */
 #island:not([data-mode='open']) #ring { transition: opacity 0s linear 120ms; }
 
-/* Choosing the sound output: a list in place of the tiles. */
-#outputs { display: grid; gap: calc(var(--u) * .8); }
+/* Choosing the sound output: a list in place of the tiles, which grows out of its tile (main.js grow). Clipped to the
+   tile and on its fill at first, it opens on the snap with the island and the focus ring, its fill fades, and its rows
+   fade in on the way. Open, the clip reaches past it all round, so it cuts nothing. */
+#outputs {
+  display: grid;
+  gap: calc(var(--u) * .8);
+  clip-path: inset(calc(var(--u) * -1) round calc(var(--u) * 2.8));
+  transition: clip-path var(--snap-ms) var(--snap), background 240ms ease 80ms;
+}
+#outputs > * { transition: opacity 200ms ease 80ms; }
+#outputs.from-tile {
+  clip-path: inset(var(--from-top) var(--from-right) var(--from-bottom) var(--from-left) round calc(var(--u) * 2.8));
+  background: rgb(255 255 255 / .15);
+  transition: none;
+}
+#outputs.from-tile > * { opacity: 0; transition: none; }
 /* While the list shows, the tiles keep their width, so the island keeps its own. */
 #tiles.away { visibility: hidden; height: 0; margin-bottom: calc(var(--u) * -2.2); }
 #outputs h3 {
@@ -561,5 +579,8 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
   }
   #veil, body.home.lift #veil { transition: opacity 150ms ease; }
   body.home #island { scale: 1; transition: opacity 150ms ease; }
+  /* The list of outputs fades in where it is. */
+  #outputs, #outputs.from-tile { clip-path: none; background: none; transition: none; }
+  #outputs > * { transition: opacity 150ms ease; }
   .tile.closing, .output.picked, .output.picked .check { animation: none; }
 }

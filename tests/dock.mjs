@@ -95,18 +95,13 @@ const ringOn = (page) =>
         // After the ring's own frame of layout, and its spring.
         setTimeout(() => {
           const ring = document.getElementById('ring');
-          const dock = document.getElementById('dock');
           const tile = document.querySelector('.tile.focus');
+          // Where each is on the screen.
           const box = (el) => {
-            let [x, y, n] = [0, 0, el];
-            while (n && n !== dock) [x, y, n] = [x + n.offsetLeft, y + n.offsetTop, n.offsetParent];
-            return [x, y, el.offsetWidth, el.offsetHeight].map(Math.round).join();
+            const b = el.getBoundingClientRect();
+            return [b.x, b.y, b.width, b.height].map(Math.round).join();
           };
-          const s = getComputedStyle(ring);
-          const at = [s.getPropertyValue('--x'), s.getPropertyValue('--y'), s.getPropertyValue('--w'), s.getPropertyValue('--h')]
-            .map((v) => Math.round(parseFloat(v)))
-            .join();
-          resolve({ ring: at, tile: tile ? box(tile) : null, on: ring.classList.contains('on') });
+          resolve({ ring: box(ring), tile: tile ? box(tile) : null, on: ring.classList.contains('on') });
         }, 450)
       )
   );
@@ -785,6 +780,49 @@ export async function dockTests({ open, close, check, shots }) {
     const xs = await stepping;
     const to = xs.at(-1);
     check('a step moves the ring onto the next tile without going past it', xs[0] < to && Math.max(...xs) <= to + 0.5, `${to} ${JSON.stringify(xs.map((x) => Math.round(x * 10) / 10))}`);
+    await close(page);
+  }
+
+  // D23. The list of outputs grows out of its tile: clipped to the tile at first, with the focus ring still on the
+  // tile where it was on the screen, and its rows yet to fade in; then open all round.
+  {
+    const page = await openDock();
+    await emit(page, 'dock-pad', 'right');
+    await settled(page);
+    const box = (el) => {
+      const b = el.getBoundingClientRect();
+      return { top: b.top, right: b.right, bottom: b.bottom, left: b.left };
+    };
+    const tile = await page.evaluate((box) => new Function(`return ${box}`)()(document.querySelector('.tile[data-key="output"]')), box.toString());
+    const growing = page.evaluate(
+      (box) =>
+        new Promise((resolve) => {
+          const at = new Function(`return ${box}`)();
+          const [outputs, list, ring] = [document.getElementById('outputs'), document.getElementById('outputList'), document.getElementById('ring')];
+          const seen = [];
+          const start = performance.now();
+          const step = () => {
+            if (!outputs.hidden) seen.push({ clip: getComputedStyle(outputs).clipPath, rows: Number(getComputedStyle(list).opacity), ring: at(ring), list: at(outputs) });
+            if (performance.now() - start < 700) requestAnimationFrame(step);
+            else resolve(seen);
+          };
+          requestAnimationFrame(step);
+        }),
+      box.toString()
+    );
+    await emit(page, 'dock-pad', 'ok');
+    const seen = await growing;
+    /** A clip's insets, as top, right, bottom and left. */
+    const insets = (clip) => {
+      const [t, r = t, b = t, l = r] = (clip.split(' round')[0].match(/-?[\d.]+px/g) ?? []).map(parseFloat);
+      return [t, r, b, l];
+    };
+    const [first, last] = [seen[0], seen.at(-1)];
+    const from = [tile.top - first.list.top, first.list.right - tile.right, first.list.bottom - tile.bottom, tile.left - first.list.left];
+    const near = (a, b) => a.length === b.length && a.every((n, i) => Math.abs(n - b[i]) < 1);
+    const ringOnTile = near(Object.values(first.ring), Object.values(tile));
+    check('the list of outputs grows out of its tile: clipped to it first, the ring still on it, the rows yet to come', near(insets(first.clip), from) && ringOnTile && first.rows < 0.1, `${first.clip} ${JSON.stringify(from)} ${JSON.stringify(first.ring)} ${JSON.stringify(tile)} ${first.rows}`);
+    check('... and then it is open all round, its rows shown', insets(last.clip).every((n) => n < 0) && last.rows === 1, `${last.clip} ${last.rows}`);
     await close(page);
   }
 
