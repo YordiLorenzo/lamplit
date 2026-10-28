@@ -2165,6 +2165,39 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
       fading.whileFading === 0 && fading.once > 0 && fading.freed && fading.canvas === 1,
       JSON.stringify(fading)
     );
+    // The fade-in waits for the frames to come on time (a GPU coming up from its idle clocks takes up to 100 ms a
+    // frame at first), half a second at most from the first frame drawn. Here the page holds each frame 40 ms, for
+    // 300 ms and then for 1.5 s from the start.
+    const fadeIn = await page.evaluate(async () => {
+      const { saver } = window.preview;
+      const fadesInAfter = async (/** @type {number} */ lateFor) => {
+        const until = performance.now() + lateFor;
+        const hold = () => {
+          const t = performance.now();
+          if (t >= until) return;
+          while (performance.now() - t < 40);
+          requestAnimationFrame(hold);
+        };
+        requestAnimationFrame(hold);
+        const start = performance.now();
+        saver.start(saver.current.scene);
+        await new Promise((resolve) =>
+          new MutationObserver((_, watch) => saver.root.classList.contains('on') && (watch.disconnect(), resolve(null))).observe(saver.root, {
+            attributes: true,
+          })
+        );
+        const at = Math.round(performance.now() - start);
+        saver.stop();
+        await new Promise((resolve) => setTimeout(resolve, Math.max(0, until - performance.now()) + 1300));
+        return at;
+      };
+      return { late300: await fadesInAfter(300), late1500: await fadesInAfter(1500) };
+    });
+    check(
+      'the screensaver fades in once its frames come on time, or half a second in at the latest',
+      fadeIn.late300 >= 300 && fadeIn.late300 < 550 && fadeIn.late1500 >= 500 && fadeIn.late1500 < 900,
+      JSON.stringify(fadeIn)
+    );
   }
   await page.close();
 }
