@@ -1,7 +1,7 @@
 // @ts-check
 // Morph, for both pages: one plate changing shape. Its clip and its place spring between boxes on screen: it grows out
-// of what it opens from (a line of text, a card's edge, a chip), widens for another face, and goes back into what it
-// came from on close. Clip, translate and opacity only, so nothing is laid out or painted again on the way. With
+// of what it opens from (a line of text, a card's edge, the status capsule), turns from one face to another, and goes
+// back into what it came from on close. Clip, translate and opacity only, so nothing is laid out or painted again on the way. With
 // Reduce Motion it neither moves nor changes shape: it fades in place (each page's CSS), and what was to run once it
 // ends runs at once. Each morph tells the frame probe (probe.js, in measurement builds only), which logs its frames.
 
@@ -15,8 +15,6 @@ export const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matc
 /** Tells the probe that morph `name` plays for `ms`. @param {string} name @param {number} ms */
 const tell = (name, ms) => document.dispatchEvent(new CustomEvent('morph', { detail: { name, ms } }));
 
-/** Plates whose clip settles when its spring ends. */
-const watched = new WeakSet();
 /** The shape a plate holds after going back into what it came from, until it opens again. */
 const held = new WeakMap();
 
@@ -100,28 +98,23 @@ export function rest(plate) {
 }
 
 /**
- * The plate takes its other width, for another face: its box takes the wider width at once while a clip shows the
- * width it had, the clip springs to the new width on the tap spring, and the box settles there (the page's CSS:
- * style.css #settings.moving).
+ * The plate turns from one face to another, each laid out where it shows (`from` and `to`, boxes on screen): only its
+ * clip moves, from the one to the other, while `cover` has the plate hold both; `settle` gives it the new face's size
+ * once its clip is there. With Reduce Motion the plate takes that size at once, and its faces fade in place (the
+ * page's CSS).
  * @param {HTMLElement} plate
- * @param {boolean} wide
+ * @param {{ name: string, from: DOMRect, to: DOMRect, spring?: SpringName, cover: () => void, settle: () => void }} how
  */
-export function widen(plate, wide) {
-  if (plate.classList.contains('wide') === wide) return;
-  // Its faces fade where they are, and the plate takes its width with them.
+export function turn(plate, { name, from, to, spring = 'tap', cover, settle }) {
   if (reduced()) {
-    plate.classList.toggle('wide', wide);
-    return;
+    rest(plate);
+    return settle();
   }
-  if (!watched.has(plate)) {
-    watched.add(plate);
-    plate.addEventListener('transitionend', (e) => {
-      if (e.target === plate && e.propertyName === 'clip-path') plate.classList.remove('moving');
-    });
-  }
-  plate.classList.add('moving');
-  // The clip starts at the width the plate shows now.
-  void getComputedStyle(plate).clipPath;
-  plate.classList.toggle('wide', wide);
-  tell(`${plate.id}-${wide ? 'widen' : 'narrow'}`, SPRINGS.tap.ms);
+  const round = parseFloat(getComputedStyle(plate).borderTopLeftRadius);
+  cover();
+  const done = () => {
+    settle();
+    rest(plate);
+  };
+  morph(plate, { name, from: { box: from, round, still: true }, to: { box: to, round, still: true }, spring, hold: true, done });
 }

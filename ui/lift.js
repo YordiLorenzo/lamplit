@@ -8,7 +8,7 @@
 // change while it moves, so it stays on the compositor at 60 fps on a 4K screen.
 
 import { liftLayout } from './logic.js';
-import { morph, rest } from './morph.js';
+import { morph, rest, turn } from './morph.js';
 import { SPRINGS } from './springs.js';
 import { els, state } from './state.js';
 
@@ -178,23 +178,21 @@ export function showSheet(which) {
   if (!up) return fit(to);
   // The face that comes fades in from 45% of the plate's way, without waiting on the card (style.css).
   els.sheet.classList.add('turned');
-  const round = parseFloat(getComputedStyle(els.sheet).borderTopLeftRadius);
   const [was, will] = [from.getBoundingClientRect(), to.getBoundingClientRect()];
-  // Both faces are centred on the card, and Change art is the wider: its width, and the taller one's height.
-  held = true;
-  els.sheet.classList.add('art');
-  els.sheet.style.setProperty('--sheet-h', `${Math.max(was.height, will.height)}px`);
-  const done = () => {
-    held = false;
-    fit(els.artPick.classList.contains('on') ? els.artPick : els.details);
-    rest(els.sheet);
-  };
-  morph(els.sheet, {
+  turn(els.sheet, {
     name: art ? 'sheet-to-art' : 'sheet-to-menu',
-    from: { box: was, round, still: true },
-    to: { box: will, round, still: true },
+    from: was,
+    to: will,
     spring: art ? 'tap' : 'close',
-    hold: true,
-    done,
+    // Both faces are centred on the card, and Change art is the wider: its width, and the taller one's height.
+    cover: () => {
+      held = true;
+      els.sheet.classList.add('art');
+      els.sheet.style.setProperty('--sheet-h', `${Math.max(was.height, will.height)}px`);
+    },
+    settle: () => {
+      held = false;
+      fit(els.artPick.classList.contains('on') ? els.artPick : els.details);
+    },
   });
 }

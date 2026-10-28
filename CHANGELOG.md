@@ -60,6 +60,10 @@ Every release of Lamplit, newest first. The format follows
 
 ### Changed
 
+- The clock is now a status capsule, top right: the controllers' and the headset's batteries, the volume, a moon
+  while quiet mode is on, and the time, as the dock shows them. Settings grows down out of it, and the capsule stays
+  as Settings' header. Settings is only as tall as what it holds, each section has an icon, and opening a section
+  slides it in from the side, Back out the other way.
 - What can't be taken back is held, as the dock's Close game: Remove from Lamplit, Restart, Shut down, and Close game,
   which the game menu now offers while its game runs. Holding Cross fills a ring round the choice's icon, and it
   happens once the ring is full; let go before, and nothing happens. Each says beforehand what it does ("Closes

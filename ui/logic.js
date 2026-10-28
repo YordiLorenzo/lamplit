@@ -473,17 +473,18 @@ export function quietMode(quiet) {
 
 // ---------- the Settings screen ----------
 
+/** @type {{ key: string, title: string, icon: import('./icons.js').IconId }[]} Settings' sections, with their icons. */
 export const SECTIONS = [
-  { key: 'sound', title: 'Sound' },
-  { key: 'headset', title: 'Headset' },
-  { key: 'controllers', title: 'Controllers' },
-  { key: 'popups', title: 'Overlay and pop-ups' },
-  { key: 'stores', title: 'Stores' },
-  { key: 'screensaver', title: 'Screensaver' },
-  { key: 'system', title: 'System' },
-  { key: 'add', title: 'Add a game' },
-  { key: 'hidden', title: 'Hidden games' },
-  { key: 'power', title: 'Power' },
+  { key: 'sound', title: 'Sound', icon: 'i-volume' },
+  { key: 'headset', title: 'Headset', icon: 'i-headset' },
+  { key: 'controllers', title: 'Controllers', icon: 'i-controller' },
+  { key: 'popups', title: 'Overlay and pop-ups', icon: 'i-popups' },
+  { key: 'stores', title: 'Stores', icon: 'i-store' },
+  { key: 'screensaver', title: 'Screensaver', icon: 'i-screensaver' },
+  { key: 'system', title: 'System', icon: 'i-system' },
+  { key: 'add', title: 'Add a game', icon: 'i-add' },
+  { key: 'hidden', title: 'Hidden games', icon: 'i-eye-off' },
+  { key: 'power', title: 'Power', icon: 'i-power' },
 ];
 /**
  * The rows of Settings > Power. Sleep can be undone with any button, so one press does it; Restart and Shut down are

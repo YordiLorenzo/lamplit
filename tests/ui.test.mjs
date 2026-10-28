@@ -2953,12 +2953,17 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   const vars = await page.evaluate(() => ['tap', 'lift', 'snap', 'close'].map((n) => getComputedStyle(document.documentElement).getPropertyValue(`--${n}`).trim()));
   check('the page has the springs both pages share', vars.every((v, i) => v === SPRINGS[['tap', 'lift', 'snap', 'close'][i]].easing), vars.map((v) => v.slice(0, 30)).join(' | '));
   const seen = { step: named(await curve('.cover')), toastGoes: named(await curve('#toast', 'translate')), cardLowers: named(await curve('#card')) };
-  await emit(page, 'pad', 'triangle');
+  // Settings grows out of the status capsule and goes back into it (morph.js): the springs of those.
+  const morphed = (pad) =>
+    page.evaluate((pad) => {
+      window.__emit('pad', pad);
+      const a = document.getElementById('settings').getAnimations().find((x) => !('transitionProperty' in x));
+      return { fn: a?.effect.getTiming().easing ?? null, ms: a?.effect.getTiming().duration ?? 0 };
+    }, pad);
+  seen.settingsOpens = named(await morphed('triangle'));
   await settled(page);
-  seen.settingsOpens = named(await curve('#settings'));
-  await emit(page, 'pad', 'back');
+  seen.settingsGoes = named(await morphed('back'));
   await settled(page);
-  seen.settingsGoes = named(await curve('#settings'));
   await page.evaluate(() => window.__emit('notice', 'Hello'));
   seen.toastOpens = named(await curve('#toast', 'translate'));
   await emit(page, 'pad', 'menu');
@@ -3331,6 +3336,149 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await close(page);
 }
 
+// 47. The status capsule replaces the bare clock: the batteries, the volume, quiet mode and the time, as the dock's
+// chips, on the plate's glass. Settings grows down out of it, which stays as its header, and goes back into it; the
+// plate's height follows what it holds, sections push inside it with their icons, and with Reduce Motion it all
+// fades in place.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.evaluate(
+    ([accessories, sound, quiet]) => (window.__settings = { accessories_state: accessories, sound_state: sound, quiet_state: quiet }),
+    [ipc('accessories'), like(ipc('sound'), { volume: 45, muted: false }), like(ipc('quiet'), { active: true })]
+  );
+  // Read again as Rust says the accessories changed.
+  await emit(page, 'accessories', null);
+  await until(page, () => document.querySelectorAll('#chips .chip').length === 5);
+  const capsule = await page.evaluate(() => {
+    const st = getComputedStyle(document.getElementById('status'));
+    return {
+      chips: [...document.querySelectorAll('#chips .chip')].map((c) => [c.querySelector('use')?.getAttribute('href'), c.textContent]),
+      clock: /^\d\d:\d\d$/.test(document.getElementById('clock').textContent),
+      glass: st.backgroundColor === getComputedStyle(document.getElementById('settings')).backgroundColor && st.boxShadow.includes('inset'),
+      oldClock: !!document.querySelector('body > #clock'),
+    };
+  });
+  check(
+    'the status capsule shows the batteries, the volume, quiet mode and the time, on the plate\'s glass',
+    JSON.stringify(capsule.chips) === JSON.stringify([['#i-controller', '60%'], ['#i-controller', 'Medium'], ['#i-headset', '80%'], ['#i-volume', '45%'], ['#i-quiet-on', '']]) && capsule.clock && capsule.glass && !capsule.oldClock,
+    JSON.stringify(capsule)
+  );
+  /** What shows of the plate: its box, less its clip. */
+  const shown = () =>
+    page.evaluate(() => {
+      const el = document.getElementById('settings');
+      const r = el.getBoundingClientRect();
+      const v = (getComputedStyle(el).clipPath.match(/inset\(([^)]*?)(?: round|\))/)?.[1] ?? '0px').split(' ').map(parseFloat);
+      const [t, ri, b, l] = [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]];
+      return [r.left + l, r.top + t, r.right - ri, r.bottom - b].map(Math.round);
+    });
+  const box = (sel) =>
+    page.evaluate((sel) => {
+      const r = document.querySelector(sel).getBoundingClientRect();
+      return [r.left, r.top, r.right, r.bottom].map(Math.round);
+    }, sel);
+  const at = await box('#status');
+  await page.evaluate(() => {
+    window.__emit('pad', 'triangle');
+    const grow = document.getElementById('settings').getAnimations().find((a) => !('transitionProperty' in a));
+    grow.pause();
+  });
+  const start = await shown();
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 2);
+  check('Settings grows down out of the capsule', near(start, at), JSON.stringify({ start, at }));
+  await page.evaluate(() => document.getElementById('settings').getAnimations().forEach((a) => a.finish()));
+  await settled(page);
+  const open1 = await page.evaluate(() => {
+    const plate = document.getElementById('settings').getBoundingClientRect();
+    const face = document.getElementById('settingsFace').getBoundingClientRect();
+    const status = document.getElementById('status');
+    const c = status.getBoundingClientRect();
+    const title = document.getElementById('settingsTitle').getBoundingClientRect();
+    return {
+      header: c.top >= plate.top && c.right <= plate.right && c.bottom < title.top && getComputedStyle(status).backgroundColor === 'rgba(0, 0, 0, 0)' && Number(getComputedStyle(status).zIndex) > Number(getComputedStyle(document.getElementById('settings')).zIndex),
+      fits: Math.abs(plate.height - face.height) <= 1,
+      height: plate.height,
+      icons: [...document.querySelectorAll('#settingsList .row')].map((r) => r.querySelector('.glyph use')?.getAttribute('href') ?? null),
+    };
+  });
+  check('... which stays as its header, over the plate, without glass of its own', open1.header, JSON.stringify(open1));
+  await emit(page, 'notice', 'Sound: TV');
+  await settled(page);
+  const beside = await page.evaluate(() => {
+    const t = document.getElementById('toast').getBoundingClientRect();
+    const p = document.getElementById('settings').getBoundingClientRect();
+    return { right: Math.round(t.right), plate: Math.round(p.left), on: document.getElementById('toast').classList.contains('on') };
+  });
+  check('... a message meanwhile stands beside the plate, not over its rows', beside.on && beside.right <= beside.plate, JSON.stringify(beside));
+  check('... each section with its icon', open1.icons.length >= 8 && open1.icons.every((h) => h && h.startsWith('#i-')) && open1.icons.at(-1) === '#i-power', JSON.stringify(open1.icons));
+  // Into Power, the last section: the plate turns to its height, the rows come in from the right.
+  const k = await page.evaluate(() => document.querySelectorAll('#settingsList .row').length - 1);
+  for (let i = 0; i < k; i++) await emit(page, 'pad', 'down');
+  await settled(page);
+  const pushed = await page.evaluate(() => {
+    window.__emit('pad', 'ok');
+    const turn = document.getElementById('settings').getAnimations().find((a) => !('transitionProperty' in a));
+    const slide = document.getElementById('settingsList').getAnimations()[0];
+    return { turn: !!turn, from: slide?.effect.getKeyframes()[0].translate ?? null };
+  });
+  await settled(page);
+  const power = await page.evaluate(() => ({
+    plate: document.getElementById('settings').getBoundingClientRect().height,
+    face: document.getElementById('settingsFace').getBoundingClientRect().height,
+  }));
+  check('... the plate\'s height follows what it holds', open1.fits && Math.abs(power.plate - power.face) <= 1 && power.plate < open1.height - 100, JSON.stringify({ open1: open1.height, power }));
+  check('... and a section is pushed inside it, its rows coming in from the right', pushed.turn && /^6vw( 0px)?$/.test(pushed.from), JSON.stringify(pushed));
+  const popped = await page.evaluate(() => {
+    window.__emit('pad', 'back');
+    return document.getElementById('settingsList').getAnimations()[0]?.effect.getKeyframes()[0].translate ?? null;
+  });
+  check('... and back out from the left', /^-6vw( 0px)?$/.test(popped), String(popped));
+  await settled(page);
+  await page.evaluate(() => window.__emit('pad', 'back'));
+  await page.evaluate(() => document.getElementById('settings').getAnimations().forEach((a) => a.pause() || (a.currentTime = a.effect.getComputedTiming().endTime)));
+  const back = await shown();
+  check('Back closes Settings up into the capsule', near(back, at), JSON.stringify({ back, at }));
+  await page.evaluate(() => document.getElementById('settings').getAnimations().forEach((a) => a.finish()));
+  await settled(page);
+  // Into Add a game: the clip ends on the face where it is laid out, not where it still comes in from the right.
+  await emit(page, 'pad', 'triangle');
+  await settled(page);
+  const add = await page.evaluate(() => [...document.querySelectorAll('#settingsList .row')].findIndex((r) => r.textContent.startsWith('Add a game')));
+  for (let i = 0; i < add; i++) await emit(page, 'pad', 'down');
+  await settled(page);
+  await page.evaluate(() => {
+    window.__emit('pad', 'ok');
+    const turn = document.getElementById('settings').getAnimations().find((a) => !('transitionProperty' in a));
+    turn.pause();
+    turn.currentTime = turn.effect.getTiming().duration;
+  });
+  const end = await shown();
+  const face = await page.evaluate(() => {
+    const p = document.getElementById('settings').getBoundingClientRect();
+    const f = document.getElementById('add');
+    return [p.right - f.offsetWidth, p.top, p.right, p.top + f.offsetHeight].map(Math.round);
+  });
+  check("... and turning to Add a game ends on its face's box", near(end, face), JSON.stringify({ end, face }));
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.evaluate(() => (window.__settings = {}));
+  const moves = await page.evaluate(() => {
+    window.__emit('pad', 'triangle');
+    return document.getElementById('settings').getAnimations().filter((a) => !('transitionProperty' in a)).length;
+  });
+  await settled(page);
+  const slide = await page.evaluate(() => {
+    window.__emit('pad', 'ok');
+    const a = document.getElementById('settingsList').getAnimations()[0];
+    return { turns: document.getElementById('settings').getAnimations().filter((x) => !('transitionProperty' in x)).length, keys: a?.effect.getKeyframes().map((k) => k.translate ?? null), ms: a?.effect.getTiming().duration };
+  });
+  check('Reduce Motion: Settings fades in at its place, and a section fades in where it is', moves === 0 && slide.turns === 0 && slide.keys?.every((t) => t === null) && slide.ms <= 150, JSON.stringify({ moves, slide }));
+  await close(page);
+}
+
 // 48. Find on the filter line (the menu audit's first finding). With a search set, its pill above the row widens into
 // the field, and the keyboard rises out of the field's bottom-left corner; the store chip's list grows up out of the
 // chip. They open on the tap spring and go back on the close spring. The row stays sharp below them, with nothing over
@@ -3467,7 +3615,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
 
 // 49. Messages are pills, the dock's (pill.js; the menu audit's eighth finding). One about a game stands on the line
 // above the row, after what narrows it, with its icon, and names the game; any other at the top right, under the
-// clock. Neither is ever over the covers. Each is the plate's glass round its icon's badge, comes in on the tap spring
+// status capsule. Neither is ever over the covers. Each is the plate's glass round its icon's badge, comes in on the tap spring
 // and goes on the close spring.
 {
   const games = [game(1), game(2), game(3)];
@@ -3494,7 +3642,8 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
         };
       };
       const covers = Math.min(...[...document.querySelectorAll('#track .cover')].map((c) => c.getBoundingClientRect().top));
-      const clock = document.getElementById('clock').getBoundingClientRect();
+      // Under the status capsule, which holds the clock.
+      const clock = document.getElementById('status').getBoundingClientRect();
       const plate = getComputedStyle(document.getElementById('settings'));
       return { game: one('gameNews'), system: one('toast'), covers, clock: { bottom: clock.bottom, right: clock.right }, plate: { fill: plate.backgroundColor }, width: innerWidth };
     });
@@ -3523,12 +3672,12 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     p.game.on && p.game.text === "Game 002: Steam couldn't start it." && p.game.warn && p.game.icon === '#i-warn' && p.game.game === 'pc:2' && !p.system.on,
     JSON.stringify(p.game)
   );
-  // Anything else: at the top right, under the clock.
+  // Anything else: at the top right, under the status capsule.
   await emit(page, 'notice', 'Sound: TV');
   await settled(page);
   p = await pills();
   check(
-    'any other message stands at the top right, under the clock, clear of the covers, with its icon',
+    'any other message stands at the top right, under the status capsule, clear of the covers, with its icon',
     p.system.on && p.system.text === 'Sound: TV' && p.system.icon === '#i-info' && p.system.box.top >= p.clock.bottom && Math.abs(p.system.box.right - p.clock.right) <= 2 && p.system.box.bottom <= p.covers && !p.system.inLine,
     JSON.stringify({ system: p.system, clock: p.clock })
   );

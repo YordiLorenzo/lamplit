@@ -105,6 +105,40 @@
 .news.warn .badge { background: rgb(var(--lamp) / .26); color: rgb(var(--lamp)); }
 .news .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
+/* ---------- chips ----------
+   What the dock's top line and the home screen's status capsule show: an icon, a battery filled to its level (--level,
+   0 to 1), and a short text. */
+.chip { display: inline-flex; align-items: center; gap: calc(var(--u) * .7); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chip .icon { width: calc(var(--u) * 2.7); height: calc(var(--u) * 2.7); }
+.chip.warn { color: #ffb38a; font-weight: 600; }
+.battery {
+  position: relative;
+  width: calc(var(--u) * 3);
+  height: calc(var(--u) * 1.5);
+  border: calc(var(--u) * .2) solid currentColor;
+  border-radius: calc(var(--u) * .45);
+  opacity: .9;
+}
+.battery::before {
+  content: '';
+  position: absolute;
+  inset: calc(var(--u) * .2);
+  right: auto;
+  width: calc((100% - var(--u) * .4) * var(--level, 1));
+  border-radius: calc(var(--u) * .15);
+  background: currentColor;
+}
+.battery::after {
+  content: '';
+  position: absolute;
+  right: calc(var(--u) * -.55);
+  top: 25%;
+  width: calc(var(--u) * .3);
+  height: 50%;
+  border-radius: 0 calc(var(--u) * .15) calc(var(--u) * .15) 0;
+  background: currentColor;
+}
+
 /* Reduce Motion: the ring is where the focus is at once, and a let-go hold empties at once. */
 @media (prefers-reduced-motion: reduce) {
   .ring { transition: opacity var(--fade-ms, 150ms) ease; }

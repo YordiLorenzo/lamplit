@@ -8,7 +8,8 @@ import { openArt } from './art.js';
 import { showHints, toast } from './hints.js';
 import { clickable, moveKey, nameField, pressKey, setText } from './keyboard.js';
 import { focusGame, openDetails, render as renderRow, setGames } from './library.js';
-import { grow, rest, widen } from './morph.js';
+import { grow } from './morph.js';
+import { fitPlate, turnPlate } from './settings.js';
 import { sfx } from './sounds.js';
 import { els, icon, state } from './state.js';
 
@@ -23,7 +24,8 @@ let listings = 0;
 
 /**
  * Add a game, in Settings' plate. From Settings (`back`, which Back on the first list returns to) it is pushed inside
- * the plate, which widens; from the empty home screen the plate grows out of its line.
+ * the plate, which turns to its size (settings.js turnPlate); from the empty home screen the plate grows out of its
+ * line.
  * @param {(() => void) | null} [back]
  */
 export function openAdd(back = null) {
@@ -31,16 +33,16 @@ export function openAdd(back = null) {
   state.mode = 'add';
   state.add = { ...state.add, view: 'list', programs: null, folder: null, idx: 0, exe: '', from: 'list', busy: false };
   const plate = els.settings;
-  if (back) widen(plate, true);
-  else {
-    rest(plate);
-    plate.classList.remove('moving');
-    plate.classList.add('grown', 'wide', 'on');
-    grow(plate, lineBox());
-  }
+  const from = plate.getBoundingClientRect();
   els.add.classList.add('on');
   sfx.open();
   render();
+  if (back) turnPlate('settings-to-add', from, 'tap');
+  else {
+    fitPlate(els.add);
+    plate.classList.add('grown', 'on');
+    grow(plate, lineBox());
+  }
   loadPrograms();
 }
 
