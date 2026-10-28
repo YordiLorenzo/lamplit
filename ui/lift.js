@@ -11,6 +11,7 @@ import { liftLayout } from './logic.js';
 import { morph, rest, turn } from './morph.js';
 import { SPRINGS } from './springs.js';
 import { els, state } from './state.js';
+import { paintVeil } from './veil.js';
 
 /** The cover rises on the lift spring (style.css --lift), 1% past its place and back, and lowers on the close one. */
 const CLOSE = SPRINGS.close;
@@ -77,6 +78,8 @@ export function lift(id, from, look) {
     els.lift.classList.remove('instant');
   }
   els.lift.classList.remove('away');
+  // The veil, drawn from what shows now, before the card's cover leaves the row.
+  paintVeil(els.veil);
   els.lift.classList.add('on');
   els.sheet.classList.remove('turned');
   // Its size for the card's place just set: the menu's width there may wrap its name differently.

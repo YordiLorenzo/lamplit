@@ -51,6 +51,7 @@ export const els = {
   overlayTitle: $('overlayTitle'),
   overlaySub: $('overlaySub'),
   lift: $('lift'),
+  veil: /** @type {HTMLCanvasElement} */ ($('veil')),
   card: $('card'),
   face: $('face'),
   sheet: $('sheet'),

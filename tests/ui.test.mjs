@@ -1680,7 +1680,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
         shown: lift.classList.contains('shown'),
         on: lift.classList.contains('on'),
         visibility: getComputedStyle(lift).visibility,
-        veil: { opacity: veil.opacity, filter: veil.backdropFilter },
+        veil: { opacity: veil.opacity, drawn: lift.querySelector('.veil').classList.contains('drawn') },
         card: box(document.getElementById('card')),
         menu: box(document.getElementById('details')),
         menuOn: document.getElementById('details').classList.contains('on'),
@@ -1696,7 +1696,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   await settled(page);
   let l = await lifted();
   const at = `${vp.width}x${vp.height}`;
-  check(`${at}: the menu lifts the focused cover over a blurred, dimmed screen`, l.on && l.veil.opacity === '1' && l.veil.filter.includes('blur') && l.coverHidden, JSON.stringify(l));
+  check(`${at}: the menu lifts the focused cover over a blurred, dimmed screen`, l.on && l.veil.opacity === '1' && l.veil.drawn && l.coverHidden, JSON.stringify(l));
   check(`${at}: the lifted cover is larger than in the row, and higher`, l.card.h > rest.cover.h * 1.4 && l.card.y + l.card.h / 2 < rest.cover.y + rest.cover.h / 2 - l.h * 0.1, JSON.stringify([rest.cover, l.card]));
   check(`${at}: the menu opens beside the cover, inside the screen`, l.menuOn && l.menu.x >= l.card.x + l.card.w && l.menu.x + l.menu.w <= l.w * 0.95 + 1 && l.menu.y >= 0 && l.menu.y + l.menu.h <= l.h, JSON.stringify([l.card, l.menu]));
   check(`${at}: the art behind keeps drifting while the menu is up, so the GPU stays at speed`, l.drift === 'running', l.drift);
@@ -2577,11 +2577,15 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   const made = await page.evaluate(() => [...window.__made]);
   check('the first sound starts no audio device, and no hero is drawn for its colour', JSON.stringify(made) === '["audio"]', JSON.stringify(made));
   const drift = () => page.evaluate(() => [...document.querySelectorAll('.hero')].map((h) => getComputedStyle(h).animationPlayState).join(' '));
+  // Once the plate has grown or gone back: the drift holds only while it morphs (53).
+  const morphed = () => until(page, () => !document.body.classList.contains('morphing'));
   await page.keyboard.press('c');
   await idle(page);
+  await morphed();
   const settings = await drift();
   await page.keyboard.press('Escape');
   await idle(page);
+  await morphed();
   const home = await drift();
   check('the hero keeps drifting under a panel, and after it closes', settings === 'running running' && home === 'running running', `${settings} / ${home}`);
   await close(page);
@@ -3934,6 +3938,83 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   const growing = await page.evaluate(() => document.getElementById('findStores').getAnimations().filter((a) => !('transitionProperty' in a)).length);
   e = await ended();
   check('Find closed while its store list still grows stops the list and leaves no focus ring behind', growing === 0 && !e.ring && !e.ringSeen && !e.find && !e.list, JSON.stringify({ ...e, growing }));
+  await close(page);
+}
+
+// 53. The GPU's work at 120 Hz. The hero's drift holds while a plate morphs, for as long as the last morph to end, and
+// runs again after; the game menu's veil is drawn once as the menu opens, an opaque blurred copy of what was behind
+// it, rather than a backdrop-filter that blurs the whole screen again on every frame.
+{
+  const page = await open({ games: [game(1), game(2), game(3)] });
+  await page.evaluate(() => (window.__settings = { library_programs: [] }));
+  const drift = await page.evaluate(async (tap) => {
+    const wait = (until) => new Promise((r) => setTimeout(r, Math.max(0, until - performance.now())));
+    const state = () => getComputedStyle(document.querySelector('.hero')).animationPlayState;
+    const before = state();
+    const t0 = performance.now();
+    window.__emit('pad', 'triangle');
+    const opening = state();
+    const k = [...document.querySelectorAll('#settingsList .row')].findIndex((r) => r.textContent.startsWith('Add a game'));
+    for (let i = 0; i < k; i++) window.__emit('pad', 'down');
+    // Add a game while Settings still grows: its turn ends later than the opening.
+    await wait(t0 + 250);
+    window.__emit('pad', 'ok');
+    await wait(t0 + tap + 80);
+    const between = state();
+    await wait(t0 + 250 + tap + 150);
+    return { before, opening, between, after: state(), tap };
+  }, SPRINGS.tap.ms);
+  check(
+    "the hero's drift holds while a plate morphs, until the last morph has ended, and runs again after",
+    drift.before === 'running' && drift.opening === 'paused' && drift.between === 'paused' && drift.after === 'running',
+    JSON.stringify(drift)
+  );
+  await emit(page, 'pad', 'back');
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  await emit(page, 'pad', 'menu');
+  await until(page, () => document.querySelector('#lift .veil').classList.contains('drawn'));
+  await settled(page);
+  const pixels = () =>
+    page.evaluate(() => {
+      const veil = document.querySelector('#lift .veil');
+      const ctx = veil.getContext('2d');
+      const d = ctx.getImageData(0, 0, veil.width, veil.height).data;
+      let alpha = 255;
+      let sum = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        alpha = Math.min(alpha, d[i + 3]);
+        sum += d[i] + d[i + 1] + d[i + 2];
+      }
+      return { alpha, sum, w: veil.width, h: veil.height, filter: getComputedStyle(veil).backdropFilter, tag: veil.tagName, opacity: getComputedStyle(veil).opacity };
+    });
+  const first = await pixels();
+  await page.waitForTimeout(600);
+  const later = await pixels();
+  check(
+    'the game menu\'s veil is drawn once: an opaque copy of the screen, small and scaled up, with no backdrop-filter, still while the hero drifts',
+    first.tag === 'CANVAS' && first.filter === 'none' && first.alpha === 255 && first.sum > 0 && first.w <= Math.ceil(1920 / 8) + 1 && first.opacity === '1' && later.sum === first.sum,
+    JSON.stringify({ first, later: later.sum })
+  );
+  // Change art keeps it, and back in the menu it is the same.
+  await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  await settled(page);
+  const art = await pixels();
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  check('... Change art keeps it as it was', art.sum === first.sum && art.opacity === '1' && (await pixels()).sum === first.sum, JSON.stringify(art));
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await emit(page, 'pad', 'menu');
+  await until(page, () => document.querySelector('#lift .veil').classList.contains('drawn'));
+  await settled(page);
+  const v = await page.evaluate(() => ({ opacity: getComputedStyle(document.querySelector('#lift .veil')).opacity, morphing: document.body.classList.contains('morphing') }));
+  check('Reduce Motion: the veil is drawn and comes in, and nothing holds the drift (it has none)', v.opacity === '1' && !v.morphing, JSON.stringify(v));
   await close(page);
 }
 
