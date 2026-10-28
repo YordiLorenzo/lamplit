@@ -369,9 +369,12 @@ async function home() {
 
   /** When Show it now was pressed, for how long the screensaver took to start fading in. */
   let waitFrom = NaN;
-  /** A press: begins its interaction, noting Show it now's. @param {string | null} n @param {number} [t] */
+  /** When the game menu was opened, for how long its veil took to be drawn. */
+  let liftAt = NaN;
+  /** A press: begins its interaction, noting Show it now's and the menu's. @param {string | null} n @param {number} [t] */
   const press = (n, t = performance.now()) => {
     if (n === 'screensaver-wait') waitFrom = t;
+    if (n === 'lift-open') liftAt = t;
     begin(n, t);
   };
 
@@ -416,6 +419,15 @@ async function home() {
       waitFrom = NaN;
       // flipped compares with the classes as they are now, so every class change in this batch would look like .on
       // arriving: one start is all there is.
+      break;
+    }
+  }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+  // The game menu's veil (veil.js) fades in once its canvas is drawn, after its images decode: how long after the press.
+  new MutationObserver((list) => {
+    for (const m of list) {
+      if (!(/** @type {Element} */ (m.target).classList.contains('veil')) || flipped(m, 'drawn') !== true) continue;
+      if (!Number.isNaN(liftAt)) api.log.info(`probe: ${page} veil drawn ${ms(performance.now() - liftAt)} ms after the press`);
+      liftAt = NaN;
       break;
     }
   }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true });
