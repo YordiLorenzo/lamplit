@@ -740,6 +740,54 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
+  // D22. The focus ring: opening, it comes on Resume with Resume itself, rather than ahead of it on a bare island; a
+  // step moves it on a spring that settles on the next tile without going past it.
+  {
+    const page = await openDock();
+    await emit(page, 'dock', closed);
+    await page.waitForTimeout(700);
+    const opening = page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const shows = (el) => Number(getComputedStyle(el).opacity);
+          const [dock, ring] = [document.getElementById('dock'), document.getElementById('ring')];
+          const seen = [];
+          const start = performance.now();
+          const step = () => {
+            const resume = document.querySelector('.tile.primary');
+            seen.push([shows(dock) * shows(ring), shows(dock) * shows(resume)]);
+            if (performance.now() - start < 700) requestAnimationFrame(step);
+            else resolve(seen);
+          };
+          requestAnimationFrame(step);
+        })
+    );
+    await emit(page, 'dock', opened);
+    let seen = await opening;
+    const ahead = Math.max(...seen.map(([ring, resume]) => ring - resume));
+    check('opening, the focus ring comes on Resume with Resume, not ahead of it', ahead < 0.15 && seen.at(-1)[0] === 1, `${ahead.toFixed(2)} ${JSON.stringify(seen.map(([a, b]) => `${a.toFixed(2)}/${b.toFixed(2)}`))}`);
+    await settled(page);
+    const stepping = page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const ring = document.getElementById('ring');
+          const xs = [];
+          const start = performance.now();
+          const step = () => {
+            xs.push(parseFloat(getComputedStyle(ring).translate));
+            if (performance.now() - start < 600) requestAnimationFrame(step);
+            else resolve(xs);
+          };
+          requestAnimationFrame(step);
+        })
+    );
+    await emit(page, 'dock-pad', 'right');
+    const xs = await stepping;
+    const to = xs.at(-1);
+    check('a step moves the ring onto the next tile without going past it', xs[0] < to && Math.max(...xs) <= to + 0.5, `${to} ${JSON.stringify(xs.map((x) => Math.round(x * 10) / 10))}`);
+    await close(page);
+  }
+
   // D19. A game starting gets the hidden dock ready: it reads what it shows and draws it then. Its first opening then
   // springs open on a clip at its own size, with nothing laid out frame by frame.
   {

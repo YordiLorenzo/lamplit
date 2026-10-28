@@ -223,7 +223,8 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
 
 The page sizes the dock in hundredths of the screen's height (`--u`, from `screen.height`), as the home screen is
 sized in `vh`. The island's width and height follow the face it shows, with a spring easing built as a CSS `linear()`
-curve; one focus ring springs from tile to tile on a quicker one. Behind the faces, the game's own art is drawn small
+curve; one focus ring springs from tile to tile on a quicker one that settles without going past (a press throws
+nothing), and opening, it comes on Resume with Resume's own fade. Behind the faces, the game's own art is drawn small
 (`createImageBitmap` scales it down off the page's thread) and blurred into a canvas, which the page scales up to the island: a blur that costs nothing while the island moves,
 where CSS `backdrop-filter` couldn't see the game behind a transparent window at all. Once the island rests open,
 Windows' real glass takes the art's place where Windows 11 22H2 or later has transparency effects on (`dock/glass.rs`,

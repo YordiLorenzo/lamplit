@@ -250,7 +250,7 @@ function open() {
   state.tile = 'resume';
   cancelHold();
   say('');
-  // The ring appears on Resume rather than springing there from where it was last time.
+  // The ring comes on Resume with Resume itself, rather than springing there from where it was last time (dock.css).
   els.ring.classList.add('instant');
   els.ring.classList.remove('on');
   // Open at once for the controller, the keyboard and the answers drawn meanwhile.
@@ -266,6 +266,8 @@ function open() {
       if (mine !== openings) return;
       shape('open');
       meter('dock: open', springMs + 130);
+      // Its fade has started with the tiles': from here on it springs from what had the focus to what has it.
+      requestAnimationFrame(() => els.ring.classList.remove('instant'));
     },
     { cap: STEADY_MS }
   );
@@ -597,7 +599,6 @@ function placeRing() {
     r.setProperty('--h', `${el.offsetHeight}px`);
     r.setProperty('--r', getComputedStyle(el).borderRadius);
     els.ring.classList.add('on');
-    requestAnimationFrame(() => els.ring.classList.remove('instant'));
   });
 }
 
@@ -957,8 +958,9 @@ window.addEventListener('unhandledrejection', (e) => api.log.error(`dock: unhand
 
 async function init() {
   measure();
-  // The island opens on a spring that overshoots a little and settles; the focus ring moves on a quicker one.
-  for (const [name, { easing, ms, points }] of Object.entries({ spring: spring(0.46, 0.7), snap: spring(0.3, 0.78) })) {
+  // The island opens on a spring that overshoots a little and settles. The focus ring, the volume and a focused tile
+  // move on a quicker one that doesn't: a press, with nothing thrown.
+  for (const [name, { easing, ms, points }] of Object.entries({ spring: spring(0.46, 0.7), snap: spring(0.28, 0.9) })) {
     document.documentElement.style.setProperty(`--${name}`, easing);
     document.documentElement.style.setProperty(`--${name}-ms`, `${ms}ms`);
     if (name === 'spring') [springMs, springCurve] = [ms, points];
