@@ -5,14 +5,14 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ICONS } from '../ui/icons.js';
-import { pageFile } from './contract.mjs';
+import { SPRINGS } from '../ui/springs.js';
 import { ipc, known, like } from './fixtures.mjs';
 import { emit, idle, settled, until } from './page.mjs';
 
 /** The dock's window while open: a 1080p screen (src-tauri/src/dock/window.rs). */
 const OPEN = { width: 1920, height: 1080 };
 const SCREEN = { width: 1920, height: 1080 };
-/** Longer than Close game's hold (ui/dock/logic.js HOLD_MS), and well shorter. */
+/** Longer than Close game's hold (ui/hold.js HOLD_MS), and well shorter. */
 const HELD_MS = 1150;
 const TAPPED_MS = 300;
 
@@ -71,7 +71,7 @@ const view = (page) =>
       volume: $('volumeText').textContent,
       hint: $('hint').textContent,
       message: $('message').textContent,
-      news: $('newsText').textContent,
+      news: document.querySelector('#news .text')?.textContent ?? '',
       calls: window.__calls,
     };
   });
@@ -97,7 +97,7 @@ const ringOn = (page) =>
       new Promise((resolve) =>
         // After the ring's own frame of layout, and its spring.
         setTimeout(() => {
-          const ring = document.getElementById('ring');
+          const ring = document.querySelector('#dock .ring');
           const tile = document.querySelector('.tile.focus');
           // Where each is on the screen.
           const box = (el) => {
@@ -647,7 +647,7 @@ export async function dockTests({ open, close, check, shots }) {
           const seen = [];
           const start = performance.now();
           const step = () => {
-            seen.push({ face: opacity(face), parts: Math.min(...parts.map(opacity)), ring: opacity(document.getElementById('ring')) });
+            seen.push({ face: opacity(face), parts: Math.min(...parts.map(opacity)), ring: opacity(document.querySelector('#dock .ring')) });
             if (performance.now() - start < 250) requestAnimationFrame(step);
             else resolve(seen);
           };
@@ -748,7 +748,7 @@ export async function dockTests({ open, close, check, shots }) {
       () =>
         new Promise((resolve) => {
           const shows = (el) => Number(getComputedStyle(el).opacity);
-          const [dock, ring] = [document.getElementById('dock'), document.getElementById('ring')];
+          const [dock, ring] = [document.getElementById('dock'), document.querySelector('#dock .ring')];
           const seen = [];
           const start = performance.now();
           const step = () => {
@@ -768,7 +768,7 @@ export async function dockTests({ open, close, check, shots }) {
     const stepping = page.evaluate(
       () =>
         new Promise((resolve) => {
-          const ring = document.getElementById('ring');
+          const ring = document.querySelector('#dock .ring');
           const xs = [];
           const start = performance.now();
           const step = () => {
@@ -801,7 +801,7 @@ export async function dockTests({ open, close, check, shots }) {
       (box) =>
         new Promise((resolve) => {
           const at = new Function(`return ${box}`)();
-          const [outputs, list, ring] = [document.getElementById('outputs'), document.getElementById('outputList'), document.getElementById('ring')];
+          const [outputs, list, ring] = [document.getElementById('outputs'), document.getElementById('outputList'), document.querySelector('#dock .ring')];
           const seen = [];
           const start = performance.now();
           const step = () => {
@@ -866,6 +866,43 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
+  // D25. The dock moves on the springs both pages share (ui/springs.js): the island opens on lift and folds on close,
+  // the real glass folding on the same curve, and the focus ring steps on snap.
+  {
+    const page = await openDock();
+    await page.evaluate(() => (window.__settings.dock_glass = ({ island }) => island !== null));
+    /** How long `el`'s transition of `property` runs, and on what curve. */
+    const timing = (sel, property) =>
+      page.evaluate(
+        ([sel, property]) => {
+          const s = getComputedStyle(document.querySelector(sel));
+          const i = s.transitionProperty.split(', ').indexOf(property);
+          return { ms: Math.round(parseFloat(s.transitionDuration.split(', ')[i]) * 1000), curve: s.transitionTimingFunction.split(/, (?=linear|cubic|ease)/)[i] };
+        },
+        [sel, property]
+      );
+    /** A spring's points, from its curve as the page computes it: linear(0 0%, 0.0184 2.5%, ...). */
+    const points = (curve) => JSON.stringify(curve.slice('linear('.length, -1).split(', ').map((stop) => Number(stop.split(' ')[0])));
+    const on = (timed, name) => timed.ms === SPRINGS[name].ms && points(timed.curve) === JSON.stringify(SPRINGS[name].points);
+    await emit(page, 'dock', closed);
+    await page.waitForTimeout(700);
+    await emit(page, 'dock', opened);
+    await page.waitForTimeout(100);
+    const opening = await timing('#island', 'clip-path');
+    await page.waitForTimeout(1000);
+    const step = await timing('#dock .ring', 'translate');
+    const from = (await view(page)).calls.length;
+    await emit(page, 'dock', closed);
+    const folding = await timing('#island', 'clip-path');
+    const asked = (await since(page, from)).find((c) => c.startsWith('dock_glass_fold'));
+    const fold = asked ? JSON.parse(asked.slice('dock_glass_fold '.length)).fold : {};
+    const ok =
+      on(opening, 'lift') && on(folding, 'close') && on(step, 'snap') &&
+      fold.ms === SPRINGS.close.ms && JSON.stringify(fold.curve) === JSON.stringify(SPRINGS.close.points);
+    check('the island opens on the lift spring and folds on close, its glass too, and the ring steps on snap', ok, JSON.stringify({ opening: opening.ms, folding: folding.ms, step: step.ms, fold: fold.ms }));
+    await close(page);
+  }
+
   // D19. A game starting gets the hidden dock ready: it reads what it shows and draws it then. Its first opening then
   // springs open on a clip at its own size, with nothing laid out frame by frame.
   {
@@ -900,13 +937,34 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
-  // D8. Every symbol the dock draws is in the icons both pages share (ui/icons.js), under its name there: Resume is
-  // Play, and Close game has a glyph of its own rather than the power symbol.
+  // D8. Every icon the dock draws is one of the icons both pages share (ui/icons.js), from the set the page mounts:
+  // Resume is Play, and Close game has a glyph of its own rather than the power symbol. Drawn in every state that
+  // changes an icon: the tiles (quiet on, the stats, Force close), the list of outputs, the volume muted, the news and
+  // the hints for both controllers.
   {
-    const renamed = { 'i-resume': 'i-play', 'i-close': 'i-close-game' };
-    const ids = [...pageFile('dock.html').matchAll(/<symbol id="([\w-]+)"/g)].map((m) => renamed[m[1]] ?? m[1]);
-    const missing = ids.filter((id) => !(id in ICONS));
-    check("the dock's symbols are all in the shared icons", ids.length > 10 && missing.length === 0, missing.join(', '));
+    const page = await openDock({ game: { ...hung, closable: true } });
+    await page.evaluate(() => {
+      const seen = (window.__drawn = new Set());
+      const note = () => document.querySelectorAll('use').forEach((u) => seen.add(u.getAttribute('href')));
+      note();
+      new MutationObserver(note).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['href'] });
+    });
+    const tile = (key) => page.evaluate((key) => document.querySelector(`.tile[data-key="${key}"] use`)?.getAttribute('href'), key);
+    const [play, closeGame] = [await tile('resume'), await tile('close')];
+    await emit(page, 'dock-pad', 'right');
+    await emit(page, 'dock-pad', 'ok');
+    await idle(page);
+    await emit(page, 'dock-pad', 'back');
+    await emit(page, 'dock-pad', 'up');
+    await emit(page, 'dock-pad', 'ok');
+    await idle(page);
+    await emit(page, 'pad-kind', known('pad_kind', 'xbox'));
+    await emit(page, 'dock', closed);
+    for (const icon of ['headset', 'controller']) await emit(page, 'dock', like(status, { icon: known('dock_icon', icon) }));
+    const drawn = await page.evaluate(() => [...window.__drawn].map((href) => ({ href, mounted: !!document.querySelector(`#icons ${href}`) })));
+    const missing = drawn.filter((d) => !d.mounted || !(d.href.slice(1) in ICONS)).map((d) => d.href);
+    check("every icon the dock draws is a shared one, Resume's Play and Close game's own", drawn.length > 15 && missing.length === 0 && play === '#i-play' && closeGame === '#i-close-game', `${missing.join(', ')} ${play} ${closeGame} ${drawn.length}`);
+    await close(page);
   }
 
   // D9. Settings > Overlay and pop-ups switches the dock off.
