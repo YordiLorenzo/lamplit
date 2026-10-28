@@ -563,7 +563,6 @@ body.launching .cover.focus { scale: 1.1; }
 #dMeta .dot:has(+ :empty) { display: none; }
 #dChoices { flex: none; display: grid; gap: .8vh; margin-top: 3vh; padding: .4vh; }
 #dChoices .row { justify-content: flex-start; gap: 1.8vh; font-size: 2.6vh; padding: 1.5vh 2vh; }
-#dChoices .row .icon { flex: none; width: 3vh; height: 3vh; }
 #dChoices .row.on .icon { color: rgb(var(--lamp)); }
 #dChoices .row.warn { color: #ffc75e; font-weight: 600; }
 /* Play, or Back to game: lit, as the dock's Resume, with its icon on a lamp. */
@@ -775,6 +774,14 @@ body:has(#settings.on) #empty { opacity: 0; }
   transition: background 150ms ease;
 }
 .row .value { color: var(--ink-dim); font-size: 2.1vh; }
+.row .label { flex: 1; min-width: 0; display: grid; gap: .3vh; }
+/* What a row that can't be taken back does, said before the press. */
+.row .note { font-size: 1.9vh; font-weight: 400; color: var(--ink-dim); }
+/* A row's icon, and the ring a hold fills round it (hold.js, plate.css .hold). */
+.row .glyph { position: relative; flex: none; display: grid; place-items: center; }
+.row .glyph .icon { width: 3vh; height: 3vh; transition: scale var(--snap-ms) var(--snap); }
+.row .glyph .hold { width: 5.4vh; height: 5.4vh; }
+.row.holding .glyph .icon { scale: .9; }
 .row .value.warn { color: #ffc75e; font-weight: 600; }
 .row .value.good { color: #7be09a; }
 .row.focus { background: rgb(255 255 255 / .12); box-shadow: inset 0 0 0 .25vh #fff; }

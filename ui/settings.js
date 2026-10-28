@@ -6,7 +6,8 @@ import { openAdd } from './add.js';
 import { rest, widen } from './morph.js';
 import * as api from './api.js';
 import { showHints, toast } from './hints.js';
-import { setGames, showInfo } from './library.js';
+import { hold, letGo } from './hold.js';
+import { glyph, labelled, setGames, showInfo } from './library.js';
 import { SAVER_DEFAULT, SECTIONS, focusIndex, quietMode, rowKey, sectionRows, sectionSummary, stepAutoOff, stepSaverMinutes, visibleSections } from './logic.js';
 import { showScreensaver, warmScreensaver } from './screensaver/index.js';
 import { sfx } from './sounds.js';
@@ -25,6 +26,8 @@ function renderSettings() {
   // Focus stays on its row when a refresh adds or removes rows above it.
   s.idx = focusIndex(s.rows, s.focus);
   s.focus = s.idx >= 0 ? rowKey(s.rows[s.idx]) : null;
+  // A hold in progress is let go: the row it was on is made again, and what it showed may have changed.
+  letGo();
   els.settingsList.textContent = '';
   s.rows.forEach((r, i) => {
     if (r.heading) {
@@ -35,13 +38,14 @@ function renderSettings() {
     }
     const row = document.createElement('div');
     row.className = 'row' + (r.kind ? '' : ' info') + (i === s.idx ? ' focus' : '') + (r.adjust ? ' adjust' : '');
-    const label = document.createElement('span');
-    label.append(...withStoreLogo(r.store, r.label));
+    const label = labelled('', r.note);
+    label.prepend(...withStoreLogo(r.store, r.label ?? ''));
     const value = document.createElement('span');
     value.className = 'value ' + (r.tone ?? '');
-    value.textContent = r.value;
-    row.append(label, value);
-    row.addEventListener('click', () => {
+    value.textContent = r.value ?? '';
+    row.append(...(r.icon ? [glyph(r.icon, !!r.hold)] : []), label, value);
+    // Held from when the mouse button goes down on a row that can't be taken back, else on a click.
+    row.addEventListener(r.hold ? 'pointerdown' : 'click', () => {
       if (!r.kind) return;
       s.focus = rowKey(r);
       renderSettings();
@@ -123,7 +127,7 @@ export function setStores(list) {
 /** @param {string | null} [focus]  the row to start on (logic.js rowKey), else the first */
 export function openSettings(focus = null) {
   state.mode = 'settings';
-  state.settings = { section: null, focus, idx: 0, rows: [], confirm: null };
+  state.settings = { section: null, focus, idx: 0, rows: [] };
   rest(els.settings);
   els.settings.classList.remove('grown', 'wide', 'moving');
   els.settings.classList.add('on');
@@ -142,7 +146,7 @@ export function closeSettings() {
 /** Back from Add a game: the plate narrows to Settings again, with focus on `focus`. @param {string} focus */
 function returnFromAdd(focus) {
   state.mode = 'settings';
-  state.settings = { section: null, focus, idx: 0, rows: [], confirm: null };
+  state.settings = { section: null, focus, idx: 0, rows: [] };
   widen(els.settings, false);
   sfx.back();
   renderSettings();
@@ -155,7 +159,6 @@ export function backSettings() {
   if (!s.section) return closeSettings();
   s.focus = rowKey({ kind: 'section', key: s.section });
   s.section = null;
-  s.confirm = null;
   sfx.back();
   renderSettings();
 }
@@ -168,8 +171,6 @@ export function moveSettings(delta) {
   const next = focusable[Math.max(0, Math.min(focusable.length - 1, at + delta))];
   if (!next || next === s.rows[s.idx]) return sfx.edge();
   s.focus = rowKey(next);
-  // A Power row asks again once focus has left it.
-  s.confirm = null;
   sfx.move();
   renderSettings();
 }
@@ -241,12 +242,32 @@ const PREF_ROWS = ['follows', 'touchmouse', 'steamport', 'onlineart', 'dock', 's
 /** What each row of Settings > Power calls. */
 const POWER = { sleep: api.powerSleep, restart: api.powerRestart, shutdown: api.powerShutDown };
 
+/**
+ * Sleep, restart or shut down. The home screen is what shows when the PC wakes up, or if Windows doesn't go through
+ * with it.
+ * @param {import('./state.js').Row} row
+ */
+async function power(row) {
+  sfx.open();
+  closeSettings();
+  try {
+    await POWER[/** @type {keyof typeof POWER} */ (row.id)]();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
 export async function selectSetting() {
   const s = state.settings;
   const row = s.rows[s.idx];
   if (!row?.kind || row.adjust || (row.kind === 'stats' && statsBusy)) return;
   // Add a game is pushed inside this plate; Back there comes back here, on its row.
   if (row.kind === 'section' && row.key === 'add') return openAdd(() => returnFromAdd(rowKey(row)));
+  // Restart and Shut down happen once Cross has been held on them.
+  if (row.hold) {
+    sfx.move();
+    return hold(/** @type {HTMLElement} */ (els.settingsList.querySelector('.row.focus')), () => power(row));
+  }
   sfx.open();
   if (row.kind === 'section') {
     s.section = row.key;
@@ -302,13 +323,8 @@ export async function selectSetting() {
     } else if (row.kind === 'unhide') {
       setGames(await api.librarySetHidden(row.id, false));
       toast(`${row.label} is back in the row.`);
-    } else if (row.kind === 'power' && s.confirm !== row.id) {
-      s.confirm = row.id;
     } else if (row.kind === 'power') {
-      s.confirm = null;
-      // The home screen is what shows when the PC wakes up, or if Windows doesn't go through with it.
-      closeSettings();
-      await POWER[row.id]();
+      return power(row);
     }
   } catch (e) {
     toast(e.message);

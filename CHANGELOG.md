@@ -59,6 +59,11 @@ Every release of Lamplit, newest first. The format follows
 
 ### Changed
 
+- What can't be taken back is held, as the dock's Close game: Remove from Lamplit, Restart, Shut down, and Close game,
+  which the game menu now offers while its game runs. Holding Cross fills a ring round the choice's icon, and it
+  happens once the ring is full; let go before, and nothing happens. Each says beforehand what it does ("Closes
+  Titanfall 2", "Lamplit forgets it. The files stay."), and Restart and Shut down name a running game that will
+  close. Sleep and Hide this game can be undone, so one press does them. A mouse holds from button down to up.
 - A game's menu grows out of the lifted card: a sliver on the card's edge widens into the menu, and its rows fade in
   as it does. Under the game's name one line says its store, when it was last played and for how long, and the
   folder sits dim at the bottom. Play (or Back to game) is lit and comes first, every choice has an icon, and

@@ -29,7 +29,8 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
   const commands = ${JSON.stringify(commands)};
   const values = ${JSON.stringify(values)};
   const sent = {
-    pad: (step) => values.pad.includes(step),
+    // Both pages hear Cross let go too, for a hold (devices/pad/mod.rs act).
+    pad: (step) => values.pad.includes(step) || values.dock_release.includes(step),
     'dock-pad': (step) => values.pad.includes(step) || values.dock_release.includes(step),
     dock: (show) => show.mode !== 'status' || values.dock_icon.includes(show.icon),
     'pad-kind': (kind) => values.pad_kind.includes(kind),

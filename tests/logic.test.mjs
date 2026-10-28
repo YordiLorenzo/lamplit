@@ -145,7 +145,7 @@ describe('favourites and hidden games in the row', () => {
 });
 
 describe('detailChoices', () => {
-  const labels = (g, running = null, removing = false) => detailChoices(g, running, removing).map((c) => c.label);
+  const labels = (g, running = null) => detailChoices(g, running).map((c) => c.label);
   test('Play first, then favourites, art and hiding, each with its icon', () => {
     assert.deepEqual(labels(game('a', 'A')), ['Play', 'Favourite', 'Change art', 'Hide this game']);
     assert.deepEqual(detailChoices(game('a', 'A'), null).map((c) => c.icon), ['i-play', 'i-star', 'i-photo', 'i-eye-off']);
@@ -155,12 +155,26 @@ describe('detailChoices', () => {
     assert.equal(detailChoices(game('a', 'A', { favourite: true }), null)[1].icon, 'i-star-on');
   });
   test('the running game goes back to the game', () => assert.equal(labels(game('a', 'A'), 'a')[0], 'Back to game'));
-  test('a game added by hand can be removed, after ✕ once asks', () => {
+  test('a game added by hand can be removed: held, and it says the files stay', () => {
     const added = game('manual:x', 'X', { manual: true });
-    assert.equal(labels(added).at(-1), 'Remove from Lamplit');
-    assert.equal(labels(added, null, true).at(-1), 'Press again to remove');
-    assert.equal(detailChoices(added, null).at(-1).kind, 'remove');
-    assert.equal(detailChoices(added, null).at(-1).icon, 'i-remove');
+    assert.deepEqual(detailChoices(added, null).at(-1), {
+      kind: 'remove',
+      label: 'Remove from Lamplit',
+      icon: 'i-remove',
+      hold: 'Hold to remove',
+      note: 'Lamplit forgets it. The files stay.',
+    });
+  });
+  test('the running game can be closed, held, when Lamplit knows its programs; hiding is one press', () => {
+    const g = game('a', 'Racer');
+    const closer = { id: 'a', closable: true, force_close: false };
+    assert.deepEqual(detailChoices(g, 'a', closer).at(-1), { kind: 'close', label: 'Close game', icon: 'i-close-game', hold: 'Hold to close game', note: 'Closes Racer' });
+    assert.equal(detailChoices(g, 'a', { ...closer, force_close: true }).at(-1).label, 'Force close');
+    // Not running, another game's reading, or programs Lamplit can't tell: no Close game.
+    for (const [running, c] of [[null, closer], ['a', { ...closer, id: 'b' }], ['a', { ...closer, closable: false }], ['a', null]]) {
+      assert.ok(!detailChoices(g, running, c).some((x) => x.kind === 'close'), JSON.stringify([running, c]));
+    }
+    assert.equal(detailChoices(g, null).find((x) => x.kind === 'hide').hold, undefined);
   });
 });
 
@@ -655,36 +669,26 @@ describe('Hidden games', () => {
 
 describe('Power', () => {
   const library = [game('cp', 'Cyberpunk 2077')];
-  /** The rows with ✕ pressed once on `confirm`, while `running` runs. */
-  const rows = (confirm, running = null) =>
-    sectionRows('power', settingsState({ all: library, running, settings: { section: 'power', focus: null, idx: 0, rows: [], confirm } }));
-  test('Add a game is there with or without games, before Hidden games', () => {
-    const keys = (state) => visibleSections(state).map((s) => s.key);
-    assert.ok(keys(settingsState()).includes('add'));
-    assert.deepEqual(keys(settingsState({ all: [game('h', 'H', { hidden: true })] })).slice(-3), ['add', 'hidden', 'power']);
-    assert.deepEqual(sectionSummary('add', settingsState()), ['A program or an exe on this PC']);
-  });
+  /** The rows while `running` runs. */
+  const rows = (running = null) => sectionRows('power', settingsState({ all: library, running, settings: { section: 'power', focus: null, idx: 0, rows: [] } }));
   test('Power is the last section, always there', () => {
     assert.equal(visibleSections(settingsState()).at(-1).key, 'power');
-    assert.deepEqual(rows(null).map((r) => [r.kind, r.id, r.label, r.value]), [
-      ['power', 'sleep', 'Sleep', ''],
-      ['power', 'restart', 'Restart', ''],
-      ['power', 'shutdown', 'Shut down', ''],
+    assert.deepEqual(rows().map((r) => [r.kind, r.id, r.label, r.icon]), [
+      ['power', 'sleep', 'Sleep', 'i-sleep'],
+      ['power', 'restart', 'Restart', 'i-restart'],
+      ['power', 'shutdown', 'Shut down', 'i-power'],
     ]);
   });
-  test('✕ once asks to confirm, on that row only', () => {
-    const asked = rows('shutdown');
-    assert.deepEqual(asked.filter((r) => r.value).map((r) => [r.id, r.value, r.tone]), [['shutdown', 'Press again to confirm', 'warn']]);
-    assert.equal(asked.length, 3);
+  test('restart and shut down are held, and say what they do before the press; sleep is one press', () => {
+    assert.deepEqual(rows().map((r) => [r.id, r.hold ?? null, r.note ?? null]), [
+      ['sleep', null, null],
+      ['restart', 'Hold to restart', 'Restarts the PC'],
+      ['shutdown', 'Hold to shut down', 'Turns the PC off'],
+    ]);
   });
-  test('restart and shut down name the running game that will close', () => {
-    for (const id of ['restart', 'shutdown']) {
-      const asked = rows(id, 'cp');
-      const at = asked.findIndex((r) => r.id === id);
-      assert.deepEqual(asked[at + 1], { label: 'Cyberpunk 2077 is running and will close', value: '' }, id);
-    }
+  test('restart and shut down name the running game that will close, before the press', () => {
+    assert.deepEqual(rows('cp').map((r) => r.note ?? null), [null, 'Cyberpunk 2077 is running and will close', 'Cyberpunk 2077 is running and will close']);
   });
-  test('sleep leaves the running game open, so it names none', () => assert.equal(rows('sleep', 'cp').length, 3));
 });
 
 describe('focus in Settings', () => {

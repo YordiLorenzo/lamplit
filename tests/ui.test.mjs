@@ -1034,83 +1034,98 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await close(page);
 }
 
-// 21. Settings > Power: ✕ asks once, ✕ again sleeps, restarts or shuts down; a running game that will close is named.
+// 21. Settings > Power: Sleep at one press; Restart and Shut down once Cross is held, which they say before the press,
+// naming a running game that will close. Let go early, nothing happens; a held key's repeat, a mirrored Enter and a
+// click on the cover don't finish a hold.
 {
   const page = await open({ games: [game(1), game(2, { name: 'Racer' })], running: 'pc:2' });
   await page.evaluate(() => (window.__settings = {}));
   const view = () =>
     page.evaluate(() => ({
       open: document.getElementById('settings').classList.contains('on'),
-      rows: [...document.querySelectorAll('#settingsList .row')].map((r) => r.textContent),
-      focus: document.querySelector('#settingsList .row.focus')?.textContent ?? null,
+      rows: [...document.querySelectorAll('#settingsList .row')].map((r) => r.querySelector('.label').firstChild.textContent),
+      notes: [...document.querySelectorAll('#settingsList .row')].map((r) => r.querySelector('.note')?.textContent ?? ''),
+      focus: document.querySelector('#settingsList .row.focus .label')?.firstChild.textContent ?? null,
+      holding: !!document.querySelector('#settingsList .row.focus.holding'),
+      hint: document.getElementById('hint').textContent,
       toast: document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '',
       calls: window.__calls.map((c) => c[0]),
     }));
+  // Keys, until the controller has been used: keys right after it are taken for Steam mirroring it (logic.js counts).
+  let pad = false;
+  const press = (key, step) => (pad ? emit(page, 'pad', step) : page.keyboard.press(key));
   const powerSection = async () => {
-    await page.keyboard.press('c');
+    await press('c', 'triangle');
     await idle(page);
-    for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('Enter');
+    for (let i = 0; i < 10; i++) await press('ArrowDown', 'down');
+    await press('Enter', 'ok');
   };
   await powerSection();
   let v = await view();
   check('Power offers sleep, restart and shut down', JSON.stringify(v.rows) === '["Sleep","Restart","Shut down"]' && v.focus === 'Sleep', JSON.stringify(v.rows));
-  await page.keyboard.press('Enter');
-  v = await view();
-  check('✕ once asks to confirm, and sends nothing', v.focus === 'SleepPress again to confirm' && !v.calls.some((c) => c.startsWith('power_')), `${v.focus} ${JSON.stringify(v.calls)}`);
+  check('... restart and shut down say before the press that the running game will close', JSON.stringify(v.notes) === '["","Racer is running and will close","Racer is running and will close"]', JSON.stringify(v.notes));
   await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Enter');
   v = await view();
-  check('moving on cancels the question, and restart names the game that will close', v.rows[0] === 'Sleep' && v.focus === 'RestartPress again to confirm' && v.rows.includes('Racer is running and will close'), JSON.stringify(v.rows));
-  await page.keyboard.press('Enter');
+  check('... and the hint says to hold', v.hint.includes('Hold to restart'), v.hint);
+  await page.keyboard.down('Enter');
+  await page.waitForTimeout(300);
+  v = await view();
+  const early = v.calls.length;
+  check('holding Enter on Restart fills its ring, and sends nothing yet', v.holding && !v.calls.includes('power_restart'), JSON.stringify(v));
+  await page.keyboard.up('Enter');
+  await page.waitForTimeout(900);
+  v = await view();
+  check('... let go early, nothing happens', !v.holding && !v.calls.slice(early).includes('power_restart') && v.open, JSON.stringify(v.calls.slice(early)));
+  await page.keyboard.down('Enter');
+  // A held key repeats: the repeat starts no new hold, and the hold goes on.
+  await page.keyboard.down('Enter');
+  await page.waitForTimeout(1100);
+  await page.keyboard.up('Enter');
   await idle(page);
   v = await view();
-  check('✕ again restarts, from the home screen', v.calls.at(-1) === 'power_restart' && !v.open, `${v.calls.at(-1)} ${v.open}`);
+  check('held to the end, it restarts, from the home screen', v.calls.at(-1) === 'power_restart' && !v.open, `${v.calls.at(-1)} ${v.open}`);
   await page.evaluate((error) => {
     window.__settings.power_shut_down = () => {
       throw error;
     };
   }, like(ipc('error'), { message: "Windows didn't shut down. Another Windows account is signed in on this PC: sign it out first." }));
+  pad = true;
   await powerSection();
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Enter');
-  await page.keyboard.press('Enter');
+  await press('ArrowDown', 'down');
+  await press('ArrowDown', 'down');
+  await emit(page, 'pad', 'ok');
+  await page.waitForTimeout(1100);
+  await emit(page, 'pad', 'ok-up');
   await idle(page);
   v = await view();
   check('a shutdown Windows refuses says why', v.calls.at(-1) === 'power_shut_down' && v.toast.startsWith("Windows didn't shut down."), `${v.calls.at(-1)} ${v.toast}`);
   await powerSection();
-  await page.keyboard.press('Enter');
-  await page.keyboard.press('Enter');
+  await press('Enter', 'ok');
   await idle(page);
   v = await view();
-  check('✕ twice on Sleep puts the PC to sleep', v.calls.at(-1) === 'power_sleep' && !v.open, `${v.calls.at(-1)} ${v.open}`);
-  // A held Enter repeats; the repeat mustn't answer the question its first press asked.
+  check('one press on Sleep puts the PC to sleep: any button wakes it', v.calls.at(-1) === 'power_sleep' && !v.open, `${v.calls.at(-1)} ${v.open}`);
+  // The controller's Cross let go ends a hold too, as Enter's does.
   await powerSection();
-  await page.keyboard.press('ArrowDown');
-  const before = (await view()).calls.length;
-  await page.keyboard.down('Enter');
-  await page.keyboard.down('Enter');
-  await page.keyboard.up('Enter');
-  await idle(page);
-  v = await view();
-  check('a held Enter asks, and its repeat doesn\'t confirm', v.focus === 'RestartPress again to confirm' && !v.calls.slice(before).includes('power_restart'), `${v.focus} ${JSON.stringify(v.calls.slice(before))}`);
-  // Steam mirrors ✕ as Enter, and the key can come before the pad's own press: one press mustn't ask and answer.
-  // Moving off Restart and back clears the question the held Enter asked.
-  await page.keyboard.press('ArrowUp');
-  await page.keyboard.press('ArrowDown');
-  await page.waitForTimeout(400);
+  await press('ArrowDown', 'down');
   const fresh = (await view()).calls.length;
-  await page.keyboard.press('Enter');
   await emit(page, 'pad', 'ok');
-  await idle(page);
+  await page.waitForTimeout(300);
+  await emit(page, 'pad', 'ok-up');
+  await page.waitForTimeout(900);
   v = await view();
-  check('a mirrored Enter before the pad\'s ✕ asks once and doesn\'t confirm', v.focus === 'RestartPress again to confirm' && !v.calls.slice(fresh).includes('power_restart'), `${v.focus} ${JSON.stringify(v.calls.slice(fresh))}`);
-  // The focused cover still shows beside Settings: a click on it mustn't answer the question either.
+  check("Cross let go before the ring is full doesn't restart", !v.calls.slice(fresh).includes('power_restart') && !v.holding, JSON.stringify(v.calls.slice(fresh)));
+  // Moving off the row lets go too.
+  await emit(page, 'pad', 'ok');
+  await page.waitForTimeout(200);
+  await emit(page, 'pad', 'up');
+  await page.waitForTimeout(1000);
+  v = await view();
+  check('moving off a held row lets go', !v.calls.slice(fresh).includes('power_restart') && v.focus === 'Sleep', JSON.stringify(v.calls.slice(fresh)));
+  // The focused cover still shows beside Settings: a click on it mustn't start or finish anything.
   await page.click('#track .cover.focus');
   await idle(page);
   v = await view();
-  check('a click on the focused cover doesn\'t confirm a power action', v.open && !v.calls.slice(before).includes('power_restart'), `${v.open} ${JSON.stringify(v.calls.slice(before))}`);
+  check("a click on the focused cover doesn't act on a Power row", v.open && !v.calls.slice(fresh).some((c) => c.startsWith('power_')), `${v.open} ${JSON.stringify(v.calls.slice(fresh))}`);
   await close(page);
 }
 
@@ -1939,18 +1954,20 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   check('Done adds the game', JSON.stringify(added) === `["library_add_game",{"exe":${JSON.stringify(program.exe)},"name":"Old Racer"}]`, JSON.stringify(added));
   let l = await lift();
   check('then its cover lifts into Change art, searching for its name', !(await add()).open && s.focusName === 'Old Racer' && l.art && l.face === 'Old Racer' && JSON.stringify(s.lastCall) === '["library_art_search",{"query":"Old Racer"}]', JSON.stringify({ ...l, focus: s.focusName, last: s.lastCall }));
-  // Its menu offers Remove; ✕ once asks, ✕ again removes it.
+  // Its menu offers Remove, which says the files stay, and happens once Cross is held.
   await page.keyboard.press('Escape');
   const choices = await page.evaluate(() => [...document.querySelectorAll('#dChoices .row')].map((r) => r.textContent));
-  check('the menu of a game added by hand offers Remove from Lamplit', choices.at(-1) === 'Remove from Lamplit' && (await page.evaluate(() => document.getElementById('dStore').textContent)) === 'Added by hand', JSON.stringify(choices));
+  check('the menu of a game added by hand offers Remove from Lamplit, saying the files stay', choices.at(-1) === 'Remove from LamplitLamplit forgets it. The files stay.' && (await page.evaluate(() => document.getElementById('dStore').textContent)) === 'Added by hand', JSON.stringify(choices));
   for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   s = await state(page);
-  check('✕ on Remove asks first', s.lastCall?.[0] !== 'library_remove_game' && (await page.evaluate(() => document.querySelector('#dChoices .row.focus').textContent)) === 'Press again to remove', JSON.stringify(s.lastCall));
-  await page.keyboard.press('Enter');
+  check('✕ pressed on Remove removes nothing', s.lastCall?.[0] !== 'library_remove_game' && s.hint.includes('Hold to remove'), `${JSON.stringify(s.lastCall)} ${s.hint}`);
+  await page.keyboard.down('Enter');
+  await page.waitForTimeout(1100);
+  await page.keyboard.up('Enter');
   await idle(page);
   s = await state(page);
-  check('✕ again removes it from the row', s.lastCall?.[0] === 'library_remove_game' && s.covers === 1 && s.toast === 'Old Racer is no longer in Lamplit.', `${JSON.stringify(s.lastCall)} ${s.covers} ${s.toast}`);
+  check('held, it removes it from the row', s.lastCall?.[0] === 'library_remove_game' && s.covers === 1 && s.toast === 'Old Racer is no longer in Lamplit.', `${JSON.stringify(s.lastCall)} ${s.covers} ${s.toast}`);
   // Browsing: drives, folders, an exe; ○ goes up a level with focus on where it came from.
   await page.keyboard.press('c');
   await idle(page);
@@ -3216,6 +3233,84 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     })
   );
   check('Reduce Motion: the menu fades in beside the card, no grow', moves === 0 && fades.every((f) => f > 0 && f <= 150), JSON.stringify({ moves, fades }));
+  await close(page);
+}
+
+// 46. The dock's hold for every action on the home screen that can't be taken back: Close game in the menu of the
+// running game (when Lamplit knows its programs) says what it closes and asks the game once Cross has been held, then
+// hands it the screen to answer; let go early, nothing. With the mouse a hold runs from button down to button up.
+{
+  const page = await open({ games: [game(1), game(2)], running: 'pc:1' });
+  const reading = like(ipc('dock-game'), { id: 'pc:1', name: 'Game 001', closable: true, force_close: false, responding: true, session: 7 });
+  await page.evaluate((reading) => (window.__settings = { dock_state: reading }), reading);
+  const menu = () =>
+    page.evaluate(() => ({
+      rows: [...document.querySelectorAll('#dChoices .row')].map((r) => [r.querySelector('.label').firstChild.textContent, r.querySelector('.note')?.textContent ?? '', r.querySelector('use').getAttribute('href'), !!r.querySelector('.hold')]),
+      focus: document.querySelector('#dChoices .row.focus .label')?.firstChild.textContent,
+      holding: !!document.querySelector('#dChoices .row.holding'),
+      hint: document.getElementById('hint').textContent,
+      calls: window.__calls.map((c) => JSON.stringify(c)),
+    }));
+  await emit(page, 'pad', 'menu');
+  await until(page, () => [...document.querySelectorAll('#dChoices .row')].some((r) => r.textContent.startsWith('Close game')));
+  let m = await menu();
+  check(
+    'the running game\'s menu offers Close game, held, saying what it closes, with its own icon',
+    JSON.stringify(m.rows.at(-1)) === JSON.stringify(['Close game', 'Closes Game 001', '#i-close-game', true]) && m.rows.filter((r) => r[3]).length === 1,
+    JSON.stringify(m.rows)
+  );
+  for (let i = 0; i < 4; i++) await emit(page, 'pad', 'down');
+  m = await menu();
+  check('... its hint says to hold', m.focus === 'Close game' && m.hint.includes('Hold to close game'), m.hint);
+  const before = m.calls.length;
+  await emit(page, 'pad', 'ok');
+  await page.waitForTimeout(300);
+  m = await menu();
+  const filling = m.holding;
+  await emit(page, 'pad', 'ok-up');
+  await page.waitForTimeout(900);
+  m = await menu();
+  check('... Cross let go before the ring is full closes nothing', filling && !m.holding && !m.calls.slice(before).some((c) => c.includes('dock_close_game')), JSON.stringify(m.calls.slice(before)));
+  await emit(page, 'pad', 'ok');
+  await page.waitForTimeout(1000);
+  await until(page, () => window.__calls.some((c) => c[0] === 'launch_resume'));
+  m = await menu();
+  const asked = m.calls.slice(before).filter((c) => c.includes('dock_close_game'));
+  check('... held, it asks the game Lamplit read to close, and gives it the screen to answer', JSON.stringify(asked) === JSON.stringify([JSON.stringify(['dock_close_game', { force: false, id: 'pc:1', session: 7 }])]), JSON.stringify(m.calls.slice(before)));
+  await close(page);
+}
+{
+  // A game whose programs Lamplit can't tell has no Close game.
+  const page = await open({ games: [game(1)], running: 'pc:1' });
+  await page.evaluate((reading) => (window.__settings = { dock_state: reading }), like(ipc('dock-game'), { id: 'pc:1', closable: false, force_close: false }));
+  await emit(page, 'pad', 'menu');
+  await idle(page);
+  await page.waitForTimeout(200);
+  const rows = await page.evaluate(() => [...document.querySelectorAll('#dChoices .row')].map((r) => r.querySelector('.label').firstChild.textContent));
+  check("... not when Lamplit can't tell which programs are the game's", !rows.includes('Close game') && rows[0] === 'Back to game', JSON.stringify(rows));
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1, { manual: true })] });
+  await page.evaluate(() => (window.__settings = { library_remove_game: () => [] }));
+  await emit(page, 'pad', 'menu');
+  await settled(page);
+  const at = await page.evaluate(() => {
+    const r = [...document.querySelectorAll('#dChoices .row')].at(-1).getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  const removes = () => page.evaluate(() => window.__calls.filter((c) => c[0] === 'library_remove_game').length);
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.waitForTimeout(250);
+  await page.mouse.up();
+  await page.waitForTimeout(900);
+  const early = await removes();
+  await page.mouse.down();
+  await page.waitForTimeout(1100);
+  await page.mouse.up();
+  await idle(page);
+  check('with the mouse, Remove is held from button down to button up', early === 0 && (await removes()) === 1, `${early}`);
   await close(page);
 }
 

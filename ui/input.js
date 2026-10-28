@@ -8,13 +8,14 @@ import { closeFind, moveFind, openFind, pressFind, typeFromKeyboard, typeKey } f
 import { showHints, toast } from './hints.js';
 import * as keyboard from './keyboard.js';
 import { backToGame, cancelLaunch, play } from './launch.js';
-import { closeDetails, detailChoice, markGame, move, moveDetails, openDetails, showAllGames } from './library.js';
+import { letGo } from './hold.js';
+import { closeDetails, detailChoice, holdChoice, markGame, move, moveDetails, openDetails, showAllGames } from './library.js';
 import { counts, narrowed, nothingSeen, padInUse } from './logic.js';
 import { wake } from './screensaver/index.js';
 import { adjustSetting, backSettings, closeSettings, moveSettings, openSettings, selectSetting } from './settings.js';
 import { actionableStep, els, state } from './state.js';
 
-/** @typedef {import('./api.js').Action} Action */
+/** @typedef {import('./api.js').Action | import('./api.js').DockRelease} Action */
 
 /** What this window had from the pad and the keys: Steam can mirror the controller as keys (counts). */
 const seen = nothingSeen();
@@ -46,6 +47,8 @@ window.addEventListener('focus', stir);
  * @param {'pad' | 'key' | 'mouse'} source
  */
 export function act(action, source) {
+  // Cross let go: a hold in progress ends there, before its ring is full (hold.js).
+  if (action === 'ok-up') return letGo();
   stir();
   // The press that ends the screensaver does nothing else; keys and clicks it catches itself (screensaver/index.js).
   if (wake(action)) return;
@@ -78,6 +81,7 @@ export function act(action, source) {
       closeDetails();
       play();
     } else if (action === 'ok' && detailChoice().kind === 'art') openArt();
+    else if (action === 'ok' && detailChoice().hold) holdChoice();
     else if (action === 'ok') markGame();
     return;
   }
@@ -151,6 +155,12 @@ window.addEventListener('keydown', (e) => {
   if (e.repeat && !REPEATS.includes(action)) return;
   act(action, 'key');
 });
+// Enter let go is Cross let go: a hold ends.
+window.addEventListener('keyup', (e) => {
+  if (KEYS[e.key] === 'ok') act('ok-up', 'key');
+});
+// So is the mouse button: a hold on a choice starts as it goes down (below, and settings.js).
+window.addEventListener('pointerup', () => act('ok-up', 'mouse'));
 
 // A click on the focused cover plays it; a click on another one focuses it. The game is looked up at click time,
 // since the row is re-sorted when a game ends.
@@ -166,13 +176,17 @@ els.track.addEventListener('click', (e) => {
   else move(k - state.idx);
 });
 
-// A click on a choice in a game's menu picks it; one on the blurred screen around it closes it.
-els.dChoices.addEventListener('click', (e) => {
+// A click on a choice in a game's menu picks it, and one that can't be taken back is held from when the button goes
+// down; a click on the blurred screen around the menu closes it.
+/** @param {Event} e @param {boolean} held */
+function pick(e, held) {
   const k = [...els.dChoices.children].indexOf(/** @type {Element} */ (e.target).closest('.row'));
   if (k < 0 || state.mode !== 'details') return;
   state.detailsIdx = k;
-  act('ok', 'mouse');
-});
+  if (!!detailChoice().hold === held) act('ok', 'mouse');
+}
+els.dChoices.addEventListener('pointerdown', (e) => pick(e, true));
+els.dChoices.addEventListener('click', (e) => pick(e, false));
 els.lift.querySelector('.veil').addEventListener('click', () => {
   if (state.mode === 'details') act('back', 'mouse');
 });

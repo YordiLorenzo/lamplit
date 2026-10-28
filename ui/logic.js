@@ -176,25 +176,39 @@ export function byPlayed(a, b) {
 }
 
 /**
- * @typedef {{ kind: 'play' | 'favourite' | 'art' | 'hide' | 'remove', label: string, icon: import('./icons.js').IconId }} DetailChoice
+ * A choice in a game's menu. `hold`: it can't be taken back, so Cross is held for it, as the hint says; `note` says
+ * beforehand what it does.
+ * @typedef {{ kind: 'play' | 'favourite' | 'art' | 'hide' | 'close' | 'remove', label: string, icon: import('./icons.js').IconId,
+ *   hold?: string, note?: string }} DetailChoice
  */
 
 /**
  * The choices in a game's menu, in order, each with its icon. Favourite is one row that switches, its star filled
- * while the game is one. A game added by hand can be removed again; ✕ once asks (`removing`), ✕ again removes it.
+ * while the game is one. Hiding can be undone in Settings, so one press does it. While the game runs, and Lamplit knows
+ * which programs are its own (`closer`, the dock's reading of it), Close game asks it to close, or Force close ends a
+ * game that stopped responding. A game added by hand can be removed again. Both are held.
  * @param {Game} g
  * @param {string | null} running  the id of the game that runs
- * @param {boolean} [removing]
+ * @param {{ id: string, closable: boolean, force_close: boolean } | null} [closer]
  * @returns {DetailChoice[]}
  */
-export function detailChoices(g, running, removing = false) {
-  return [
+export function detailChoices(g, running, closer = null) {
+  /** @type {DetailChoice[]} */
+  const choices = [
     { kind: 'play', label: running === g.id ? 'Back to game' : 'Play', icon: 'i-play' },
     { kind: 'favourite', label: 'Favourite', icon: g.favourite ? 'i-star-on' : 'i-star' },
     { kind: 'art', label: 'Change art', icon: 'i-photo' },
     { kind: 'hide', label: 'Hide this game', icon: 'i-eye-off' },
-    ...(g.manual ? [/** @type {DetailChoice} */ ({ kind: 'remove', label: removing ? 'Press again to remove' : 'Remove from Lamplit', icon: 'i-remove' })] : []),
   ];
+  if (running === g.id && closer?.id === g.id && closer.closable) {
+    choices.push(
+      closer.force_close
+        ? { kind: 'close', label: 'Force close', icon: 'i-close-game', hold: 'Hold to force close', note: `Ends ${g.name}, which isn't responding` }
+        : { kind: 'close', label: 'Close game', icon: 'i-close-game', hold: 'Hold to close game', note: `Closes ${g.name}` }
+    );
+  }
+  if (g.manual) choices.push({ kind: 'remove', label: 'Remove from Lamplit', icon: 'i-remove', hold: 'Hold to remove', note: 'Lamplit forgets it. The files stay.' });
+  return choices;
 }
 
 /**
@@ -471,11 +485,15 @@ export const SECTIONS = [
   { key: 'hidden', title: 'Hidden games' },
   { key: 'power', title: 'Power' },
 ];
-/** The rows of Settings > Power. Restart and Shut down close a game that runs; it stays open while the PC sleeps. */
+/**
+ * The rows of Settings > Power. Sleep can be undone with any button, so one press does it; Restart and Shut down are
+ * held, and close a game that runs, which stays open while the PC sleeps.
+ * @type {{ id: string, label: string, icon: import('./icons.js').IconId, hold: string, note: string }[]}
+ */
 const POWER = [
-  { id: 'sleep', label: 'Sleep', closesGame: false },
-  { id: 'restart', label: 'Restart', closesGame: true },
-  { id: 'shutdown', label: 'Shut down', closesGame: true },
+  { id: 'sleep', label: 'Sleep', icon: 'i-sleep', hold: '', note: '' },
+  { id: 'restart', label: 'Restart', icon: 'i-restart', hold: 'Hold to restart', note: 'Restarts the PC' },
+  { id: 'shutdown', label: 'Shut down', icon: 'i-power', hold: 'Hold to shut down', note: 'Turns the PC off' },
 ];
 /** The auto-off times the headset offers, in minutes; 0 is never. */
 const AUTO_OFF = [0, 5, 10, 15, 20, 30, 60];
@@ -689,12 +707,11 @@ export function sectionRows(key, state) {
     // The section stays open when its last game is shown again.
     if (!rows.length) rows.push({ label: 'No hidden games', value: '' });
   } else if (key === 'power') {
+    // What a held row does shows before the press: a running game that would close is named.
     const running = state.all.find((g) => g.id === state.running);
     for (const p of POWER) {
-      // ✕ once asks, ✕ again does it.
-      const asked = state.settings.confirm === p.id;
-      rows.push({ kind: 'power', id: p.id, label: p.label, value: asked ? 'Press again to confirm' : '', tone: asked ? 'warn' : '' });
-      if (asked && p.closesGame && running) rows.push({ label: `${running.name} is running and will close`, value: '' });
+      const note = p.hold && running ? `${running.name} is running and will close` : p.note;
+      rows.push({ kind: 'power', id: p.id, label: p.label, value: '', icon: p.icon, ...(p.hold ? { hold: p.hold } : {}), ...(note ? { note } : {}) });
     }
   }
   return rows;
