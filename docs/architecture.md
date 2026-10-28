@@ -195,7 +195,11 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   thread then waited with it. Should Windows still keep the foreground with the game, the controller works in the
   open dock all the same: Lamplit reads it whatever window is in front.
 - **Folding**, the island keeps its size and a `clip-path` squeezes it into the pill at its bottom centre on the
-  opening's spring, which then drops onto the edge and goes; its shadow, a layer of its own, fades at once. The clip,
+  opening's spring, which then drops onto the edge and goes; its shadow, a layer of its own, fades at once. What it
+  shows fades in the squeeze's first 110 ms, tiles, top line and hints with it, which only then take their places for
+  the next opening, out of sight. With reduced motion (Windows' animation effects off), the island and its shadow fade
+  in place in 150 ms instead, opening and folding, and so does the real glass (a fold that stays where it is); Home's
+  veil fades the same way, and the island fades into it without growing, on its own glass. The clip,
   translate and opacity run on the compositor (Chromium animates `clip-path` there), so nothing on the full-screen
   window is laid out or painted again per frame. The page sends Rust the pill and the spring's curve
   (`dock_glass_fold`), and Rust squeezes the real glass's clip the same way with Windows.UI.Composition key frames,
@@ -217,11 +221,16 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   asked 10 seconds ago hasn't happened. With none of those processes, `GameState::closable` is false and the dock has
   no Close game at all.
 
-The page sizes the dock in hundredths of the screen's height (`--u`, from `screen.height`), as the home screen is
-sized in `vh`. The island's width and height follow the face it shows, with a spring easing built as a CSS `linear()`
-curve; one focus ring springs from tile to tile on a quicker one. Behind the faces, the game's own art is drawn small
-(`createImageBitmap` scales it down off the page's thread) and blurred into a canvas, which the page scales up to the island: a blur that costs nothing while the island moves,
-where CSS `backdrop-filter` couldn't see the game behind a transparent window at all. Once the island rests open,
+The page sizes the dock in hundredths of the screen's height (`--u`, from `screen.height`), as the home screen is sized
+in `vh`. The island opens and folds on a spring built as a CSS `linear()` curve, which overshoots once. Resized while
+open, it follows the face it shows on a quicker one that settles without going past (a press throws nothing), and so
+does the one focus ring, from tile to tile; opening, the ring comes on Resume with Resume's own fade. The ring is placed
+from the dock's bottom, as the dock is laid out, so what grows above doesn't move it. The list of sound outputs grows out of
+its tile: clipped to the tile and on its fill at first, it opens with the island and the ring. Behind the faces, the
+game's own art is drawn small (`createImageBitmap` scales it down off the page's thread) and blurred into a canvas,
+which the page scales up to the island: a blur that costs nothing while the island moves. It shows at half strength,
+blurred enough that it reads as the game's colours rather than its shapes, and without a colour boost. CSS
+`backdrop-filter` couldn't see the game behind a transparent window at all. Once the island rests open,
 Windows' real glass takes the art's place where Windows 11 22H2 or later has transparency effects on (`dock/glass.rs`,
 `win/glass.rs`): a Windows.UI.Composition visual in the dock's own window, behind the page, filled with the host
 backdrop (what is behind the window, blurred live by Windows) and clipped to the island's rounded rectangle. Acrylic

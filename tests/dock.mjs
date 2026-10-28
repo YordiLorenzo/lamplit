@@ -1,6 +1,8 @@
 // The in-game dock's page (ui/dock.html) in Chromium with the fake Tauri, run by ui.test.mjs: opening and folding,
 // every tile, holding Cross to close a game, the controller, keyboard and mouse, the game's art and play time, news,
 // and its size in the window Rust gives it. And the switch in Settings that turns the dock off.
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pageFile } from './contract.mjs';
 import { ipc, known, like } from './fixtures.mjs';
@@ -95,18 +97,13 @@ const ringOn = (page) =>
         // After the ring's own frame of layout, and its spring.
         setTimeout(() => {
           const ring = document.getElementById('ring');
-          const dock = document.getElementById('dock');
           const tile = document.querySelector('.tile.focus');
+          // Where each is on the screen.
           const box = (el) => {
-            let [x, y, n] = [0, 0, el];
-            while (n && n !== dock) [x, y, n] = [x + n.offsetLeft, y + n.offsetTop, n.offsetParent];
-            return [x, y, el.offsetWidth, el.offsetHeight].map(Math.round).join();
+            const b = el.getBoundingClientRect();
+            return [b.x, b.y, b.width, b.height].map(Math.round).join();
           };
-          const s = getComputedStyle(ring);
-          const at = [s.getPropertyValue('--x'), s.getPropertyValue('--y'), s.getPropertyValue('--w'), s.getPropertyValue('--h')]
-            .map((v) => Math.round(parseFloat(v)))
-            .join();
-          resolve({ ring: at, tile: tile ? box(tile) : null, on: ring.classList.contains('on') });
+          resolve({ ring: box(ring), tile: tile ? box(tile) : null, on: ring.classList.contains('on') });
         }, 450)
       )
   );
@@ -632,6 +629,239 @@ export async function dockTests({ open, close, check, shots }) {
       return { pill: island.style.width === '' && island.classList.contains('rested'), logs: window.__logs.filter((l) => l.includes('dock: fold')) };
     });
     check('out of sight it is the pill again, and the log says how the fold ran', rested.pill && rested.logs.length === 1 && /^info dock: fold \d+ frames, worst \d+ ms, 95% \d+ ms$/.test(rested.logs[0]), JSON.stringify(rested));
+    await close(page);
+  }
+
+  // D20. Folding, what the dock shows goes with its face as that fades: the tiles, the top line and the hints stay on it
+  // to the end, rather than leaving the focus ring alone on an empty island, and only then take their places for the
+  // next opening, out of sight.
+  {
+    const page = await openDock();
+    await page.waitForTimeout(800);
+    const frames = page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const opacity = (el) => Number(getComputedStyle(el).opacity);
+          const [face, parts] = [document.getElementById('dock'), [...document.querySelectorAll('#top, .tile, #hint')]];
+          const seen = [];
+          const start = performance.now();
+          const step = () => {
+            seen.push({ face: opacity(face), parts: Math.min(...parts.map(opacity)), ring: opacity(document.getElementById('ring')) });
+            if (performance.now() - start < 250) requestAnimationFrame(step);
+            else resolve(seen);
+          };
+          requestAnimationFrame(step);
+        })
+    );
+    await emit(page, 'dock', closed);
+    const seen = await frames;
+    const showing = seen.filter((f) => f.face > 0.05);
+    const fades = new Set(showing.map((f) => f.face.toFixed(2))).size;
+    check('folding, the tiles, top line and hints fade with the face, and take their places once it has gone', showing.length > 1 && fades > 1 && showing.every((f) => f.parts === 1) && seen.at(-1).face === 0 && seen.at(-1).parts === 0, JSON.stringify(seen.map((f) => `${f.face.toFixed(2)}/${f.parts.toFixed(2)}`)));
+    await close(page);
+  }
+
+  // D21. With reduced motion the island fades in place in 150 ms rather than springing: opening, in its open shape from
+  // its first frame, with what it shows; folding, keeping that shape until it has gone, on real glass that Rust fades
+  // where it is. Home's veil fades the same way, and the island fades into it without growing, its real glass gone
+  // before Rust is asked for the home screen.
+  {
+    const page = await openDock();
+    await page.evaluate(() => (window.__settings.dock_glass = ({ island }) => island !== null));
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await emit(page, 'dock', closed);
+    await page.waitForTimeout(700);
+    /** The island frame by frame for `ms`: how much shows, its shape, and how much of its tiles. */
+    const frames = (ms) =>
+      page.evaluate(
+        (ms) =>
+          new Promise((resolve) => {
+            const [island, dock, tile] = [document.getElementById('island'), document.getElementById('dock'), document.querySelector('.tile')];
+            const seen = [];
+            const start = performance.now();
+            const step = () => {
+              const s = getComputedStyle(island);
+              const tiles = Number(getComputedStyle(dock).opacity) * Number(getComputedStyle(tile).opacity);
+              seen.push({ shows: Number(s.opacity), shape: `${s.clipPath}|${s.scale}|${s.translate}|${s.borderRadius}`, tiles });
+              if (performance.now() - start < ms) requestAnimationFrame(step);
+              else resolve(seen);
+            };
+            requestAnimationFrame(step);
+          }),
+        ms
+      );
+    const fades = (seen) => seen.filter((f) => f.shows > 0.02 && f.shows < 0.98).length;
+    const opening = frames(400);
+    await emit(page, 'dock', opened);
+    let seen = (await opening).filter((f) => f.shows > 0);
+    const open = seen.at(-1);
+    check('reduced motion: the dock fades open in place, in its open shape and with its tiles from the first frame', fades(seen) >= 2 && open.shows === 1 && seen.every((f) => f.shape === open.shape && f.tiles === 1), JSON.stringify(seen.map((f) => `${f.shows.toFixed(2)} ${f.tiles.toFixed(2)} ${f.shape}`)));
+    await page.waitForTimeout(800);
+    const glass = () => page.evaluate(() => document.getElementById('island').classList.contains('glass'));
+    const onGlass = await glass();
+    const shape = await page.evaluate(() => {
+      const b = document.getElementById('island').getBoundingClientRect();
+      return { x: b.x, y: b.y, width: b.width, height: b.height, radius: parseFloat(getComputedStyle(document.getElementById('island')).borderTopLeftRadius) };
+    });
+    let from = (await view(page)).calls.length;
+    const folding = frames(300);
+    await emit(page, 'dock', closed);
+    seen = (await folding).filter((f) => f.shows > 0);
+    const asked = (await since(page, from)).find((c) => c.startsWith('dock_glass_fold'));
+    const fold = asked ? JSON.parse(asked.slice('dock_glass_fold '.length)).fold : {};
+    const inPlace = fold.ms === 1 && fold.after === 0 && fold.fade === 150 && fold.drop === 0 && Object.entries(shape).every(([k, v]) => Math.abs(fold.to[k] - v) < 0.01);
+    check('reduced motion: folding, it fades where it is, keeping its shape and tiles, and the real glass fades there too', onGlass && fades(seen) >= 2 && seen.every((f) => f.shape === open.shape && f.tiles === 1) && inPlace, `${onGlass} ${JSON.stringify(fold)} ${JSON.stringify(seen.map((f) => `${f.shows.toFixed(2)} ${f.tiles.toFixed(2)} ${f.shape}`))}`);
+    await page.waitForTimeout(600);
+    await emit(page, 'dock', opened);
+    await page.waitForTimeout(1000);
+    for (let i = 0; i < 4; i++) await emit(page, 'dock-pad', 'right');
+    from = (await view(page)).calls.length;
+    const home = page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const [island, veil] = [document.getElementById('island'), document.getElementById('veil')];
+          const seen = [];
+          const start = performance.now();
+          const step = () => {
+            seen.push({ veil: Number(getComputedStyle(veil).opacity), scale: getComputedStyle(island).scale });
+            if (performance.now() - start < 300) requestAnimationFrame(step);
+            else resolve(seen);
+          };
+          requestAnimationFrame(step);
+        })
+    );
+    await emit(page, 'dock-pad', 'ok');
+    seen = await home;
+    const calls = (await since(page, from)).filter((c) => c.startsWith('dock_glass') || c === 'dock_home');
+    check('reduced motion: Home fades the veil in, and the island into it without growing, off its real glass first', seen.filter((f) => f.veil > 0.02 && f.veil < 0.98).length >= 2 && seen.every((f) => f.scale === 'none' || f.scale === '1') && calls.join() === 'dock_glass {"island":null},dock_home', `${calls} ${JSON.stringify(seen.map((f) => `${f.veil.toFixed(2)} ${f.scale}`))}`);
+    await close(page);
+  }
+
+  // D22. The focus ring: opening, it comes on Resume with Resume itself, rather than ahead of it on a bare island; a
+  // step moves it on a spring that settles on the next tile without going past it.
+  {
+    const page = await openDock();
+    await emit(page, 'dock', closed);
+    await page.waitForTimeout(700);
+    const opening = page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const shows = (el) => Number(getComputedStyle(el).opacity);
+          const [dock, ring] = [document.getElementById('dock'), document.getElementById('ring')];
+          const seen = [];
+          const start = performance.now();
+          const step = () => {
+            const resume = document.querySelector('.tile.primary');
+            seen.push([shows(dock) * shows(ring), shows(dock) * shows(resume)]);
+            if (performance.now() - start < 700) requestAnimationFrame(step);
+            else resolve(seen);
+          };
+          requestAnimationFrame(step);
+        })
+    );
+    await emit(page, 'dock', opened);
+    let seen = await opening;
+    const ahead = Math.max(...seen.map(([ring, resume]) => ring - resume));
+    check('opening, the focus ring comes on Resume with Resume, not ahead of it', ahead < 0.15 && seen.at(-1)[0] === 1, `${ahead.toFixed(2)} ${JSON.stringify(seen.map(([a, b]) => `${a.toFixed(2)}/${b.toFixed(2)}`))}`);
+    await settled(page);
+    const stepping = page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const ring = document.getElementById('ring');
+          const xs = [];
+          const start = performance.now();
+          const step = () => {
+            xs.push(parseFloat(getComputedStyle(ring).translate));
+            if (performance.now() - start < 600) requestAnimationFrame(step);
+            else resolve(xs);
+          };
+          requestAnimationFrame(step);
+        })
+    );
+    await emit(page, 'dock-pad', 'right');
+    const xs = await stepping;
+    const to = xs.at(-1);
+    check('a step moves the ring onto the next tile without going past it', xs[0] < to && Math.max(...xs) <= to + 0.5, `${to} ${JSON.stringify(xs.map((x) => Math.round(x * 10) / 10))}`);
+    await close(page);
+  }
+
+  // D23. The list of outputs grows out of its tile: clipped to the tile at first, with the focus ring still on the
+  // tile where it was on the screen, and its rows yet to fade in; then open all round.
+  {
+    const page = await openDock();
+    await emit(page, 'dock-pad', 'right');
+    await settled(page);
+    const box = (el) => {
+      const b = el.getBoundingClientRect();
+      return { top: b.top, right: b.right, bottom: b.bottom, left: b.left };
+    };
+    const tile = await page.evaluate((box) => new Function(`return ${box}`)()(document.querySelector('.tile[data-key="output"]')), box.toString());
+    const growing = page.evaluate(
+      (box) =>
+        new Promise((resolve) => {
+          const at = new Function(`return ${box}`)();
+          const [outputs, list, ring] = [document.getElementById('outputs'), document.getElementById('outputList'), document.getElementById('ring')];
+          const seen = [];
+          const start = performance.now();
+          const step = () => {
+            if (!outputs.hidden) seen.push({ clip: getComputedStyle(outputs).clipPath, rows: Number(getComputedStyle(list).opacity), ring: at(ring), list: at(outputs) });
+            if (performance.now() - start < 700) requestAnimationFrame(step);
+            else resolve(seen);
+          };
+          requestAnimationFrame(step);
+        }),
+      box.toString()
+    );
+    await emit(page, 'dock-pad', 'ok');
+    const seen = await growing;
+    /** A clip's insets, as top, right, bottom and left. */
+    const insets = (clip) => {
+      const [t, r = t, b = t, l = r] = (clip.split(' round')[0].match(/-?[\d.]+px/g) ?? []).map(parseFloat);
+      return [t, r, b, l];
+    };
+    const [first, last] = [seen[0], seen.at(-1)];
+    const from = [tile.top - first.list.top, first.list.right - tile.right, first.list.bottom - tile.bottom, tile.left - first.list.left];
+    const near = (a, b) => a.length === b.length && a.every((n, i) => Math.abs(n - b[i]) < 1);
+    const ringOnTile = near(Object.values(first.ring), Object.values(tile));
+    check('the list of outputs grows out of its tile: clipped to it first, the ring still on it, the rows yet to come', near(insets(first.clip), from) && ringOnTile && first.rows < 0.1, `${first.clip} ${JSON.stringify(from)} ${JSON.stringify(first.ring)} ${JSON.stringify(tile)} ${first.rows}`);
+    check('... and then it is open all round, its rows shown', insets(last.clip).every((n) => n < 0) && last.rows === 1, `${last.clip} ${last.rows}`);
+    await close(page);
+  }
+
+  // D24. The island's own glass, where Windows has no real glass: the game's art blurred into soft colour, shown at
+  // half strength with no colour boost, so art with a hard edge between bright yellow and black reads as a calm
+  // gradient rather than shapes.
+  {
+    const page = await openDock();
+    const dir = mkdtempSync(path.join(tmpdir(), 'lamplit-dock-art-'));
+    const file = path.join(dir, 'hero.png');
+    const png = await page.evaluate(() => {
+      const c = Object.assign(document.createElement('canvas'), { width: 640, height: 360 });
+      const g = c.getContext('2d');
+      g.fillStyle = '#000';
+      g.fillRect(0, 0, 640, 360);
+      g.fillStyle = '#f5e600';
+      g.fillRect(0, 0, 320, 360);
+      return c.toDataURL('image/png').split(',')[1];
+    });
+    writeFileSync(file, Buffer.from(png, 'base64'));
+    await emit(page, 'dock', closed);
+    await page.evaluate((art) => (window.__settings.game = { ...window.__settings.game, id: 'steam:edge', art }), { portrait: file, hero: file, logo: null });
+    await emit(page, 'dock', opened);
+    await until(page, () => document.getElementById('island').classList.contains('art'));
+    await settled(page);
+    const glass = await page.evaluate(() => {
+      const canvas = document.getElementById('backdrop');
+      const row = canvas.getContext('2d').getImageData(0, canvas.height >> 1, canvas.width, 1).data;
+      const light = [];
+      for (let i = 0; i < row.length; i += 4) light.push(0.2126 * row[i] + 0.7152 * row[i + 1] + 0.0722 * row[i + 2]);
+      const steepest = Math.max(...light.slice(1).map((l, i) => Math.abs(l - light[i])));
+      const s = getComputedStyle(canvas);
+      const boost = Math.max(1, ...[...s.filter.matchAll(/saturate\(([\d.]+)\)/g)].map((m) => Number(m[1])));
+      return { steepest, spread: Math.max(...light) - Math.min(...light), opacity: Number(s.opacity), boost };
+    });
+    rmSync(dir, { recursive: true, force: true });
+    check('the art glass softens a hard edge into a gradient, at half strength and with no colour boost', glass.spread > 60 && glass.steepest < 12 && glass.opacity <= 0.5 && glass.boost === 1, JSON.stringify(glass));
     await close(page);
   }
 

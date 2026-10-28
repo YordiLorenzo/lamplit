@@ -142,7 +142,8 @@ const PILL = { width: 18, height: 5.2, round: 2.6 };
 
 /**
  * Folding: the island keeps its size, and a clip squeezes it into the pill at its bottom centre on the opening's
- * spring (dock.css), which then drops onto the edge and goes. Rust squeezes the real glass under it the same way.
+ * spring (dock.css), which then drops onto the edge and goes. Rust squeezes the real glass under it the same way. With
+ * reduced motion the island fades where it is, and so does the glass.
  */
 function squeeze() {
   clearTimeout(glassTimer);
@@ -154,7 +155,10 @@ function squeeze() {
     const box = els.island.getBoundingClientRect();
     const k = devicePixelRatio;
     const to = { x: (box.x + x) * k, y: (box.y + y) * k, width: PILL.width * u * k, height: PILL.height * u * k, radius: PILL.round * u * k };
-    api.dockGlassFold({ to, ms: springMs, curve: springCurve, after: springMs * 0.5, fade: 200, drop: 2.4 * u * k }).catch(() => {});
+    const fold = reduced()
+      ? { to: glassShape(), ms: 1, curve: [0, 1], after: 0, fade: FADE_MS, drop: 0 }
+      : { to, ms: springMs, curve: springCurve, after: springMs * 0.5, fade: 200, drop: 2.4 * u * k };
+    api.dockGlassFold(fold).catch(() => {});
   }
   state.mode = 'gone';
   els.island.dataset.mode = 'gone';
@@ -163,6 +167,9 @@ function squeeze() {
 
 /** How long folding takes: the squeeze, then the drop (dock.css). Rust hides the window then (dock/mod.rs FOLD). */
 const FOLD_MS = 520;
+/** Windows' animation effects are off: the island fades in place in FADE_MS rather than springing (dock.css). */
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FADE_MS = 150;
 let restTimer = 0;
 
 /**
@@ -204,12 +211,16 @@ let glassAsks = 0;
 async function takeGlass() {
   if (state.mode !== 'open') return;
   const asked = ++glassAsks;
+  const on = await api.dockGlass(glassShape()).catch(() => false);
+  if (on && asked === glassAsks && state.mode === 'open') els.island.classList.add('glass');
+}
+
+/** Where the island is, and its corners, in the window's pixels, for the real glass. */
+function glassShape() {
   const box = els.island.getBoundingClientRect();
   const k = devicePixelRatio;
   const radius = parseFloat(getComputedStyle(els.island).borderTopLeftRadius) * k;
-  const island = { x: box.x * k, y: box.y * k, width: box.width * k, height: box.height * k, radius };
-  const on = await api.dockGlass(island).catch(() => false);
-  if (on && asked === glassAsks && state.mode === 'open') els.island.classList.add('glass');
+  return { x: box.x * k, y: box.y * k, width: box.width * k, height: box.height * k, radius };
 }
 
 /** Before the island moves: its own glass is back at once, and the real glass goes once that has been drawn. */
@@ -239,7 +250,7 @@ function open() {
   state.tile = 'resume';
   cancelHold();
   say('');
-  // The ring appears on Resume rather than springing there from where it was last time.
+  // The ring comes on Resume with Resume itself, rather than springing there from where it was last time (dock.css).
   els.ring.classList.add('instant');
   els.ring.classList.remove('on');
   // Open at once for the controller, the keyboard and the answers drawn meanwhile.
@@ -255,6 +266,8 @@ function open() {
       if (mine !== openings) return;
       shape('open');
       meter('dock: open', springMs + 130);
+      // Its fade has started with the tiles': from here on it springs from what had the focus to what has it.
+      requestAnimationFrame(() => els.ring.classList.remove('instant'));
     },
     { cap: STEADY_MS }
   );
@@ -287,9 +300,15 @@ function goHome() {
   sfx.open();
   state.leaving = true;
   document.body.classList.add('home');
-  // Rust fades the real glass with the island as it grows into the veil (dock/mod.rs home).
-  api.dockHome();
   meter('dock: home', 240);
+  // Rust fades the real glass with the island as it grows into the veil (dock/mod.rs home). With reduced motion the
+  // island only fades, on its own glass: the real glass goes first.
+  if (reduced() && els.island.classList.contains('glass')) {
+    dropGlass();
+    requestAnimationFrame(() => requestAnimationFrame(() => api.dockHome()));
+  } else {
+    api.dockHome();
+  }
 }
 
 /** @param {Extract<import('../api.js').DockShow, { mode: 'status' }>} news */
@@ -353,9 +372,9 @@ function paintBackdrop(img) {
   els.island.classList.toggle('art', !!img);
   if (!img) return tint(LAMP);
   // A little larger than the canvas, so the blur doesn't darken its edges.
-  const scale = Math.max(canvas.width / img.width, canvas.height / img.height) * 1.15;
+  const scale = Math.max(canvas.width / img.width, canvas.height / img.height) * 1.4;
   const [w, h] = [img.width * scale, img.height * scale];
-  ctx.filter = 'blur(5px)';
+  ctx.filter = 'blur(12px)';
   ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
   ctx.filter = 'none';
   // The art's colour, as the home screen picks a game's accent.
@@ -463,6 +482,8 @@ const tileEl = (key) => /** @type {HTMLElement | null} */ (els.tiles.querySelect
 
 function render() {
   const d = state.data;
+  // The list of outputs opening grows out of its tile (grow): where the tile is, before anything moves.
+  const tile = state.row === 'outputs' && els.outputs.hidden ? tileEl('output')?.getBoundingClientRect() : undefined;
   setText(els.game, d.game?.name ?? '');
   showArt(d.game);
   tick();
@@ -543,9 +564,24 @@ function render() {
       })
     );
   }
+  if (tile) grow(tile);
   renderHints();
   if (shown()) shape('open');
   placeRing();
+}
+
+/**
+ * The list of outputs grows out of its tile: clipped to the tile and on the tile's fill at first, it springs open with
+ * the island as its rows fade in (dock.css #outputs).
+ * @param {DOMRect} tile
+ */
+function grow(tile) {
+  const list = els.outputs.getBoundingClientRect();
+  const from = { top: tile.top - list.top, right: list.right - tile.right, bottom: list.bottom - tile.bottom, left: tile.left - list.left };
+  for (const [side, px] of Object.entries(from)) els.outputs.style.setProperty(`--from-${side}`, `${px}px`);
+  els.outputs.classList.add('from-tile');
+  void els.outputs.offsetWidth;
+  els.outputs.classList.remove('from-tile');
 }
 
 /** What has the focus now: the volume, a tile, or an output. */
@@ -575,12 +611,12 @@ function placeRing() {
     if (els.outputList.contains(el)) y -= els.outputList.scrollTop;
     const r = els.ring.style;
     r.setProperty('--x', `${x}px`);
-    r.setProperty('--y', `${y}px`);
+    // From the dock's bottom (dock.css #ring).
+    r.setProperty('--y', `${y + el.offsetHeight - els.dock.offsetHeight}px`);
     r.setProperty('--w', `${el.offsetWidth}px`);
     r.setProperty('--h', `${el.offsetHeight}px`);
     r.setProperty('--r', getComputedStyle(el).borderRadius);
     els.ring.classList.add('on');
-    requestAnimationFrame(() => els.ring.classList.remove('instant'));
   });
 }
 
@@ -940,8 +976,9 @@ window.addEventListener('unhandledrejection', (e) => api.log.error(`dock: unhand
 
 async function init() {
   measure();
-  // The island opens on a spring that overshoots a little and settles; the focus ring moves on a quicker one.
-  for (const [name, { easing, ms, points }] of Object.entries({ spring: spring(0.46, 0.7), snap: spring(0.3, 0.78) })) {
+  // The island opens on a spring that overshoots a little and settles. The focus ring, the volume and a focused tile
+  // move on a quicker one that doesn't: a press, with nothing thrown.
+  for (const [name, { easing, ms, points }] of Object.entries({ spring: spring(0.46, 0.7), snap: spring(0.28, 0.9) })) {
     document.documentElement.style.setProperty(`--${name}`, easing);
     document.documentElement.style.setProperty(`--${name}-ms`, `${ms}ms`);
     if (name === 'spring') [springMs, springCurve] = [ms, points];

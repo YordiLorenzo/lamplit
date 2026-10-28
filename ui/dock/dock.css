@@ -11,11 +11,12 @@
   /* The game's colour, sampled from its art (main.js); the lamp until there is art. */
   --game: 252 165 69;
   --warn: #ffb38a;
-  /* main.js puts real springs here (logic.js spring); these curves overshoot once in their place. */
+  /* main.js puts real springs here (logic.js spring); these curves stand in until then: the island's overshoots once,
+     the snap doesn't. */
   --spring: cubic-bezier(.34, 1.56, .64, 1);
   --spring-ms: 520ms;
-  --snap: cubic-bezier(.34, 1.3, .64, 1);
-  --snap-ms: 360ms;
+  --snap: cubic-bezier(.2, .9, .25, 1);
+  --snap-ms: 300ms;
   --glide: cubic-bezier(.2, .9, .25, 1);
   font-family: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   color: var(--ink);
@@ -54,9 +55,11 @@ body.pointer { cursor: default; }
   border-radius: var(--round);
   translate: -50% 0;
   transform-origin: 50% 100%;
+  /* Opening and folding move the clip on the island's spring; resized while open (the list of outputs), it moves on the
+     quicker snap, as the focus ring and the list do. */
   transition:
-    width var(--spring-ms) var(--spring) 70ms,
-    height var(--spring-ms) var(--spring) 70ms,
+    width var(--snap-ms) var(--snap),
+    height var(--snap-ms) var(--snap),
     clip-path var(--spring-ms) var(--spring) 70ms,
     opacity 140ms ease,
     scale 380ms var(--spring),
@@ -91,8 +94,8 @@ body.pointer { cursor: default; }
 /* Opening, the shadow comes once the clip has nearly sprung open around it. */
 #shade:is([data-mode='open'], [data-mode='news']) {
   transition:
-    width var(--spring-ms) var(--spring) 70ms,
-    height var(--spring-ms) var(--spring) 70ms,
+    width var(--snap-ms) var(--snap),
+    height var(--snap-ms) var(--snap),
     opacity 240ms ease 160ms,
     scale 380ms var(--spring),
     translate 380ms var(--spring);
@@ -106,8 +109,8 @@ body.pointer { cursor: default; }
    the first two (.glass, main.js takeGlass): they fade out over it, and come back at once before the island moves. */
 #island::before { content: ''; position: absolute; inset: 0; z-index: 0; background: rgb(14 13 22 / .94); }
 #backdrop, .tint, .rim { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-#backdrop { z-index: 0; opacity: 0; filter: saturate(1.35); transition: opacity 500ms ease; }
-#island.art #backdrop { opacity: .75; }
+#backdrop { z-index: 0; opacity: 0; filter: saturate(.9); transition: opacity 500ms ease; }
+#island.art #backdrop { opacity: .5; }
 #island.glass::before, #island.glass #backdrop { opacity: 0; transition: opacity 260ms ease; }
 .tint {
   z-index: 1;
@@ -214,6 +217,8 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
     translate 520ms var(--glide) calc(120ms + var(--i, 0) * 32ms),
     background 160ms ease;
 }
+/* Folding, they go with the face as it fades (.face, 110 ms), and only then take their places for the next opening. */
+#island:not([data-mode='open']) :is(#top, .tile, #hint) { transition: opacity 0s linear 120ms, translate 0s linear 120ms; }
 
 /* The top line: the game's cover, its name and how long it has been played, then the volume, the batteries and the
    time. */
@@ -437,10 +442,12 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
 @keyframes closing { 30% { background: rgb(var(--lamp) / .35); } }
 
 /* The focus: one ring that springs from what had it to what has it (main.js places it). */
+/* Placed from the dock's bottom, as the dock is laid out: what grows above it (the list of outputs, the volume) doesn't
+   move it on the screen. */
 #ring {
   position: absolute;
   left: 0;
-  top: 0;
+  bottom: 0;
   z-index: 1;
   width: var(--w, 0);
   height: var(--h, 0);
@@ -458,11 +465,29 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
     border-radius var(--snap-ms) var(--snap),
     opacity 200ms ease;
 }
-#ring.on { opacity: 1; }
-#ring.instant { transition: opacity 200ms ease 260ms; }
+#island[data-mode='open'] #ring.on { opacity: 1; }
+/* Opening, it comes on Resume with Resume itself (the first tile: its delay and fade, #top and .tile above), rather
+   than springing there from where it was last time (main.js open). */
+#ring.instant { transition: opacity 260ms ease calc(120ms + 32ms); }
+/* Folding, it goes with the face, as the tiles do. */
+#island:not([data-mode='open']) #ring { transition: opacity 0s linear 120ms; }
 
-/* Choosing the sound output: a list in place of the tiles. */
-#outputs { display: grid; gap: calc(var(--u) * .8); }
+/* Choosing the sound output: a list in place of the tiles, which grows out of its tile (main.js grow). Clipped to the
+   tile and on its fill at first, it opens on the snap with the island and the focus ring, its fill fades, and its rows
+   fade in on the way. Open, the clip reaches past it all round, so it cuts nothing. */
+#outputs {
+  display: grid;
+  gap: calc(var(--u) * .8);
+  clip-path: inset(calc(var(--u) * -1) round calc(var(--u) * 2.8));
+  transition: clip-path var(--snap-ms) var(--snap), background 240ms ease 80ms;
+}
+#outputs > * { transition: opacity 200ms ease 80ms; }
+#outputs.from-tile {
+  clip-path: inset(var(--from-top) var(--from-right) var(--from-bottom) var(--from-left) round calc(var(--u) * 2.8));
+  background: rgb(255 255 255 / .15);
+  transition: none;
+}
+#outputs.from-tile > * { opacity: 0; transition: none; }
 /* While the list shows, the tiles keep their width, so the island keeps its own. */
 #tiles.away { visibility: hidden; height: 0; margin-bottom: calc(var(--u) * -2.2); }
 #outputs h3 {
@@ -539,12 +564,23 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
 #hint b.xbox-a { color: #7fd36e; }
 #hint b.xbox-b { color: #ff7a7a; }
 
+/* Reduced motion (Windows' animation effects off): the island and its shadow fade in place in 150 ms instead of
+   springing (main.js FADE_MS). Coming, they take their shape at once, with what they show; going, they keep it until
+   they have gone. Home's veil fades the same way, and the island fades into it without growing. The focus ring jumps. */
 @media (prefers-reduced-motion: reduce) {
-  #island, #shade, :is(#island, #shade)[data-mode='gone'], .face, #ring, #island[data-mode='open'] :is(#top, .tile, #hint) {
-    transition-duration: 1ms;
-    transition-delay: 0s;
+  :is(#island, #shade)[data-mode] { transition: opacity 150ms ease; }
+  :is(#island, #shade)[data-mode='gone'] {
+    transition: opacity 150ms ease, clip-path 0s linear 150ms, scale 0s linear 150ms, translate 0s linear 150ms, border-radius 0s linear 150ms;
   }
-  #island[data-mode='gone'] { transition: opacity 150ms ease; }
+  #island[data-mode] :is(#news, #dock), #ring, #ring.instant { transition: none; }
+  #island[data-mode='open'] :is(#top, .tile, #hint) { transition: background 160ms ease; }
+  #island[data-mode='gone'] :is(#news, #dock), #island:not([data-mode='open']) :is(#top, .tile, #hint, #ring) {
+    transition: opacity 0s linear 150ms, scale 0s linear 150ms, translate 0s linear 150ms;
+  }
+  #veil, body.home.lift #veil { transition: opacity 150ms ease; }
+  body.home #island { scale: 1; transition: opacity 150ms ease; }
+  /* The list of outputs fades in where it is. */
+  #outputs, #outputs.from-tile { clip-path: none; background: none; transition: none; }
+  #outputs > * { transition: opacity 150ms ease; }
   .tile.closing, .output.picked, .output.picked .check { animation: none; }
-  #veil, body.home.lift #veil, body.home #island { transition-duration: 1ms; }
 }
