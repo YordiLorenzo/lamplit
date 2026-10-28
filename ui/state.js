@@ -149,7 +149,7 @@ export const state = {
   heroLayer: 0,
   /** @type {string | null} */
   heroKey: null,
-  /** @type {Map<string, number[]>} accent colour per game, sampled from its art */
+  /** @type {Map<string, { rgb: number[], light: number }>} accent colour and brightness per game, sampled from its art */
   accents: new Map(),
   /** @type {LaunchStep[]} checks of the launch in progress */
   steps: [],

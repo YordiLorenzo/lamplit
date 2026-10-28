@@ -13,6 +13,7 @@ import {
   detailChoices,
   focusIndex,
   folderParts,
+  lightOf,
   liftLayout,
   matcher,
   nameAfter,
@@ -154,6 +155,17 @@ describe('detailChoices', () => {
     assert.equal(labels(added).at(-1), 'Remove from Lamplit');
     assert.equal(labels(added, null, true).at(-1), 'Press again to remove');
     assert.equal(detailChoices(added, null).at(-1).kind, 'remove');
+  });
+});
+
+describe('lightOf', () => {
+  test("a picture's brightness, from black to white, which the plates over it take their fill from", () => {
+    const px = (...colours) => new Uint8ClampedArray(colours.flatMap((c) => [...c, 255]));
+    assert.equal(lightOf(px([0, 0, 0])), 0);
+    assert.equal(lightOf(px([255, 255, 255])), 1);
+    assert.equal(lightOf(px([0, 0, 0], [255, 255, 255])), 0.5);
+    // Green looks brighter than red, and red than blue.
+    assert.ok(lightOf(px([0, 255, 0])) > lightOf(px([255, 0, 0])) && lightOf(px([255, 0, 0])) > lightOf(px([0, 0, 255])));
   });
 });
 

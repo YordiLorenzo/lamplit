@@ -62,6 +62,8 @@ Every release of Lamplit, newest first. The format follows
   lifts a little past its place and settles, and lowers without.
 - The home screen's icons are drawn in the dock's style, with thin round strokes: the search field's glass, the
   controller's buttons and Add a game's drives, folders and programs.
+- Settings, Find, the game menu, Change art and messages are drawn on one glass: the same fill, rim of light,
+  shadow and corners. The glass is a little darker over bright art, so text on it stays readable.
 - With Reduce Motion on, Settings, Find, Add a game and messages fade in place rather than sliding, the covers move
   without overshooting, and the end of the row no longer bumps.
 - Add a game opens inside the Settings panel rather than as a second panel over it: Settings moves out, the panel

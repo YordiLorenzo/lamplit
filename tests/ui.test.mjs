@@ -2972,6 +2972,128 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await close(page);
 }
 
+// 43. One glass for every plate (plate.css): Settings, Find, the game menu, Change art and the toast have the same
+// fill, rim, shadow and corners, and the fill is more opaque over brighter art.
+{
+  const page = await open({ games: [game(1), game(2, { noArt: true })] });
+  const looks = () =>
+    page.evaluate(() =>
+      ['#settings', '#find', '#details', '#artPick', '#toast'].map((sel) => {
+        const st = getComputedStyle(document.querySelector(sel));
+        return { sel, fill: st.backgroundColor, shadow: st.boxShadow, round: st.borderTopLeftRadius, border: st.borderTopWidth };
+      })
+    );
+  const light = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--plate-light').trim());
+  // The first game's hero is sampled: its brightness is the plate's light.
+  await until(page, () => document.documentElement.style.getPropertyValue('--plate-light') !== '');
+  const lit = { light: await light(), looks: await looks() };
+  const same = (l) => l.every((x) => ['fill', 'shadow', 'round'].every((k) => x[k] === l[0][k]) && x.border === '0px' && x.shadow.includes('inset'));
+  check('every plate has one glass: fill, rim, shadow and corners', same(lit.looks), JSON.stringify(lit.looks.filter((x) => !same([lit.looks[0], x]))));
+  await emit(page, 'pad', 'right');
+  await until(page, () => document.documentElement.style.getPropertyValue('--plate-light') === '0');
+  const dark = { light: await light(), looks: await looks() };
+  const alpha = (c) => Number(c.match(/rgba?\([^)]*[,/]\s*([\d.]+)\)/)?.[1] ?? 1);
+  const [a, b] = [alpha(lit.looks[0].fill), alpha(dark.looks[0].fill)];
+  check(
+    '... its fill more opaque over brighter art',
+    Number(lit.light) > 0.2 && Math.abs(a - (0.7 + 0.22 * Number(lit.light))) < 0.01 && Math.abs(b - 0.7) < 0.01 && same(dark.looks),
+    JSON.stringify({ lit: lit.light, dark: dark.light, a, b })
+  );
+  await close(page);
+}
+
+// 44. The focus ring, hold to confirm and the pill, generalised from the dock's for both pages (ring.js, hold.js,
+// pill.js): the ring springs from one target to the next on snap and ends on the new one's box and corners, and with
+// Reduce Motion is there at once; a hold fills its ring and acts once full, and let go early never acts; a pill is the
+// plate's glass round its icon's badge and its text.
+{
+  const page = await open({ games: [game(1)] });
+  const ring = (reduce) =>
+    page.evaluate(async (reduce) => {
+      const { focusRing } = await import('./ring.js');
+      const frame = () => new Promise((r) => requestAnimationFrame(r));
+      const layer = document.createElement('div');
+      layer.style.cssText = 'position: fixed; left: 100px; top: 100px; width: 600px; height: 300px; z-index: 9';
+      const a = document.createElement('div');
+      a.style.cssText = 'position: absolute; left: 10px; top: 20px; width: 100px; height: 40px; border-radius: 8px';
+      const b = document.createElement('div');
+      b.style.cssText = 'position: absolute; left: 300px; top: 200px; width: 160px; height: 60px; border-radius: 20px';
+      layer.append(a, b);
+      document.body.append(layer);
+      const r = focusRing(layer);
+      const box = () => {
+        const o = r.el.getBoundingClientRect();
+        return { x: Math.round(o.x - 100), y: Math.round(o.y - 100), w: Math.round(o.width), h: Math.round(o.height) };
+      };
+      r.move(a);
+      for (let i = 0; i < 4; i++) await frame();
+      const atA = box();
+      r.move(b);
+      const way = [];
+      for (let i = 0; i < 45; i++) {
+        await frame();
+        way.push(box());
+      }
+      const st = getComputedStyle(r.el);
+      const out = { atA, between: way.filter((p) => p.x > 12 && p.x < 298).length, end: way.at(-1), round: st.borderTopLeftRadius, on: r.el.classList.contains('on'), ease: st.transitionTimingFunction.split(', linear(')[0], reduce };
+      layer.remove();
+      return out;
+    }, reduce);
+  let r = await ring(false);
+  const snapStops = (fn) => fn.match(/^linear\((.*)/)?.[1].split(',').slice(0, 4).map((v) => parseFloat(v));
+  check(
+    'the focus ring springs from one target to the next on snap, and ends on its box and corners',
+    JSON.stringify(r.atA) === JSON.stringify({ x: 10, y: 20, w: 100, h: 40 }) && r.between >= 3 && JSON.stringify(r.end) === JSON.stringify({ x: 300, y: 200, w: 160, h: 60 }) && r.round === '20px' && r.on && JSON.stringify(snapStops(r.ease)) === JSON.stringify(SPRINGS.snap.points.slice(0, 4)),
+    JSON.stringify(r)
+  );
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  r = await ring(true);
+  check('... with Reduce Motion it is on the next one at once', r.between === 0 && JSON.stringify(r.end) === JSON.stringify({ x: 300, y: 200, w: 160, h: 60 }), JSON.stringify(r));
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const held = await page.evaluate(async () => {
+    const { hold, holdRing } = await import('./hold.js');
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const el = document.createElement('div');
+    el.append(holdRing());
+    document.body.append(el);
+    // On screen a frame or two before the button goes down, as an action's row is.
+    for (let i = 0; i < 2; i++) await new Promise((r) => requestAnimationFrame(r));
+    let acted = 0;
+    const letGo = hold(el, () => acted++, 300);
+    await wait(150);
+    const filling = parseFloat(getComputedStyle(el.querySelector('.fill')).strokeDashoffset);
+    letGo();
+    await wait(400);
+    const early = acted;
+    const after = el.classList.contains('holding');
+    hold(el, () => acted++, 300);
+    await wait(450);
+    el.remove();
+    return { filling, early, after, full: acted, holding: el.classList.contains('holding') };
+  });
+  check('a hold fills its ring and acts once full; let go early, it never acts', held.filling > 5 && held.filling < 95 && held.early === 0 && !held.after && held.full === 1 && !held.holding, JSON.stringify(held));
+  const pill = await page.evaluate(async () => {
+    const { fillPill } = await import('./pill.js');
+    const el = document.createElement('div');
+    document.body.append(el);
+    fillPill(el, { icon: 'i-warn', text: 'Controller battery low', warn: true });
+    const st = getComputedStyle(el);
+    const href = el.querySelector('.badge use').getAttribute('href');
+    const out = {
+      href,
+      drawn: document.querySelector(href)?.closest('svg')?.id,
+      text: el.querySelector('.text').textContent,
+      warn: el.classList.contains('warn'),
+      round: Math.abs(parseFloat(st.borderTopLeftRadius) - el.offsetHeight / 2) < 0.5,
+      glass: st.backgroundColor === getComputedStyle(document.getElementById('settings')).backgroundColor && st.boxShadow.includes('inset'),
+    };
+    el.remove();
+    return out;
+  });
+  check("a pill is the plate's glass round its icon's badge and its text", pill.drawn === 'icons' && pill.text === 'Controller battery low' && pill.warn && pill.round && pill.glass, JSON.stringify(pill));
+  await close(page);
+}
+
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));
 check('every command Rust registers is called by a test', untested.length === 0, untested.join(', '));

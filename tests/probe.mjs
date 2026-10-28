@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ipc, like } from './fixtures.mjs';
-import { emit, until } from './page.mjs';
+import { emit, settled, until } from './page.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 /** The script probe.rs adds to every page, read from the Rust source so the two can't drift apart. */
@@ -87,6 +87,34 @@ export async function probeTests({ open, close, check, games }) {
     const steps = lines.filter((l) => l.includes(' row-step '));
     check('the first of each interaction is cold, the next one not', steps[0]?.includes(', cold,') && !steps[1]?.includes('cold'), JSON.stringify(steps));
     await close(page);
+  }
+  // P3. A plate changing shape (morph.js) logs its own frames: Settings widening for Add a game and narrowing back,
+  // and growing out of the empty home screen's line.
+  {
+    const MORPH = /^info probe-morph: home ([\w-]+) frames (\d+), p50 [\d.]+, p95 [\d.]+, worst [\d.]+ ms, over \d+ ms$/;
+    const morphs = (page) => page.evaluate(() => window.__logs.filter((l) => l.startsWith('info probe-morph')));
+    const { page } = await openNoting(open, { games, init: script });
+    await page.evaluate(() => (window.__settings = { library_programs: [] }));
+    await until(page, () => window.__logs.some((l) => l.startsWith('info probe: home on')));
+    await emit(page, 'pad', 'triangle');
+    await settled(page);
+    const k = await page.evaluate(() => [...document.querySelectorAll('#settingsList .row')].findIndex((r) => r.textContent.startsWith('Add a game')));
+    for (let i = 0; i < k; i++) await emit(page, 'pad', 'down');
+    await emit(page, 'pad', 'ok');
+    await until(page, () => window.__logs.some((l) => l.startsWith('info probe-morph: home settings-widen ')));
+    await emit(page, 'pad', 'back');
+    await until(page, () => window.__logs.some((l) => l.startsWith('info probe-morph: home settings-narrow ')));
+    let lines = await morphs(page);
+    await close(page);
+    const empty = (await openNoting(open, { games: [], init: script })).page;
+    await empty.evaluate(() => (window.__settings = { library_programs: [] }));
+    await until(empty, () => document.getElementById('empty').textContent === 'No games found');
+    await emit(empty, 'pad', 'ok');
+    await until(empty, () => window.__logs.some((l) => l.startsWith('info probe-morph: home settings-grow ')));
+    lines = [...lines, ...(await morphs(empty))];
+    const named = lines.map((l) => l.match(MORPH)).filter((m) => m && Number(m[2]) > 3).map((m) => m[1]);
+    check('a measurement build: a plate changing shape logs its frames', named.join() === 'settings-widen,settings-narrow,settings-grow', JSON.stringify(lines));
+    await close(empty);
   }
   {
     const { page } = await openNoting(open, { games: [], file: 'dock.html', init: script });

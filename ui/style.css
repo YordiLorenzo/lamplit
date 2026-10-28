@@ -521,10 +521,9 @@ body.launching .cover.focus { scale: 1.1; }
   display: flex;
   flex-direction: column;
   padding: 3.6vh 4vh;
-  border-radius: 2.2vh;
-  background: rgb(16 15 26 / .72);
-  border: .12vh solid rgb(255 255 255 / .14);
-  box-shadow: 0 3vh 8vh rgb(0 0 0 / .4);
+  border-radius: var(--plate-radius);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
   opacity: 0;
   transform: translateX(calc(var(--side) * -5vh)) scale(.96);
   transform-origin: calc(50% - var(--side) * 50%) 50%;
@@ -661,10 +660,10 @@ body.launching .cover.focus { scale: 1.1; }
   width: 38vw;
   z-index: 4;
   padding: 5vh 4vh;
-  border-radius: 2vh;
-  background: rgb(14 13 22 / .82);
-  border: .12vh solid rgb(255 255 255 / .12);
-  backdrop-filter: blur(3vh) saturate(1.4);
+  border-radius: var(--plate-radius);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  backdrop-filter: var(--plate-blur);
   transform: translateX(4vw);
   opacity: 0;
   pointer-events: none;
@@ -690,8 +689,8 @@ body.launching .cover.focus { scale: 1.1; }
 }
 #settings.on { transition: transform var(--tap-ms) var(--tap), opacity 220ms ease, clip-path var(--tap-ms) var(--tap); }
 #settings.wide { width: var(--wide); }
-#settings.moving { width: var(--wide); clip-path: inset(0 0 0 calc(var(--wide) - var(--narrow)) round 2vh); }
-#settings.moving.wide { clip-path: inset(0 round 2vh); }
+#settings.moving { width: var(--wide); clip-path: inset(0 0 0 calc(var(--wide) - var(--narrow)) round var(--plate-radius)); }
+#settings.moving.wide { clip-path: inset(0 round var(--plate-radius)); }
 /* A face that comes fades in once the one that goes has faded out. */
 .face {
   position: absolute;
@@ -703,7 +702,7 @@ body.launching .cover.focus { scale: 1.1; }
   padding: 5vh 4vh;
   transition: opacity 160ms ease 100ms, translate var(--tap-ms) var(--tap);
 }
-#settingsFace { width: calc(var(--narrow) - .24vh); }
+#settingsFace { width: var(--narrow); }
 #settings:has(#add.on) #settingsFace {
   opacity: 0;
   translate: -6vw 0;
@@ -834,7 +833,7 @@ body:has(#settings.on) #empty { opacity: 0; }
 /* ---------- add a game (add.js) ---------- */
 
 #add {
-  width: calc(var(--wide) - .24vh);
+  width: var(--wide);
   opacity: 0;
   translate: 6vw 0;
   pointer-events: none;
@@ -902,9 +901,9 @@ body:has(#settings.on) #empty { opacity: 0; }
   z-index: 6;
   max-width: 70vw;
   padding: 1.4vh 2.6vh;
-  border-radius: 1.4vh;
-  background: rgb(20 18 30 / .92);
-  border: .12vh solid rgb(255 255 255 / .14);
+  border-radius: var(--plate-radius);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
   font-size: 2.4vh;
   transform: translate(-50%, 2vh);
   opacity: 0;

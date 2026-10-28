@@ -129,6 +129,17 @@ export function accentOf(rgba) {
   return readable([r / w, g / w, b / w]);
 }
 
+/**
+ * How bright a picture is, 0 for black to 1 for white: the average of its pixels' luma. The plates over it take
+ * their fill from it (plate.css --plate-light).
+ * @param {ArrayLike<number>} rgba  the pixels as a canvas gives them back
+ */
+export function lightOf(rgba) {
+  let sum = 0;
+  for (let i = 0; i < rgba.length; i += 4) sum += 0.2126 * rgba[i] + 0.7152 * rgba[i + 1] + 0.0722 * rgba[i + 2];
+  return rgba.length ? Number((sum / (rgba.length / 4) / 255).toFixed(3)) : 0;
+}
+
 /** @param {number} ts Unix seconds, 0 for never @param {number} [now] Unix seconds */
 export function playedText(ts, now = Date.now() / 1000) {
   if (!ts) return '';
