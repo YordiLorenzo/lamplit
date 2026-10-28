@@ -53,9 +53,10 @@ body.pointer { cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .hero { animation: none; }
 }
-/* Nobody is using Lamplit (input.js), or a game's menu or a panel blurs it: the drift holds where it is. A blur over
-   a moving 4K hero is drawn again every frame. */
-body.still .hero, body:has(#lift.on, .panel.on) .hero { animation-play-state: paused; }
+/* Nobody is using Lamplit (input.js), or a game's menu is up: the drift holds where it is. Under a panel it keeps
+   going: held still, the GPU drops to its idle clocks within 2 s, and the panel's close then stutters on screen while
+   they come back (about 12 W more while a panel is open, the same as the home row). */
+body.still .hero, body:has(#lift.on) .hero { animation-play-state: paused; }
 
 .shade {
   position: absolute;

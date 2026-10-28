@@ -2550,7 +2550,7 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await page.keyboard.press('Escape');
   await idle(page);
   const home = await drift();
-  check('the hero holds still under a panel, and drifts again once it closes', settings === 'paused paused' && home === 'running running', `${settings} / ${home}`);
+  check('the hero keeps drifting under a panel, and after it closes', settings === 'running running' && home === 'running running', `${settings} / ${home}`);
   await close(page);
 }
 
