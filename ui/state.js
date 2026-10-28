@@ -71,12 +71,18 @@ export const els = {
   settingsTitle: $('settingsTitle'),
   settingsList: $('settingsList'),
   find: $('find'),
-  findQuery: $('findQuery'),
+  findPlate: $('findPlate'),
   findKeys: $('findKeys'),
-  findStores: $('findStores'),
+  findLine: $('findLine'),
+  findField: $('findField'),
+  findQuery: $('findQuery'),
+  findStore: $('findStore'),
   findSort: $('findSort'),
+  findCount: $('findCount'),
+  findStores: $('findStores'),
   steps: $('steps'),
   toast: $('toast'),
+  gameNews: $('gameNews'),
   hint: $('hint'),
 };
 
@@ -88,8 +94,10 @@ export const state = {
   idx: 0,
   /** @type {import('./logic.js').Find} */
   find: { query: '', store: null, sort: 'played' },
-  /** @type {string} the focused key or choice in the Find panel (its data-id) */
+  /** @type {string} the focused key, chip or store in Find (its data-id) */
   findFocus: 'a',
+  /** Find's store list is open, grown up out of its chip */
+  findList: false,
   /** @type {'browse' | 'starting' | 'details' | 'settings' | 'find' | 'add'} details: a game's menu (library.js) */
   mode: 'browse',
   /** whether the library has come in yet, so an empty row means no games found */

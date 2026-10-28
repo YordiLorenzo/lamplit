@@ -245,10 +245,11 @@ export async function markGame() {
         state.idx = Math.max(0, Math.min(at, state.games.length - 1));
         render();
       }
-      toast(kind === 'hide' ? `${g.name} is hidden. Settings > Hidden games shows it again.` : `${g.name} is no longer in Lamplit.`);
+      if (kind === 'hide') toast(`${g.name} is hidden. Settings > Hidden games shows it again.`, { game: g, icon: 'i-eye-off' });
+      else toast(`${g.name} is no longer in Lamplit.`, { game: g, icon: 'i-remove' });
     }
   } catch (e) {
-    toast(e.message);
+    toast(e.message, { game: g, warn: true });
   }
 }
 
@@ -384,9 +385,12 @@ export function showAllGames() {
   showRow(focused()?.id);
 }
 
+/** How many of the games the row holds, while the search or the store leaves some out: "2 of 6 games". */
+export const rowCount = () => (narrowed(state.find) ? `${state.games.length} of ${shownCount()} games` : '');
+
 /**
  * Above the row, while it isn't every game by last played: the search, the store and the sort that shape it, and how
- * many games it holds.
+ * many games it holds. Find works on this line (find.js), and its field grows out of the search's pill.
  */
 function showFilters() {
   const { query, store, sort } = state.find;
@@ -402,8 +406,9 @@ function showFilters() {
   if (words(query).length) parts.push(pill('query', icon('i-search'), query.trim()));
   if (store) parts.push(pill('', ...withStoreLogo(store === 'pc' ? null : store, store)));
   if (sort === 'name') parts.push(pill('quiet', 'A to Z'));
-  if (narrowed(state.find)) parts.push(document.createTextNode(`${state.games.length} of ${shownCount()} games`));
-  els.filters.replaceChildren(...parts);
+  if (narrowed(state.find)) parts.push(document.createTextNode(rowCount()));
+  // A message about a game stands after them (hints.js toast).
+  els.filters.replaceChildren(...parts, els.gameNews);
 }
 
 /** @param {number} delta */

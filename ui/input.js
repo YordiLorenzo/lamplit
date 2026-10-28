@@ -4,7 +4,7 @@
 import * as api from './api.js';
 import { actAdd, openAdd } from './add.js';
 import { actArt, openArt } from './art.js';
-import { closeFind, moveFind, openFind, pressFind, typeFromKeyboard, typeKey } from './find.js';
+import { backFind, closeFind, moveFind, openFind, pressFind, typeFromKeyboard, typeKey } from './find.js';
 import { showHints, toast } from './hints.js';
 import * as keyboard from './keyboard.js';
 import { backToGame, cancelLaunch, play } from './launch.js';
@@ -12,7 +12,7 @@ import { closeDetails, detailChoice, markGame, move, moveDetails, openDetails, s
 import { counts, narrowed, nothingSeen, padInUse } from './logic.js';
 import { wake } from './screensaver/index.js';
 import { adjustSetting, backSettings, closeSettings, moveSettings, openSettings, selectSetting } from './settings.js';
-import { actionableStep, els, state } from './state.js';
+import { actionableStep, byId, els, state } from './state.js';
 
 /** @typedef {import('./api.js').Action} Action */
 
@@ -54,7 +54,10 @@ export function act(action, source) {
   if (state.mode === 'starting') {
     const s = actionableStep();
     if (action === 'back') cancelLaunch();
-    else if (action === 'ok' && s) api.launchShow(s.key === 'window' ? null : s.store).catch((e) => toast(e.message));
+    else if (action === 'ok' && s) {
+      const game = byId(/** @type {string} */ (state.launching));
+      api.launchShow(s.key === 'window' ? null : s.store).catch((e) => toast(e.message, { game, warn: true }));
+    }
     else if (action === 'triangle' && s?.state === 'block') api.launchAnyway();
     return;
   }
@@ -84,7 +87,7 @@ export function act(action, source) {
   if (state.mode === 'add') return actAdd(action);
   if (state.mode === 'find') {
     // □ and △ delete and space, as on a console's own keyboard.
-    if (action === 'back') closeFind();
+    if (action === 'back') backFind();
     else if (action === 'ok') pressFind();
     else if (action === 'square') typeKey('delete');
     else if (action === 'triangle') typeKey('space');
@@ -164,6 +167,11 @@ els.track.addEventListener('click', (e) => {
   if (state.mode !== 'browse') return;
   if (k === state.idx) act('ok', 'mouse');
   else move(k - state.idx);
+});
+
+// A click on the starting screen's chip does what ✕ does there: shows the window, or opens the store app.
+els.steps.addEventListener('click', (e) => {
+  if (/** @type {Element} */ (e.target).closest('.chip') && state.mode === 'starting') act('ok', 'mouse');
 });
 
 // A click on a choice in a game's menu picks it; one on the blurred screen around it closes it.

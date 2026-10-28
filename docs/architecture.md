@@ -43,12 +43,15 @@ ui/
   add.js           Add a game, a face of Settings' plate: the programs Lamplit passed over, browsing the drives,
                    naming the game
   keyboard.js      the on-screen keyboards: Find's, and the one for names and art searches
-  find.js          the Find panel: the on-screen keyboard, the store filter and the sort
-  launch.js        the starting screen
+  find.js          Find, on the filter line above the row: the search field and the store and sort chips stand
+                   there, the on-screen keyboard grows up out of the field and the store list out of its chip
+  launch.js        the starting screen: the launch's steps with the shared icons, and on the step the player can
+                   act on a chip with what ✕ does there (Show the window, Open Steam)
   settings.js      the Settings panel, a plate with two faces: Settings and Add a game
   morph.js         one plate changing shape, for both pages: its clip and place spring between boxes on screen
-                   (growing out of what it opens from, widening for another face, going back on close); with Reduce
-                   Motion it fades in place; each morph logs its frames in measurement builds (probe.js)
+                   (growing out of what it opens from, from its middle or keeping an end or a corner there, widening
+                   for another face, going back on close); with Reduce Motion it fades in place; each morph logs its
+                   frames in measurement builds (probe.js)
   springs.js       the springs both pages move on, named for what they move (tap, lift, snap, close), and Reduce
                    Motion's fade; set on each page's CSS as --tap and --tap-ms and so on
   steady.js        waits for the frames to come on time before an animation starts (the dock's spring, the
@@ -58,9 +61,11 @@ ui/
                    brightness, rim, shadow, concentric corners), the focus ring, hold to confirm and the pill
   ring.js          the focus ring: one ring that springs from what had the focus to what has it
   hold.js          hold to confirm: a ring fills round the icon, and the action happens once it is full
-  pill.js          the pill a short message shows in, with its icon in a round badge
+  pill.js          the pill a short message shows in, with its icon in a round badge: the dock's news and the
+                   home screen's messages
   logic.js         pure functions (the cover row's search and order, the Settings rows), tested in Node
-  hints.js         the button hints and short messages
+  hints.js         the button hints, and short messages as pills: one about a game on the line above the row,
+                   naming the game, any other at the top right under the clock
   sounds.js        interface sounds made with Web Audio
   screensaver/     the screensaver: when it shows and what ends it (index.js), the show and the games' art it loads
                    (saver.js), the WebGL2 renderer with its particles, the scenes' shaders, palettes from the game art,

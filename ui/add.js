@@ -57,7 +57,7 @@ async function loadPrograms() {
     if (state.mode !== 'add') return;
     state.add.programs = programs;
   } catch (e) {
-    toast(e.message);
+    toast(e.message, { warn: true });
     state.add.programs = [];
   }
   if (state.mode === 'add' && state.add.view === 'list') render();
@@ -77,7 +77,7 @@ async function browse(path) {
     Object.assign(state.add, { view: 'browse', folder, idx: Math.max(0, folder.entries.findIndex((e) => e.path === from)) });
     sfx.move();
   } catch (e) {
-    toast(e.message);
+    toast(e.message, { warn: true });
   } finally {
     if (asked === listings) state.add.busy = false;
   }
@@ -226,7 +226,7 @@ async function save() {
     openDetails();
     openArt();
   } catch (e) {
-    toast(e.message);
+    toast(e.message, { warn: true });
   } finally {
     a.busy = false;
   }
