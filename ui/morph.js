@@ -15,8 +15,13 @@ export const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matc
 /** Tells the probe that morph `name` plays for `ms`. @param {string} name @param {number} ms */
 const tell = (name, ms) => document.dispatchEvent(new CustomEvent('morph', { detail: { name, ms } }));
 
-/** The shape a plate holds after going back into what it came from, until it opens again. */
-const held = new WeakMap();
+/**
+ * Each plate's last morph: the one running, or the shape it holds after going back into what it came from. A morph
+ * that comes after it, or rest, cancels it, and what was to run once it ends never runs: a Find closed while it still
+ * opens would otherwise put its focus ring back once the opening ended.
+ * @type {WeakMap<HTMLElement, Animation>}
+ */
+const last = new WeakMap();
 
 /**
  * @typedef {{ box: DOMRect, round?: number, anchor?: 'left' | 'bottom-left', still?: boolean }} Place  a box on screen;
@@ -73,9 +78,16 @@ export function morph(plate, { name, from, to, spring = 'tap', delay = 0, hold =
   const round = parseFloat(getComputedStyle(plate).borderTopLeftRadius);
   const { easing, ms } = SPRINGS[spring];
   const move = plate.animate([shape(own, from, round), shape(own, to, round)], { duration: ms, easing, delay, fill: hold ? 'both' : 'backwards' });
-  if (hold) held.set(plate, move);
+  last.set(plate, move);
   tell(name, delay + ms);
-  move.finished.then(() => done?.(), () => {});
+  move.finished.then(
+    () => {
+      // A morph that holds its shape stays until rest; one that doesn't is over.
+      if (!hold && last.get(plate) === move) last.delete(plate);
+      done?.();
+    },
+    () => {}
+  );
 }
 
 /**
@@ -91,10 +103,14 @@ export function grow(plate, source, { back = false, done, anchor } = {}) {
   else morph(plate, { name: `${plate.id}-grow`, from: place, to: null, done });
 }
 
-/** The plate takes its own shape again, dropping one it held after going back into its source. @param {HTMLElement} plate */
+/**
+ * The plate takes its own shape again: its morph still running stops where it is, without what was to run once it
+ * ended, and a shape it held after going back into its source goes.
+ * @param {HTMLElement} plate
+ */
 export function rest(plate) {
-  held.get(plate)?.cancel();
-  held.delete(plate);
+  last.get(plate)?.cancel();
+  last.delete(plate);
 }
 
 /**

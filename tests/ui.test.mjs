@@ -3866,6 +3866,77 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await close(page);
 }
 
+// 52. A morph that another replaces, or rest, is cancelled, and what was to run once it ended never runs (morph.js):
+// so Find closed while it still opens leaves no focus ring over the home screen, nor does Find closed while its store
+// list still grows; the list closed while it grows leaves the ring on its chip.
+{
+  const page = await open({ games: [game(1), game(2), game(3)] });
+  const after = await page.evaluate(async () => {
+    const { grow, morph, rest } = await import('./morph.js');
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const plate = document.createElement('div');
+    plate.style.cssText = 'position: fixed; left: 100px; top: 100px; width: 400px; height: 200px';
+    document.body.append(plate);
+    const ran = [];
+    const box = new DOMRect(120, 300, 80, 30);
+    grow(plate, box, { done: () => ran.push('opened') });
+    await wait(60);
+    grow(plate, box, { back: true, done: () => ran.push('went back') });
+    await wait(600);
+    grow(plate, box, { done: () => ran.push('opened again') });
+    await wait(60);
+    rest(plate);
+    morph(plate, { name: 'test', from: null, to: { box }, hold: true, done: () => ran.push('held') });
+    await wait(600);
+    plate.remove();
+    return ran;
+  });
+  check('a morph another replaces, or rest, never runs what was to run once it ended', JSON.stringify(after) === '["went back","held"]', JSON.stringify(after));
+  /** The ring, Find and its list once everything has had time to end. */
+  const ended = async () => {
+    await page.waitForTimeout(700);
+    return page.evaluate(() => {
+      const ring = document.querySelector('#find .ring');
+      return {
+        ring: ring.classList.contains('on'),
+        ringSeen: getComputedStyle(ring).opacity !== '0',
+        find: document.getElementById('find').classList.contains('on'),
+        list: document.getElementById('findStores').classList.contains('on'),
+        focus: document.querySelector('#find .focus')?.dataset.id ?? null,
+      };
+    });
+  };
+  await page.keyboard.press('f');
+  await page.waitForTimeout(80);
+  await page.keyboard.press('Escape');
+  let e = await ended();
+  check('Find closed while it still opens leaves no focus ring behind', !e.ring && !e.ringSeen && !e.find, JSON.stringify(e));
+  // The store list closed while it grows: the ring is on the chip, the list gone.
+  await page.keyboard.press('f');
+  await settled(page);
+  await page.waitForTimeout(500);
+  for (let i = 0; i < 6 && (await page.evaluate(() => document.querySelector('#find .focus')?.dataset.id)) !== 'store'; i++) await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(400);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(80);
+  await page.keyboard.press('Escape');
+  e = await ended();
+  const onChip = await page.evaluate(() => {
+    const [r, c] = ['#find .ring', '#findStore'].map((sel) => document.querySelector(sel).getBoundingClientRect());
+    return Math.abs(r.left - c.left) <= 2 && Math.abs(r.top - c.top) <= 2 && Math.abs(r.width - c.width) <= 2;
+  });
+  check('the store list closed while it grows leaves the ring on its chip', e.ring && onChip && !e.list && e.find && e.focus === 'store', JSON.stringify({ ...e, onChip }));
+  // Find closed (holding PS brings Lamplit forward) while the list still grows.
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(80);
+  await emit(page, 'summoned', null);
+  // The list's opening stops with Find, and what it was to do once it ended with it.
+  const growing = await page.evaluate(() => document.getElementById('findStores').getAnimations().filter((a) => !('transitionProperty' in a)).length);
+  e = await ended();
+  check('Find closed while its store list still grows stops the list and leaves no focus ring behind', growing === 0 && !e.ring && !e.ringSeen && !e.find && !e.list, JSON.stringify({ ...e, growing }));
+  await close(page);
+}
+
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));
 check('every command Rust registers is called by a test', untested.length === 0, untested.join(', '));
