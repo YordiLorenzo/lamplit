@@ -40,7 +40,7 @@ export async function play() {
     await api.launchStart(g.id);
   } catch (e) {
     endLaunch();
-    toast(e.message);
+    toast(e.message, { game: g, warn: true });
   }
 }
 
@@ -196,7 +196,7 @@ export function onPlay(play) {
     }
   } else if (play.state === 'failed' && mine) {
     endLaunch();
-    toast(play.message);
+    toast(play.message, { game: byId(id), warn: true });
   }
   state.all.forEach(paintCover);
   render();

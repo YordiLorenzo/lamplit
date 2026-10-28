@@ -245,10 +245,11 @@ export async function markGame() {
         state.idx = Math.max(0, Math.min(at, state.games.length - 1));
         render();
       }
-      toast(kind === 'hide' ? `${g.name} is hidden. Settings > Hidden games shows it again.` : `${g.name} is no longer in Lamplit.`);
+      if (kind === 'hide') toast(`${g.name} is hidden. Settings > Hidden games shows it again.`, { game: g, icon: 'i-eye-off' });
+      else toast(`${g.name} is no longer in Lamplit.`, { game: g, icon: 'i-remove' });
     }
   } catch (e) {
-    toast(e.message);
+    toast(e.message, { game: g, warn: true });
   }
 }
 
@@ -406,7 +407,8 @@ function showFilters() {
   if (store) parts.push(pill('', ...withStoreLogo(store === 'pc' ? null : store, store)));
   if (sort === 'name') parts.push(pill('quiet', 'A to Z'));
   if (narrowed(state.find)) parts.push(document.createTextNode(rowCount()));
-  els.filters.replaceChildren(...parts);
+  // A message about a game stands after them (hints.js toast).
+  els.filters.replaceChildren(...parts, els.gameNews);
 }
 
 /** @param {number} delta */

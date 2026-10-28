@@ -175,7 +175,7 @@ async function choose(choice) {
     if (!art.open) return;
     backToMenu();
   } catch (e) {
-    toast(e.message);
+    toast(e.message, { game: byId(art.id), warn: true });
   } finally {
     art.saving = false;
     if (art.open) render();

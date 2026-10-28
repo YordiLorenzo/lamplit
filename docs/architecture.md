@@ -60,9 +60,11 @@ ui/
                    brightness, rim, shadow, concentric corners), the focus ring, hold to confirm and the pill
   ring.js          the focus ring: one ring that springs from what had the focus to what has it
   hold.js          hold to confirm: a ring fills round the icon, and the action happens once it is full
-  pill.js          the pill a short message shows in, with its icon in a round badge
+  pill.js          the pill a short message shows in, with its icon in a round badge: the dock's news and the
+                   home screen's messages
   logic.js         pure functions (the cover row's search and order, the Settings rows), tested in Node
-  hints.js         the button hints and short messages
+  hints.js         the button hints, and short messages as pills: one about a game on the line above the row,
+                   naming the game, any other at the top right under the clock
   sounds.js        interface sounds made with Web Audio
   screensaver/     the screensaver: when it shows and what ends it (index.js), the show and the games' art it loads
                    (saver.js), the WebGL2 renderer with its particles, the scenes' shaders, palettes from the game art,

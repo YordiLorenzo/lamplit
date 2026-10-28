@@ -50,7 +50,8 @@
     <ul id="steps"></ul>
   </div>
 
-  <div id="filters"></div>
+  <!-- What narrows the row (library.js), and after it a message about a game (hints.js toast). -->
+  <div id="filters"><div id="gameNews" class="news"></div></div>
   <main id="row"><div id="track"></div><div id="noMatch" hidden>No games match</div></main>
 
   <!-- A game's menu (library.js, lift.js): the focused cover lifted over the blurred screen, the menu or Change art
@@ -112,7 +113,8 @@
     <div id="findStores"></div>
   </div>
 
-  <div id="toast"></div>
+  <!-- Any other message, at the top right under the clock (hints.js toast). -->
+  <div id="toast" class="news"></div>
   <!-- Black between the starting screen and the game's window (launch.js handOver). -->
   <div id="arrival"></div>
   <div id="curtain"></div>

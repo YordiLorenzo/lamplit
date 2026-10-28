@@ -123,7 +123,7 @@ const state = (page) =>
     overlay: document.getElementById('overlay').classList.contains('on'),
     overlayTitle: document.getElementById('overlayTitle').textContent,
     overlaySub: document.getElementById('overlaySub').textContent,
-    toast: document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '',
+    toast: [...document.querySelectorAll('#toast.on, #gameNews.on')].map((t) => t.textContent).join(' | '),
     empty: document.getElementById('empty').hidden ? '' : document.getElementById('empty').textContent,
     details: document.getElementById('details').classList.contains('on'),
     dName: document.getElementById('dName').textContent,
@@ -206,7 +206,7 @@ const state = (page) =>
   await page.keyboard.press('Enter');
   await idle(page);
   const s = await state(page);
-  check("Tauri's own refusal reaches the player as its text", s.toast === 'invalid args `id` for command `launch_start`' && !s.overlay, s.toast);
+  check("Tauri's own refusal reaches the player as its text, after the game's name", s.toast.endsWith(': invalid args `id` for command `launch_start`') && !s.overlay, s.toast);
   await close(page);
 }
 {
@@ -488,7 +488,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
       focus: document.querySelector('#settingsList .row.focus')?.textContent ?? null,
       open: document.getElementById('settings').classList.contains('on'),
       hint: document.getElementById('hint').textContent,
-      toast: document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '',
+      toast: [...document.querySelectorAll('#toast.on, #gameNews.on')].map((t) => t.textContent).join(' | '),
       lastCall: window.__calls.at(-1),
     }));
   await page.keyboard.press('c');
@@ -778,7 +778,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
     page.evaluate(() => ({
       rows: [...document.querySelectorAll('#settingsList .row')].map((r) => r.textContent),
       focus: document.querySelector('#settingsList .row.focus')?.textContent ?? null,
-      toast: document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '',
+      toast: [...document.querySelectorAll('#toast.on, #gameNews.on')].map((t) => t.textContent).join(' | '),
       calls: window.__calls,
     }));
   /** Moves focus to the row that starts with `label` and presses ✕ on it; returns the commands that sent. */
@@ -1042,7 +1042,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
       open: document.getElementById('settings').classList.contains('on'),
       rows: [...document.querySelectorAll('#settingsList .row')].map((r) => r.textContent),
       focus: document.querySelector('#settingsList .row.focus')?.textContent ?? null,
-      toast: document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '',
+      toast: [...document.querySelectorAll('#toast.on, #gameNews.on')].map((t) => t.textContent).join(' | '),
       calls: window.__calls.map((c) => c[0]),
     }));
   const powerSection = async () => {
@@ -2031,7 +2031,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   await idle(page);
   a = await add();
   s = await state(page);
-  check('a game Rust refuses stays on naming, and says why', a.naming && s.toast.startsWith('That folder belongs to Game 001'), `${a.naming} ${s.toast}`);
+  check('a game Rust refuses stays on naming, and says why', a.naming && s.toast.includes('That folder belongs to Game 001'), `${a.naming} ${s.toast}`);
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   const settings = await page.evaluate(() => ({
@@ -2879,7 +2879,9 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await emit(page, 'pad', 'back');
   await settled(page);
   f = await watch("window.__emit('notice', 'Hello')", '#toast');
-  check('... a toast fades in place for 150 ms', still(f), JSON.stringify(f.slice(0, 3)));
+  check('... a message fades in place for 150 ms', still(f), JSON.stringify(f.slice(0, 3)));
+  f = await watch("import('./hints.js').then((m) => m.toast('About a game', { game: { id: 'pc:1', name: 'Game 001' } }))", '#gameNews');
+  check("... and so does one about a game, on the line above the row", still(f), JSON.stringify(f.slice(0, 3)));
   const covers = await page.evaluate(() => {
     const ease = getComputedStyle(document.querySelector('.cover')).transitionTimingFunction;
     // A cubic-bezier with a y beyond 0 to 1 overshoots.
@@ -2931,7 +2933,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   };
   const vars = await page.evaluate(() => ['tap', 'lift', 'snap', 'close'].map((n) => getComputedStyle(document.documentElement).getPropertyValue(`--${n}`).trim()));
   check('the page has the springs both pages share', vars.every((v, i) => v === SPRINGS[['tap', 'lift', 'snap', 'close'][i]].easing), vars.map((v) => v.slice(0, 30)).join(' | '));
-  const seen = { step: named(await curve('.cover')), toastGoes: named(await curve('#toast')), cardLowers: named(await curve('#card')) };
+  const seen = { step: named(await curve('.cover')), toastGoes: named(await curve('#toast', 'translate')), cardLowers: named(await curve('#card')) };
   await emit(page, 'pad', 'triangle');
   await settled(page);
   seen.settingsOpens = named(await curve('#settings'));
@@ -2939,7 +2941,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await settled(page);
   seen.settingsGoes = named(await curve('#settings'));
   await page.evaluate(() => window.__emit('notice', 'Hello'));
-  seen.toastOpens = named(await curve('#toast'));
+  seen.toastOpens = named(await curve('#toast', 'translate'));
   await emit(page, 'pad', 'menu');
   await settled(page);
   seen.cardLifts = named(await curve('#lift.on #card'));
@@ -2987,13 +2989,13 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await close(page);
 }
 
-// 43. One glass for every plate (plate.css): Settings, Find, the game menu, Change art and the toast have the same
-// fill, rim, shadow and corners, and the fill is more opaque over brighter art.
+// 43. One glass for every plate (plate.css): Settings, Find, the game menu and Change art have the same fill, rim,
+// shadow and corners, and the fill is more opaque over brighter art. Messages are pills on the same glass (46).
 {
   const page = await open({ games: [game(1), game(2, { noArt: true })] });
   const looks = () =>
     page.evaluate(() =>
-      ['#settings', '#findPlate', '#details', '#artPick', '#toast'].map((sel) => {
+      ['#settings', '#findPlate', '#details', '#artPick'].map((sel) => {
         const st = getComputedStyle(document.querySelector(sel));
         return { sel, fill: st.backgroundColor, shadow: st.boxShadow, round: st.borderTopLeftRadius, border: st.borderTopWidth };
       })
@@ -3240,6 +3242,93 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     pill: document.querySelector('#filters .pill.query')?.textContent,
   }));
   check("... then the pill is back above the row, and the game's info", closed.info === '1' && closed.filters === '1' && closed.find === '0' && closed.pill === 'po', JSON.stringify(closed));
+  await close(page);
+}
+
+// 46. Messages are pills, the dock's (pill.js; the menu audit's eighth finding). One about a game stands on the line
+// above the row, after what narrows it, with its icon, and names the game; any other at the top right, under the
+// clock. Neither is ever over the covers. Each is the plate's glass round its icon's badge, comes in on the tap spring
+// and goes on the close spring.
+{
+  const games = [game(1), game(2), game(3)];
+  const page = await open({ games });
+  await page.evaluate((games) => {
+    window.__settings = { library_set_hidden: ({ id, on }) => games.map((g) => (g.id === id ? { ...g, hidden: on } : g)) };
+  }, games);
+  /** Where each pill shows now, what it says and with which icon, and the covers' top. */
+  const pills = () =>
+    page.evaluate(() => {
+      const one = (id) => {
+        const el = document.getElementById(id);
+        const b = el.getBoundingClientRect();
+        return {
+          on: el.classList.contains('on'),
+          text: el.textContent,
+          icon: el.querySelector('.badge use')?.getAttribute('href') ?? null,
+          warn: el.classList.contains('warn'),
+          game: el.dataset.game ?? null,
+          inLine: el.parentElement?.id === 'filters',
+          box: { left: b.left, top: b.top, right: b.right, bottom: b.bottom },
+          fill: getComputedStyle(el).backgroundColor,
+          shadow: getComputedStyle(el).boxShadow,
+        };
+      };
+      const covers = Math.min(...[...document.querySelectorAll('#track .cover')].map((c) => c.getBoundingClientRect().top));
+      const clock = document.getElementById('clock').getBoundingClientRect();
+      const plate = getComputedStyle(document.getElementById('settings'));
+      return { game: one('gameNews'), system: one('toast'), covers, clock: { bottom: clock.bottom, right: clock.right }, plate: { fill: plate.backgroundColor }, width: innerWidth };
+    });
+  // A game hidden from its menu: the message about it.
+  await emit(page, 'pad', 'menu');
+  await settled(page);
+  const k = await page.evaluate(() => [...document.querySelectorAll('#dChoices .row')].findIndex((r) => r.textContent.startsWith('Hide')));
+  for (let i = 0; i < k; i++) await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  await until(page, () => document.getElementById('gameNews').classList.contains('on'));
+  await settled(page);
+  let p = await pills();
+  check(
+    'a message about a game stands on the line above the row, with its icon, naming the game, clear of the covers',
+    p.game.on && p.game.inLine && p.game.icon === '#i-eye-off' && p.game.game === 'pc:1' && p.game.text.startsWith('Game 001 is hidden') && p.game.box.bottom <= p.covers && !p.system.on,
+    JSON.stringify(p.game)
+  );
+  // A launch that fails: the message names its game, on the same line, as a warning.
+  await page.evaluate(() => (window.__settings.launch_start = () => Promise.reject({ message: "Steam couldn't start it." })));
+  await emit(page, 'pad', 'ok');
+  await until(page, () => document.getElementById('gameNews').textContent.includes("couldn't"));
+  await settled(page);
+  p = await pills();
+  check(
+    "a launch that fails says so on that line, after the game's name, as a warning",
+    p.game.on && p.game.text === "Game 002: Steam couldn't start it." && p.game.warn && p.game.icon === '#i-warn' && p.game.game === 'pc:2' && !p.system.on,
+    JSON.stringify(p.game)
+  );
+  // Anything else: at the top right, under the clock.
+  await emit(page, 'notice', 'Sound: TV');
+  await settled(page);
+  p = await pills();
+  check(
+    'any other message stands at the top right, under the clock, clear of the covers, with its icon',
+    p.system.on && p.system.text === 'Sound: TV' && p.system.icon === '#i-info' && p.system.box.top >= p.clock.bottom && Math.abs(p.system.box.right - p.clock.right) <= 2 && p.system.box.bottom <= p.covers && !p.system.inLine,
+    JSON.stringify({ system: p.system, clock: p.clock })
+  );
+  check('both are pills on the plate\'s glass round their icon\'s badge', [p.game, p.system].every((x) => x.fill === p.plate.fill && x.shadow.includes('inset') && x.icon), JSON.stringify([p.game.fill, p.system.fill, p.plate.fill]));
+  /** The stops and length of each pill's translate transition now. */
+  const curves = () =>
+    page.evaluate(() =>
+      ['gameNews', 'toast'].map((id) => {
+        const st = getComputedStyle(document.getElementById(id));
+        const i = st.transitionProperty.split(', ').indexOf('translate');
+        const fn = st.transitionTimingFunction.match(/linear\([^)]*\)|ease|cubic-bezier\([^)]*\)/g)?.[i] ?? '';
+        const v = st.transitionDuration.split(', ')[i] ?? '0s';
+        return { stops: fn.match(/^linear\((.*)\)$/)?.[1].split(',').map((x) => parseFloat(x)), ms: Math.round(parseFloat(v) * (v.endsWith('ms') ? 1 : 1000)) };
+      })
+    );
+  const on = (c, name) => JSON.stringify(c.stops) === JSON.stringify(SPRINGS[name].points) && c.ms === SPRINGS[name].ms;
+  const coming = await curves();
+  await page.evaluate(() => document.querySelectorAll('#toast, #gameNews').forEach((el) => el.classList.remove('on')));
+  const going = await curves();
+  check('... they come in on the tap spring and go on the close spring', coming.every((c) => on(c, 'tap')) && going.every((c) => on(c, 'close')), JSON.stringify({ coming, going }).slice(0, 300));
   await close(page);
 }
 

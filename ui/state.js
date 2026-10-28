@@ -82,6 +82,7 @@ export const els = {
   findStores: $('findStores'),
   steps: $('steps'),
   toast: $('toast'),
+  gameNews: $('gameNews'),
   hint: $('hint'),
 };
 

@@ -990,24 +990,26 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
 #hint b.xbox-x { color: #8fb0ff; }
 #hint b.xbox-y { color: #ffd166; }
 
-#toast {
-  position: fixed;
-  left: 50%;
-  bottom: calc(var(--safe-y) + 7vh);
-  z-index: 6;
-  max-width: 70vw;
-  padding: 1.4vh 2.6vh;
-  border-radius: var(--plate-radius);
-  background: var(--plate-fill);
-  box-shadow: var(--plate-rim), var(--plate-shadow);
-  font-size: 2.4vh;
-  transform: translate(-50%, 2vh);
+/* ---------- messages: pills (pill.js, hints.js toast) ----------
+   A message about a game stands on the line above the row, after what narrows it; any other at the top right, under
+   the clock, where the status capsule will hold them. Never over the covers. Each comes in on the tap spring, from a
+   little below the line or above, and goes on the close spring. Sized as Find's chips on the same line. */
+#toast, #gameNews {
+  --u: .85vh;
+  max-width: 46vw;
   opacity: 0;
-  transition: transform var(--close-ms) var(--close), opacity 220ms ease;
+  pointer-events: none;
+  text-shadow: none;
+  color: var(--ink);
+  transition: translate var(--close-ms) var(--close), opacity 220ms ease;
 }
-#toast.on { transform: translate(-50%, 0); opacity: 1; transition: transform var(--tap-ms) var(--tap), opacity 220ms ease; }
+#toast.on, #gameNews.on { opacity: 1; translate: 0 0; transition: translate var(--tap-ms) var(--tap), opacity 220ms ease; }
+#gameNews { translate: 0 1vh; }
+#toast { position: fixed; top: 12.5vh; right: var(--safe-x); z-index: 6; translate: 0 -1vh; }
+/* The line keeps the height of a pill, so one coming doesn't move what narrows the row. */
+#filters { min-height: 5.6vh; }
 
-/* Reduce Motion: Settings, Find, Add a game and the toast fade in place for 150 ms rather than sliding. The faces of
+/* Reduce Motion: Settings, Find, Add a game and the messages fade in place for 150 ms rather than sliding. The faces of
    Settings' plate fade where they are in the same 150 ms, one out and then the other in, so their titles never show
    over each other, while the plate takes its width at once (morph.js). A step along the row moves the covers on a short
    eased curve rather than a spring, and the end of the row doesn't bump (library.js move). */
@@ -1018,6 +1020,6 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
     translate: none;
     transition: opacity calc(var(--fade-ms) / 2) ease calc(var(--fade-ms) / 2);
   }
-  #toast, #toast.on { transform: translate(-50%, 0); transition: opacity var(--fade-ms) ease; }
+  #toast, #toast.on, #gameNews, #gameNews.on { translate: none; transition: opacity var(--fade-ms) ease; }
   .cover { transition: transform 170ms var(--glide), scale 420ms var(--glide), box-shadow 200ms ease, opacity 250ms ease; }
 }

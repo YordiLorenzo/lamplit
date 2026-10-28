@@ -64,6 +64,8 @@ Every release of Lamplit, newest first. The format follows
   and the store chip opens a list of store logos upward. A search already set widens from its pill into the field and
   goes back into it. The row stays in full view below as the results, the game's details fade while you search, and
   one focus ring moves across the keys and the chips.
+- Messages on the home screen are pills, as the dock's news, each with an icon. One about a game stands on the line
+  above the row and names the game; any other shows at the top right, under the clock. Neither covers the games.
 - Everything on the home screen moves on one set of springs, named for what they move. A step along the row no longer
   overshoots its place; Settings, Find and messages open on one spring and close on a quicker one; the game menu's card
   lifts a little past its place and settles, and lowers without.

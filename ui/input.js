@@ -12,7 +12,7 @@ import { closeDetails, detailChoice, markGame, move, moveDetails, openDetails, s
 import { counts, narrowed, nothingSeen, padInUse } from './logic.js';
 import { wake } from './screensaver/index.js';
 import { adjustSetting, backSettings, closeSettings, moveSettings, openSettings, selectSetting } from './settings.js';
-import { actionableStep, els, state } from './state.js';
+import { actionableStep, byId, els, state } from './state.js';
 
 /** @typedef {import('./api.js').Action} Action */
 
@@ -54,7 +54,10 @@ export function act(action, source) {
   if (state.mode === 'starting') {
     const s = actionableStep();
     if (action === 'back') cancelLaunch();
-    else if (action === 'ok' && s) api.launchShow(s.key === 'window' ? null : s.store).catch((e) => toast(e.message));
+    else if (action === 'ok' && s) {
+      const game = byId(/** @type {string} */ (state.launching));
+      api.launchShow(s.key === 'window' ? null : s.store).catch((e) => toast(e.message, { game, warn: true }));
+    }
     else if (action === 'triangle' && s?.state === 'block') api.launchAnyway();
     return;
   }
