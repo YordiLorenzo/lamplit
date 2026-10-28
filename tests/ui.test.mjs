@@ -2719,6 +2719,97 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await close(page);
 }
 
+// 39. Add a game is a section pushed inside Settings' plate: one plate on screen the whole way, the two titles never
+// shown at once, the plate widening from Settings' width to Add a game's, and Back popping to Settings on its row.
+// From the empty home screen the plate grows out of the "No games found" line, and Back returns it there.
+{
+  const page = await open({ games: [game(1)] });
+  await page.evaluate(() => (window.__settings = { library_programs: [] }));
+  await page.keyboard.press('c');
+  await idle(page);
+  const k = await page.evaluate(() => [...document.querySelectorAll('#settingsList .row')].findIndex((r) => r.textContent.startsWith('Add a game')));
+  for (let i = 0; i < k; i++) await page.keyboard.press('ArrowDown');
+  await settled(page);
+  /** Every frame for `ms` after `action` is pressed: the glass plates showing, and the titles' opacity on screen. */
+  const watch = (action, ms) =>
+    page.evaluate(
+      async ([action, ms]) => {
+        const seen = (el) => {
+          let o = 1;
+          for (let e = el; e && e !== document.body; e = e.parentElement) o *= parseFloat(getComputedStyle(e).opacity);
+          return o;
+        };
+        const frames = [];
+        const t0 = performance.now();
+        window.__emit('pad', action);
+        while (performance.now() - t0 < ms) {
+          await new Promise((r) => requestAnimationFrame(r));
+          const plates = [...document.querySelectorAll('.panel')].filter((p) => parseFloat(getComputedStyle(p).opacity) > 0.01).length;
+          const scrolled = document.getElementById('settings').scrollLeft;
+          frames.push({ plates, scrolled, settings: seen(document.getElementById('settingsTitle')), add: seen(document.getElementById('addTitle')) });
+        }
+        return frames;
+      },
+      [action, ms]
+    );
+  const plate = () => page.evaluate(() => Math.round((document.getElementById('settings').getBoundingClientRect().width / innerWidth) * 100));
+  let frames = await watch('ok', 500);
+  await settled(page);
+  let s = await state(page);
+  check(
+    'Add a game is pushed inside the Settings plate: one plate on screen, never both titles, the plate never scrolled',
+    frames.every((f) => f.plates === 1 && f.scrolled === 0 && Math.min(f.settings, f.add) < 0.1) && (await page.evaluate(() => !!document.querySelector('#settings #add.on'))),
+    JSON.stringify(frames.filter((f) => f.plates !== 1 || f.scrolled || Math.min(f.settings, f.add) >= 0.1).slice(0, 3))
+  );
+  check('... and the plate widens to Add a game\'s width', (await plate()) === 46, String(await plate()));
+  frames = await watch('back', 500);
+  await settled(page);
+  s = await state(page);
+  check(
+    'Back pops to Settings in the same plate, narrowed, on Add a game',
+    frames.every((f) => f.plates === 1 && Math.min(f.settings, f.add) < 0.1) && (await plate()) === 38 && s.hint.endsWith('Close') && (await page.evaluate(() => document.querySelector('#settingsList .row.focus')?.textContent.startsWith('Add a game'))),
+    `${await plate()} ${s.hint} ${await page.evaluate(() => document.querySelector('#settingsList .row.focus')?.textContent)} ${JSON.stringify(frames.filter((f) => f.plates !== 1).slice(0, 2))}`
+  );
+  await close(page);
+}
+{
+  const page = await open({ games: [] });
+  await page.evaluate(() => (window.__settings = { library_programs: [] }));
+  await until(page, () => document.getElementById('empty').textContent === 'No games found');
+  /** The plate as it shows on screen: its box moved by its translate, cut by its clip. */
+  const shown = () =>
+    page.evaluate(() => {
+      const plate = document.getElementById('settings');
+      const box = plate.getBoundingClientRect();
+      // inset() as written: one value for every side, two for top and bottom then the sides, and so on.
+      const v = (getComputedStyle(plate).clipPath.match(/inset\(([^r)]*)/)?.[1] ?? '0px').trim().split(/\s+/).map(parseFloat);
+      const inset = [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]];
+      const text = document.createRange();
+      text.selectNodeContents(document.getElementById('empty'));
+      const line = text.getBoundingClientRect();
+      return {
+        plate: [box.left + inset[3], box.top + inset[0], box.right - inset[1], box.bottom - inset[2]].map(Math.round),
+        line: [line.left, line.top, line.right, line.bottom].map(Math.round),
+        on: plate.classList.contains('on'),
+      };
+    });
+  await page.evaluate(() => {
+    window.__emit('pad', 'ok');
+    for (const a of document.getAnimations()) if (a.effect?.target?.id === 'settings') a.pause();
+  });
+  let at = await shown();
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 2);
+  check('from the empty home screen, the plate grows out of the "No games found" line', near(at.plate, at.line), JSON.stringify(at));
+  await page.evaluate(() => document.getAnimations().forEach((a) => a.play()));
+  await settled(page);
+  const grown = await page.evaluate(() => Math.round((document.getElementById('settings').getBoundingClientRect().width / innerWidth) * 100));
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  at = await shown();
+  check('... to Add a game\'s width, and Back returns it into the line', grown === 46 && near(at.plate, at.line) && !at.on, JSON.stringify({ grown, ...at }));
+  await close(page);
+}
+
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));
 check('every command Rust registers is called by a test', untested.length === 0, untested.join(', '));

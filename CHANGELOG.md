@@ -57,6 +57,9 @@ Every release of Lamplit, newest first. The format follows
 
 ### Changed
 
+- Add a game opens inside the Settings panel rather than as a second panel over it: Settings moves out, the panel
+  widens, and Add a game comes in. Back returns to Settings on Add a game. On the empty home screen the panel grows
+  out of the "No games found" line, and goes back into it.
 - Lamplit coming forward over a running game (holding PS, or the dock's Home) no longer appears at once: the home
   screen settles in under a veil in the game's colours, on the game. From the dock, the veil first comes over the game.
   Back to game does the reverse: the home screen eases out under the veil before the game comes forward.

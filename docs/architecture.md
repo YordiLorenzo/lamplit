@@ -40,11 +40,13 @@ ui/
   library.js       the cover row, the focused game and its menu
   lift.js          a game's menu lifting its cover over the blurred screen
   art.js           Change art, in a game's menu
-  add.js           Add a game: the programs Lamplit passed over, browsing the drives, naming the game
+  add.js           Add a game, a face of Settings' plate: the programs Lamplit passed over, browsing the drives,
+                   naming the game
   keyboard.js      the on-screen keyboards: Find's, and the one for names and art searches
   find.js          the Find panel: the on-screen keyboard, the store filter and the sort
   launch.js        the starting screen
-  settings.js      the Settings panel
+  settings.js      the Settings panel, a plate with two faces: Settings and Add a game
+  morph.js         one plate changing shape: widening for another face, growing out of the line it opens from
   logic.js         pure functions (the cover row's search and order, the Settings rows), tested in Node
   hints.js         the button hints and short messages
   sounds.js        interface sounds made with Web Audio

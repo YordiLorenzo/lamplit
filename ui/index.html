@@ -93,9 +93,20 @@
     </aside>
   </div>
 
+  <!-- Settings and Add a game share one plate (settings.js, add.js, morph.js): each is a face of it, and the plate
+       widens for Add a game. -->
   <aside id="settings" class="panel">
-    <h2 id="settingsTitle">Settings</h2>
-    <div id="settingsList"></div>
+    <section id="settingsFace" class="face">
+      <h2 id="settingsTitle">Settings</h2>
+      <div id="settingsList"></div>
+    </section>
+    <section id="add" class="face">
+      <h2 id="addTitle">Add a game</h2>
+      <div id="addPath"></div>
+      <div id="addList"></div>
+      <div id="addField" class="field"><span id="addName" class="typed" data-placeholder="The game's name"></span></div>
+      <div id="addKeys" class="keys"></div>
+    </section>
   </aside>
 
   <aside id="find" class="panel">
@@ -106,14 +117,6 @@
     <div id="findStores" class="choices"></div>
     <h3>Sort</h3>
     <div id="findSort" class="choices"></div>
-  </aside>
-
-  <aside id="add" class="panel">
-    <h2 id="addTitle">Add a game</h2>
-    <div id="addPath"></div>
-    <div id="addList"></div>
-    <div id="addField" class="field"><span id="addName" class="typed" data-placeholder="The game's name"></span></div>
-    <div id="addKeys" class="keys"></div>
   </aside>
 
   <div id="toast"></div>

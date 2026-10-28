@@ -3,6 +3,7 @@
 // rows say comes from logic.js; this file draws them and acts on them.
 
 import { openAdd } from './add.js';
+import { rest, widen } from './morph.js';
 import * as api from './api.js';
 import { showHints, toast } from './hints.js';
 import { setGames, showInfo } from './library.js';
@@ -123,6 +124,8 @@ export function setStores(list) {
 export function openSettings(focus = null) {
   state.mode = 'settings';
   state.settings = { section: null, focus, idx: 0, rows: [], confirm: null };
+  rest(els.settings);
+  els.settings.classList.remove('grown', 'wide', 'moving');
   els.settings.classList.add('on');
   sfx.open();
   renderSettings();
@@ -134,6 +137,16 @@ export function closeSettings() {
   els.settings.classList.remove('on');
   sfx.back();
   showHints();
+}
+
+/** Back from Add a game: the plate narrows to Settings again, with focus on `focus`. @param {string} focus */
+function returnFromAdd(focus) {
+  state.mode = 'settings';
+  state.settings = { section: null, focus, idx: 0, rows: [], confirm: null };
+  widen(els.settings, false);
+  sfx.back();
+  renderSettings();
+  refreshSettings();
 }
 
 /** ○ in a section goes back to the list of sections, on the one it came from; on the list it closes. */
@@ -232,11 +245,8 @@ export async function selectSetting() {
   const s = state.settings;
   const row = s.rows[s.idx];
   if (!row?.kind || row.adjust || (row.kind === 'stats' && statsBusy)) return;
-  // Add a game has a panel of its own; Back there comes back here.
-  if (row.kind === 'section' && row.key === 'add') {
-    els.settings.classList.remove('on');
-    return openAdd(() => openSettings(rowKey(row)));
-  }
+  // Add a game is pushed inside this plate; Back there comes back here, on its row.
+  if (row.kind === 'section' && row.key === 'add') return openAdd(() => returnFromAdd(rowKey(row)));
   sfx.open();
   if (row.kind === 'section') {
     s.section = row.key;

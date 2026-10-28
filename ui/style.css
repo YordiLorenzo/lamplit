@@ -3,6 +3,8 @@
 
 :root {
   --accent: 140 170 255;            /* rgb triplet, sampled from the focused game's art */
+  --tap: ease;                      /* morph.js sets these: the spring of what a press opens */
+  --tap-ms: 360ms;
   --bg: #07060b;
   --ink: #f5f5f7;
   --ink-dim: rgb(245 245 247 / .72);
@@ -662,6 +664,49 @@ body.launching .cover.focus { scale: 1.1; }
 .panel.on { transform: none; opacity: 1; }
 /* Settings rows take clicks; Details lets them through to the covers beneath it. */
 #settings.on { pointer-events: auto; }
+
+/* Settings and Add a game are faces of one plate. Add a game is pushed inside it: Settings' face moves out to the left
+   and fades, Add a game's comes in from the right once it has, so the two never show at once, and the plate widens
+   from Settings' width to Add a game's on the same spring (morph.js widen). The widening is a clip: the box takes the
+   wider width at once, a clip keeps showing the width it had and springs open, and the box settles. Nothing is laid
+   out or painted again on the way. */
+#settings {
+  --narrow: 38vw;
+  --wide: 46vw;
+  padding: 0;
+  /* Clipped, not hidden: a hidden overflow can still be scrolled, and a face's focused row scrolled into view would
+     scroll the whole plate sideways while the face comes in from the right. */
+  overflow: clip;
+  transition: transform 260ms var(--glide), opacity 220ms ease, clip-path var(--tap-ms) var(--tap);
+}
+#settings.wide { width: var(--wide); }
+#settings.moving { width: var(--wide); clip-path: inset(0 0 0 calc(var(--wide) - var(--narrow)) round 2vh); }
+#settings.moving.wide { clip-path: inset(0 round 2vh); }
+/* A face that comes fades in once the one that goes has faded out. */
+.face {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 5vh 4vh;
+  transition: opacity 160ms ease 100ms, translate var(--tap-ms) var(--tap);
+}
+#settingsFace { width: calc(var(--narrow) - .24vh); }
+#settings:has(#add.on) #settingsFace {
+  opacity: 0;
+  translate: -6vw 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, translate var(--tap-ms) var(--tap);
+}
+/* Grown from the empty home screen's line (morph.js grow), the plate only fades in place, and its rows come in once it
+   is most of the way. */
+#settings.grown { transform: none; transition: opacity 120ms ease; }
+#settings.grown #add.on { transition: opacity 160ms ease calc(var(--tap-ms) * .45), translate var(--tap-ms) var(--tap); }
+/* The line the plate grows from goes as it does. */
+#empty { transition: opacity 150ms ease; }
+body:has(#settings.on) #empty { opacity: 0; }
 .panel h2 { font-size: 4.4vh; font-weight: 650; line-height: 1.1; margin-bottom: 3vh; }
 /* A long section (Sound lists every device) scrolls; the focused row is kept in view. */
 #settingsList {
@@ -778,8 +823,14 @@ body.launching .cover.focus { scale: 1.1; }
 
 /* ---------- add a game (add.js) ---------- */
 
-#add { width: 46vw; }
-#add.on { pointer-events: auto; }
+#add {
+  width: calc(var(--wide) - .24vh);
+  opacity: 0;
+  translate: 6vw 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, translate var(--tap-ms) var(--tap);
+}
+#add.on { opacity: 1; translate: 0; pointer-events: auto; transition: opacity 160ms ease 100ms, translate var(--tap-ms) var(--tap); }
 #addPath { margin: -1.6vh 0 2.2vh; font-size: 2vh; color: var(--ink-dim); overflow-wrap: anywhere; }
 #addList {
   display: grid;
