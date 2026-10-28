@@ -184,7 +184,7 @@ const state = (page) =>
   check('ended returns to browsing', !s.overlay && s.hint.includes('Play') && !s.hint.includes('Back to game'), s.hint);
   await page.keyboard.press('i');
   s = await state(page);
-  check('a game that ran counts as played', s.dPlayed === 'today', s.dPlayed);
+  check('a game that ran counts as played', s.dPlayed === 'Played today', s.dPlayed);
   await close(page);
 }
 
@@ -217,7 +217,7 @@ const state = (page) =>
   check('Escape cancels a launch', s.calls.includes('launch_cancel') && !s.overlay);
   await page.keyboard.press('i');
   s = await state(page);
-  check("a cancelled launch doesn't count as played", s.dPlayed === 'Not yet', s.dPlayed);
+  check("a cancelled launch doesn't count as played", s.dPlayed === 'Not played yet', s.dPlayed);
   await page.keyboard.press('Escape');
   await page.keyboard.press('Enter');
   await emit(page, 'launch-step', step({ id: 'pc:1', key: 'timeout', state: 'warn', label: "Game 001 hasn't started yet", store: 'steam' }));
@@ -960,12 +960,14 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
     page.evaluate(() => ({
       choices: [...document.querySelectorAll('#dChoices .row')].map((r) => r.textContent),
       focus: document.querySelector('#dChoices .row.focus')?.textContent ?? null,
+      pressed: document.querySelector('#dChoices .row.focus')?.getAttribute('aria-pressed') ?? null,
       time: document.getElementById('dTime').textContent,
+      line: document.getElementById('dMeta').innerText.replace(/\s+/g, ' '),
       meta: document.getElementById('meta').innerText.replace(/\s+/g, ' '),
     }));
   await page.keyboard.press('i');
   let d = await details();
-  check('a game Lamplit never saw run has no play time', d.time === 'Not counted yet' && !d.meta.includes('played'), JSON.stringify(d));
+  check('a game Lamplit never saw run has no play time', d.time === '' && /^[^·]+ · Not played yet$/.test(d.line) && !d.meta.includes('played'), JSON.stringify(d));
   await page.keyboard.press('Escape');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
@@ -974,15 +976,15 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('i');
   d = await details();
   let s = await state(page);
-  check('Details show hours and minutes played', d.time === '12 h 34 min', d.time);
-  check('Details open on Play, with the other choices below', d.focus === 'Play' && JSON.stringify(d.choices) === '["Play","Add to favourites","Change art","Hide this game"]' && s.hint.includes('✕Play'), `${JSON.stringify(d)} ${s.hint}`);
+  check('the menu has one line under the name: store, last played and hours played', d.time === '12 h' && /^[^·]+ · (Played|Not played)[^·]+ · 12 h$/.test(d.line), JSON.stringify(d));
+  check('Details open on Play, with the other choices below', d.focus === 'Play' && JSON.stringify(d.choices) === '["Play","Favourite","Change art","Hide this game"]' && s.hint.includes('✕Play'), `${JSON.stringify(d)} ${s.hint}`);
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await idle(page);
   d = await details();
   s = await state(page);
-  check('✕ on Add to favourites asks Rust', JSON.stringify(s.lastCall) === '["library_set_favourite",{"id":"pc:3","on":true}]', JSON.stringify(s.lastCall));
-  check('a favourite moves to the front and keeps focus, Details open', s.details && s.focusIndex === 0 && s.focusName === 'Game 003' && d.focus === 'Remove from favourites', `${s.focusIndex} ${s.focusName} ${d.focus}`);
+  check('✕ on Favourite asks Rust', JSON.stringify(s.lastCall) === '["library_set_favourite",{"id":"pc:3","on":true}]', JSON.stringify(s.lastCall));
+  check('a favourite moves to the front and keeps focus, Details open', s.details && s.focusIndex === 0 && s.focusName === 'Game 003' && d.focus === 'Favourite' && d.pressed === 'true', `${s.focusIndex} ${s.focusName} ${d.focus}`);
   check('Details hint Select on a choice other than Play', s.hint.includes('✕Select'), s.hint);
   await page.keyboard.press('Escape');
   await page.keyboard.press('ArrowRight');
@@ -1033,83 +1035,98 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await close(page);
 }
 
-// 21. Settings > Power: ✕ asks once, ✕ again sleeps, restarts or shuts down; a running game that will close is named.
+// 21. Settings > Power: Sleep at one press; Restart and Shut down once Cross is held, which they say before the press,
+// naming a running game that will close. Let go early, nothing happens; a held key's repeat, a mirrored Enter and a
+// click on the cover don't finish a hold.
 {
   const page = await open({ games: [game(1), game(2, { name: 'Racer' })], running: 'pc:2' });
   await page.evaluate(() => (window.__settings = {}));
   const view = () =>
     page.evaluate(() => ({
       open: document.getElementById('settings').classList.contains('on'),
-      rows: [...document.querySelectorAll('#settingsList .row')].map((r) => r.textContent),
-      focus: document.querySelector('#settingsList .row.focus')?.textContent ?? null,
+      rows: [...document.querySelectorAll('#settingsList .row')].map((r) => r.querySelector('.label').firstChild.textContent),
+      notes: [...document.querySelectorAll('#settingsList .row')].map((r) => r.querySelector('.note')?.textContent ?? ''),
+      focus: document.querySelector('#settingsList .row.focus .label')?.firstChild.textContent ?? null,
+      holding: !!document.querySelector('#settingsList .row.focus.holding'),
+      hint: document.getElementById('hint').textContent,
       toast: [...document.querySelectorAll('#toast.on, #gameNews.on')].map((t) => t.textContent).join(' | '),
       calls: window.__calls.map((c) => c[0]),
     }));
+  // Keys, until the controller has been used: keys right after it are taken for Steam mirroring it (logic.js counts).
+  let pad = false;
+  const press = (key, step) => (pad ? emit(page, 'pad', step) : page.keyboard.press(key));
   const powerSection = async () => {
-    await page.keyboard.press('c');
+    await press('c', 'triangle');
     await idle(page);
-    for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('Enter');
+    for (let i = 0; i < 10; i++) await press('ArrowDown', 'down');
+    await press('Enter', 'ok');
   };
   await powerSection();
   let v = await view();
   check('Power offers sleep, restart and shut down', JSON.stringify(v.rows) === '["Sleep","Restart","Shut down"]' && v.focus === 'Sleep', JSON.stringify(v.rows));
-  await page.keyboard.press('Enter');
-  v = await view();
-  check('✕ once asks to confirm, and sends nothing', v.focus === 'SleepPress again to confirm' && !v.calls.some((c) => c.startsWith('power_')), `${v.focus} ${JSON.stringify(v.calls)}`);
+  check('... restart and shut down say before the press that the running game will close', JSON.stringify(v.notes) === '["","Racer is running and will close","Racer is running and will close"]', JSON.stringify(v.notes));
   await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Enter');
   v = await view();
-  check('moving on cancels the question, and restart names the game that will close', v.rows[0] === 'Sleep' && v.focus === 'RestartPress again to confirm' && v.rows.includes('Racer is running and will close'), JSON.stringify(v.rows));
-  await page.keyboard.press('Enter');
+  check('... and the hint says to hold', v.hint.includes('Hold to restart'), v.hint);
+  await page.keyboard.down('Enter');
+  await page.waitForTimeout(300);
+  v = await view();
+  const early = v.calls.length;
+  check('holding Enter on Restart fills its ring, and sends nothing yet', v.holding && !v.calls.includes('power_restart'), JSON.stringify(v));
+  await page.keyboard.up('Enter');
+  await page.waitForTimeout(900);
+  v = await view();
+  check('... let go early, nothing happens', !v.holding && !v.calls.slice(early).includes('power_restart') && v.open, JSON.stringify(v.calls.slice(early)));
+  await page.keyboard.down('Enter');
+  // A held key repeats: the repeat starts no new hold, and the hold goes on.
+  await page.keyboard.down('Enter');
+  await page.waitForTimeout(1100);
+  await page.keyboard.up('Enter');
   await idle(page);
   v = await view();
-  check('✕ again restarts, from the home screen', v.calls.at(-1) === 'power_restart' && !v.open, `${v.calls.at(-1)} ${v.open}`);
+  check('held to the end, it restarts, from the home screen', v.calls.at(-1) === 'power_restart' && !v.open, `${v.calls.at(-1)} ${v.open}`);
   await page.evaluate((error) => {
     window.__settings.power_shut_down = () => {
       throw error;
     };
   }, like(ipc('error'), { message: "Windows didn't shut down. Another Windows account is signed in on this PC: sign it out first." }));
+  pad = true;
   await powerSection();
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Enter');
-  await page.keyboard.press('Enter');
+  await press('ArrowDown', 'down');
+  await press('ArrowDown', 'down');
+  await emit(page, 'pad', 'ok');
+  await page.waitForTimeout(1100);
+  await emit(page, 'pad', 'ok-up');
   await idle(page);
   v = await view();
   check('a shutdown Windows refuses says why', v.calls.at(-1) === 'power_shut_down' && v.toast.startsWith("Windows didn't shut down."), `${v.calls.at(-1)} ${v.toast}`);
   await powerSection();
-  await page.keyboard.press('Enter');
-  await page.keyboard.press('Enter');
+  await press('Enter', 'ok');
   await idle(page);
   v = await view();
-  check('✕ twice on Sleep puts the PC to sleep', v.calls.at(-1) === 'power_sleep' && !v.open, `${v.calls.at(-1)} ${v.open}`);
-  // A held Enter repeats; the repeat mustn't answer the question its first press asked.
+  check('one press on Sleep puts the PC to sleep: any button wakes it', v.calls.at(-1) === 'power_sleep' && !v.open, `${v.calls.at(-1)} ${v.open}`);
+  // The controller's Cross let go ends a hold too, as Enter's does.
   await powerSection();
-  await page.keyboard.press('ArrowDown');
-  const before = (await view()).calls.length;
-  await page.keyboard.down('Enter');
-  await page.keyboard.down('Enter');
-  await page.keyboard.up('Enter');
-  await idle(page);
-  v = await view();
-  check('a held Enter asks, and its repeat doesn\'t confirm', v.focus === 'RestartPress again to confirm' && !v.calls.slice(before).includes('power_restart'), `${v.focus} ${JSON.stringify(v.calls.slice(before))}`);
-  // Steam mirrors ✕ as Enter, and the key can come before the pad's own press: one press mustn't ask and answer.
-  // Moving off Restart and back clears the question the held Enter asked.
-  await page.keyboard.press('ArrowUp');
-  await page.keyboard.press('ArrowDown');
-  await page.waitForTimeout(400);
+  await press('ArrowDown', 'down');
   const fresh = (await view()).calls.length;
-  await page.keyboard.press('Enter');
   await emit(page, 'pad', 'ok');
-  await idle(page);
+  await page.waitForTimeout(300);
+  await emit(page, 'pad', 'ok-up');
+  await page.waitForTimeout(900);
   v = await view();
-  check('a mirrored Enter before the pad\'s ✕ asks once and doesn\'t confirm', v.focus === 'RestartPress again to confirm' && !v.calls.slice(fresh).includes('power_restart'), `${v.focus} ${JSON.stringify(v.calls.slice(fresh))}`);
-  // The focused cover still shows beside Settings: a click on it mustn't answer the question either.
+  check("Cross let go before the ring is full doesn't restart", !v.calls.slice(fresh).includes('power_restart') && !v.holding, JSON.stringify(v.calls.slice(fresh)));
+  // Moving off the row lets go too.
+  await emit(page, 'pad', 'ok');
+  await page.waitForTimeout(200);
+  await emit(page, 'pad', 'up');
+  await page.waitForTimeout(1000);
+  v = await view();
+  check('moving off a held row lets go', !v.calls.slice(fresh).includes('power_restart') && v.focus === 'Sleep', JSON.stringify(v.calls.slice(fresh)));
+  // The focused cover still shows beside Settings: a click on it mustn't start or finish anything.
   await page.click('#track .cover.focus');
   await idle(page);
   v = await view();
-  check('a click on the focused cover doesn\'t confirm a power action', v.open && !v.calls.slice(before).includes('power_restart'), `${v.open} ${JSON.stringify(v.calls.slice(before))}`);
+  check("a click on the focused cover doesn't act on a Power row", v.open && !v.calls.slice(fresh).some((c) => c.startsWith('power_')), `${v.open} ${JSON.stringify(v.calls.slice(fresh))}`);
   await close(page);
 }
 
@@ -1682,7 +1699,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   check(`${at}: the menu lifts the focused cover over a blurred, dimmed screen`, l.on && l.veil.opacity === '1' && l.veil.filter.includes('blur') && l.coverHidden, JSON.stringify(l));
   check(`${at}: the lifted cover is larger than in the row, and higher`, l.card.h > rest.cover.h * 1.4 && l.card.y + l.card.h / 2 < rest.cover.y + rest.cover.h / 2 - l.h * 0.1, JSON.stringify([rest.cover, l.card]));
   check(`${at}: the menu opens beside the cover, inside the screen`, l.menuOn && l.menu.x >= l.card.x + l.card.w && l.menu.x + l.menu.w <= l.w * 0.95 + 1 && l.menu.y >= 0 && l.menu.y + l.menu.h <= l.h, JSON.stringify([l.card, l.menu]));
-  check(`${at}: the art behind holds still while the menu is up`, l.drift === 'paused', l.drift);
+  check(`${at}: the art behind keeps drifting while the menu is up, so the GPU stays at speed`, l.drift === 'running', l.drift);
   await page.screenshot({ path: path.join(shots, `menu-${vp.width}x${vp.height}.png`) });
   await page.keyboard.press('Escape');
   await until(page, () => !document.getElementById('lift').classList.contains('shown'));
@@ -1932,18 +1949,20 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   check('Done adds the game', JSON.stringify(added) === `["library_add_game",{"exe":${JSON.stringify(program.exe)},"name":"Old Racer"}]`, JSON.stringify(added));
   let l = await lift();
   check('then its cover lifts into Change art, searching for its name', !(await add()).open && s.focusName === 'Old Racer' && l.art && l.face === 'Old Racer' && JSON.stringify(s.lastCall) === '["library_art_search",{"query":"Old Racer"}]', JSON.stringify({ ...l, focus: s.focusName, last: s.lastCall }));
-  // Its menu offers Remove; ✕ once asks, ✕ again removes it.
+  // Its menu offers Remove, which says the files stay, and happens once Cross is held.
   await page.keyboard.press('Escape');
   const choices = await page.evaluate(() => [...document.querySelectorAll('#dChoices .row')].map((r) => r.textContent));
-  check('the menu of a game added by hand offers Remove from Lamplit', choices.at(-1) === 'Remove from Lamplit' && (await page.evaluate(() => document.getElementById('dStore').textContent)) === 'Added by hand', JSON.stringify(choices));
+  check('the menu of a game added by hand offers Remove from Lamplit, saying the files stay', choices.at(-1) === 'Remove from LamplitLamplit forgets it. The files stay.' && (await page.evaluate(() => document.getElementById('dStore').textContent)) === 'Added by hand', JSON.stringify(choices));
   for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   s = await state(page);
-  check('✕ on Remove asks first', s.lastCall?.[0] !== 'library_remove_game' && (await page.evaluate(() => document.querySelector('#dChoices .row.focus').textContent)) === 'Press again to remove', JSON.stringify(s.lastCall));
-  await page.keyboard.press('Enter');
+  check('✕ pressed on Remove removes nothing', s.lastCall?.[0] !== 'library_remove_game' && s.hint.includes('Hold to remove'), `${JSON.stringify(s.lastCall)} ${s.hint}`);
+  await page.keyboard.down('Enter');
+  await page.waitForTimeout(1100);
+  await page.keyboard.up('Enter');
   await idle(page);
   s = await state(page);
-  check('✕ again removes it from the row', s.lastCall?.[0] === 'library_remove_game' && s.covers === 1 && s.toast === 'Old Racer is no longer in Lamplit.', `${JSON.stringify(s.lastCall)} ${s.covers} ${s.toast}`);
+  check('held, it removes it from the row', s.lastCall?.[0] === 'library_remove_game' && s.covers === 1 && s.toast === 'Old Racer is no longer in Lamplit.', `${JSON.stringify(s.lastCall)} ${s.covers} ${s.toast}`);
   // Browsing: drives, folders, an exe; ○ goes up a level with focus on where it came from.
   await page.keyboard.press('c');
   await idle(page);
@@ -2934,12 +2953,17 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   const vars = await page.evaluate(() => ['tap', 'lift', 'snap', 'close'].map((n) => getComputedStyle(document.documentElement).getPropertyValue(`--${n}`).trim()));
   check('the page has the springs both pages share', vars.every((v, i) => v === SPRINGS[['tap', 'lift', 'snap', 'close'][i]].easing), vars.map((v) => v.slice(0, 30)).join(' | '));
   const seen = { step: named(await curve('.cover')), toastGoes: named(await curve('#toast', 'translate')), cardLowers: named(await curve('#card')) };
-  await emit(page, 'pad', 'triangle');
+  // Settings grows out of the status capsule and goes back into it (morph.js): the springs of those.
+  const morphed = (pad) =>
+    page.evaluate((pad) => {
+      window.__emit('pad', pad);
+      const a = document.getElementById('settings').getAnimations().find((x) => !('transitionProperty' in x));
+      return { fn: a?.effect.getTiming().easing ?? null, ms: a?.effect.getTiming().duration ?? 0 };
+    }, pad);
+  seen.settingsOpens = named(await morphed('triangle'));
   await settled(page);
-  seen.settingsOpens = named(await curve('#settings'));
-  await emit(page, 'pad', 'back');
+  seen.settingsGoes = named(await morphed('back'));
   await settled(page);
-  seen.settingsGoes = named(await curve('#settings'));
   await page.evaluate(() => window.__emit('notice', 'Hello'));
   seen.toastOpens = named(await curve('#toast', 'translate'));
   await emit(page, 'pad', 'menu');
@@ -2989,13 +3013,13 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await close(page);
 }
 
-// 43. One glass for every plate (plate.css): Settings, Find, the game menu and Change art have the same fill, rim,
-// shadow and corners, and the fill is more opaque over brighter art. Messages are pills on the same glass (46).
+// 43. One glass for every plate (plate.css): Settings, Find, and the game menu with Change art have the same fill, rim,
+// shadow and corners, and the fill is more opaque over brighter art. Messages are pills on the same glass.
 {
   const page = await open({ games: [game(1), game(2, { noArt: true })] });
   const looks = () =>
     page.evaluate(() =>
-      ['#settings', '#findPlate', '#details', '#artPick'].map((sel) => {
+      ['#settings', '#findPlate', '#sheet'].map((sel) => {
         const st = getComputedStyle(document.querySelector(sel));
         return { sel, fill: st.backgroundColor, shadow: st.boxShadow, round: st.borderTopLeftRadius, border: st.borderTopWidth };
       })
@@ -3111,7 +3135,351 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await close(page);
 }
 
-// 45. Find on the filter line (the menu audit's first finding). With a search set, its pill above the row widens into
+// 45. A game's menu is one plate that grows out of the card's edge: a sliver on the card's side, 8vh shorter than the
+// card, that widens to the menu on the tap spring, its rows fading in from 45% of the way. One line under the name,
+// the folder dim at the bottom, Play lit and focused first, every row with its icon from the shared set, Favourite one
+// row that switches its star. Change art is the same plate: it grows from the menu's size to its own while the menu
+// stays where it was, and the card cross-fades as focus moves through the covers. With Reduce Motion it all fades in
+// place.
+{
+  const page = await open({ games: [game(1, { last_played: Math.floor(Date.now() / 1000) - 86400, play_minutes: 1860 }), game(2), game(3)] });
+  await page.evaluate((files) => (window.__settings = { library_art_search: files.map((portrait, i) => ({ appid: i + 1, name: `Match ${i + 1}`, portrait })) }), [art[0].portrait, art[0].hero, null]);
+  /** What shows of a plate: its box, less its clip, moved by its translate. */
+  const shown = (sel) =>
+    page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      const r = el.getBoundingClientRect();
+      const st = getComputedStyle(el);
+      const v = (st.clipPath.match(/inset\(([^)]*?)(?: round|\))/)?.[1] ?? '0px').split(' ').map(parseFloat);
+      const [t, ri, b, l] = [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]];
+      // The box has the translate in it already.
+      return [r.left + l, r.top + t, r.right - ri, r.bottom - b].map(Math.round);
+    }, sel);
+  // The grow, stopped where it starts.
+  const start = await page.evaluate(() => {
+    window.__emit('pad', 'menu');
+    const grow = document.getElementById('sheet').getAnimations().find((a) => !('transitionProperty' in a));
+    grow.pause();
+    grow.currentTime = grow.effect.getTiming().delay;
+    const card = document.getElementById('card');
+    const c = { left: card.offsetLeft, top: card.offsetTop, width: card.offsetWidth, height: card.offsetHeight };
+    const row = getComputedStyle(document.getElementById('details'));
+    return { card: [c.left, c.top, c.left + c.width, c.top + c.height].map(Math.round), delay: grow.effect.getTiming().delay, ms: grow.effect.getTiming().duration, rowsAfter: parseFloat(row.transitionDelay) * (row.transitionDelay.endsWith('ms') ? 1 : 1000) };
+  });
+  const sliver = await shown('#sheet');
+  const vh = 1080 / 100;
+  check(
+    'the menu grows out of a sliver on the card\'s edge, 8vh shorter than the card, once the card is most of the way up',
+    Math.abs((sliver[0] + sliver[2]) / 2 - start.card[2]) <= 2 && Math.abs(sliver[2] - sliver[0] - 3 * vh) <= 2 && Math.abs(sliver[1] - (start.card[1] + 4 * vh)) <= 2 && Math.abs(sliver[3] - (start.card[3] - 4 * vh)) <= 2 && start.delay > 0,
+    JSON.stringify({ sliver, ...start })
+  );
+  check('... on the tap spring, its rows fading in from 45% of the way', start.ms === SPRINGS.tap.ms && Math.abs(start.rowsAfter - (start.delay + 0.45 * SPRINGS.tap.ms)) <= 1, JSON.stringify(start));
+  await page.evaluate(() => document.getElementById('sheet').getAnimations().forEach((a) => a.finish()));
+  await settled(page);
+  const menu = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#dChoices .row')];
+    const box = (el) => el.getBoundingClientRect();
+    return {
+      plates: [...document.querySelectorAll('#lift aside, #lift section')].map((e) => e.id).join(),
+      line: document.getElementById('dMeta').innerText.replace(/\s+/g, ' '),
+      folderBelow: box(document.getElementById('dDir')).top >= box(rows.at(-1)).bottom,
+      folderDim: getComputedStyle(document.getElementById('dDir')).color === getComputedStyle(document.documentElement).getPropertyValue('--ink-dim').trim().replace(/\s/g, '') || getComputedStyle(document.getElementById('dDir')).color !== getComputedStyle(document.getElementById('dName')).color,
+      icons: rows.map((r) => r.querySelector('use')?.getAttribute('href')).join(),
+      shared: rows.every((r) => document.querySelector(r.querySelector('use').getAttribute('href'))?.closest('svg')?.id === 'icons'),
+      first: rows[0].classList.contains('primary') && rows[0].classList.contains('focus') && rows[0].textContent === 'Play',
+      lit: getComputedStyle(rows[0]).backgroundImage.includes('gradient') && !getComputedStyle(rows[1]).backgroundImage.includes('gradient'),
+    };
+  });
+  check('one plate holds the menu and Change art', menu.plates === 'sheet,details,artPick', menu.plates);
+  check('... one line under the name, the folder dim at the bottom', /^[^·]+ · Played yesterday · 31 h$/.test(menu.line) && menu.folderBelow && menu.folderDim, JSON.stringify(menu));
+  check('... Play lit and focused first, every row with its icon from the shared set', menu.first && menu.lit && menu.shared && menu.icons === '#i-play,#i-star,#i-photo,#i-eye-off', JSON.stringify(menu));
+  await page.evaluate((list) => {
+    window.__settings.library_set_favourite = ({ id, on }) => list.map((g) => (g.id === id ? { ...g, favourite: on } : g));
+  }, await page.evaluate(() => window.__state?.games ?? null) ?? [game(1, { last_played: 0 }), game(2), game(3)]);
+  await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  const star = await page.evaluate(() => {
+    const row = document.querySelector('#dChoices .row.focus');
+    return { label: row.textContent, star: row.querySelector('use').getAttribute('href'), pressed: row.getAttribute('aria-pressed') };
+  });
+  check('... Favourite is one row that fills its star', JSON.stringify(star) === JSON.stringify({ label: 'Favourite', star: '#i-star-on', pressed: 'true' }), JSON.stringify(star));
+  // Change art: the plate's clip starts at the menu's box, the menu where it was.
+  await emit(page, 'pad', 'down');
+  await settled(page);
+  const before = await page.evaluate(() => {
+    const r = document.getElementById('sheet').getBoundingClientRect();
+    const m = document.getElementById('details').getBoundingClientRect();
+    return { plate: [r.left, r.top, r.right, r.bottom].map(Math.round), menu: [m.left, m.top, m.right, m.bottom].map(Math.round) };
+  });
+  const turn = await page.evaluate(() => {
+    window.__emit('pad', 'ok');
+    const grow = document.getElementById('sheet').getAnimations().find((a) => !('transitionProperty' in a));
+    grow.pause();
+    const m = document.getElementById('details').getBoundingClientRect();
+    return { name: !!grow, menu: [m.left, m.top, m.right, m.bottom].map(Math.round), on: document.getElementById('artPick').classList.contains('on') };
+  });
+  const clipAt = await shown('#sheet');
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 2);
+  check("Change art grows the same plate from the menu's size, the menu staying where it was", turn.on && near(clipAt, before.plate) && near(turn.menu, before.menu), JSON.stringify({ before, turn, clipAt }));
+  await page.evaluate(() => document.getElementById('sheet').getAnimations().forEach((a) => a.finish()));
+  await settled(page);
+  const own = await page.evaluate(() => {
+    const p = document.getElementById('sheet').getBoundingClientRect();
+    const a = document.getElementById('artPick').getBoundingClientRect();
+    return [Math.round(p.width - a.width), Math.round(p.height - a.height)];
+  });
+  check('... to its own size', own[0] === 0 && Math.abs(own[1]) <= 1, JSON.stringify(own));
+  await until(page, () => document.querySelectorAll('#artTiles .tile').length === 3);
+  const fade = await page.evaluate(() => {
+    window.__emit('pad', 'right');
+    const was = document.querySelector('#face .was');
+    return { was: !!was, fading: was?.getAnimations().length === 1 };
+  });
+  check('... and the card cross-fades as focus moves through the covers', fade.was && fade.fading, JSON.stringify(fade));
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const moves = await page.evaluate(() => {
+    window.__emit('pad', 'menu');
+    return document.getElementById('sheet').getAnimations().filter((a) => !('transitionProperty' in a)).length;
+  });
+  await settled(page);
+  const fades = await page.evaluate(() =>
+    ['#sheet', '#details'].map((sel) => {
+      const st = getComputedStyle(document.querySelector(sel));
+      const ms = (v) => parseFloat(v) * (v.endsWith('ms') ? 1 : 1000);
+      return ms(st.transitionDuration.split(',')[0]) + ms(st.transitionDelay.split(',')[0]);
+    })
+  );
+  check('Reduce Motion: the menu fades in beside the card, no grow', moves === 0 && fades.every((f) => f > 0 && f <= 150), JSON.stringify({ moves, fades }));
+  await close(page);
+}
+
+// 46. The dock's hold for every action on the home screen that can't be taken back: Close game in the menu of the
+// running game (when Lamplit knows its programs) says what it closes and asks the game once Cross has been held, then
+// hands it the screen to answer; let go early, nothing. With the mouse a hold runs from button down to button up.
+{
+  const page = await open({ games: [game(1), game(2)], running: 'pc:1' });
+  const reading = like(ipc('dock-game'), { id: 'pc:1', name: 'Game 001', closable: true, force_close: false, responding: true, session: 7 });
+  await page.evaluate((reading) => (window.__settings = { dock_state: reading }), reading);
+  const menu = () =>
+    page.evaluate(() => ({
+      rows: [...document.querySelectorAll('#dChoices .row')].map((r) => [r.querySelector('.label').firstChild.textContent, r.querySelector('.note')?.textContent ?? '', r.querySelector('use').getAttribute('href'), !!r.querySelector('.hold')]),
+      focus: document.querySelector('#dChoices .row.focus .label')?.firstChild.textContent,
+      holding: !!document.querySelector('#dChoices .row.holding'),
+      hint: document.getElementById('hint').textContent,
+      calls: window.__calls.map((c) => JSON.stringify(c)),
+    }));
+  await emit(page, 'pad', 'menu');
+  await until(page, () => [...document.querySelectorAll('#dChoices .row')].some((r) => r.textContent.startsWith('Close game')));
+  let m = await menu();
+  check(
+    'the running game\'s menu offers Close game, held, saying what it closes, with its own icon',
+    JSON.stringify(m.rows.at(-1)) === JSON.stringify(['Close game', 'Closes Game 001', '#i-close-game', true]) && m.rows.filter((r) => r[3]).length === 1,
+    JSON.stringify(m.rows)
+  );
+  for (let i = 0; i < 4; i++) await emit(page, 'pad', 'down');
+  m = await menu();
+  check('... its hint says to hold', m.focus === 'Close game' && m.hint.includes('Hold to close game'), m.hint);
+  const before = m.calls.length;
+  await emit(page, 'pad', 'ok');
+  await page.waitForTimeout(300);
+  m = await menu();
+  const filling = m.holding;
+  await emit(page, 'pad', 'ok-up');
+  await page.waitForTimeout(900);
+  m = await menu();
+  check('... Cross let go before the ring is full closes nothing', filling && !m.holding && !m.calls.slice(before).some((c) => c.includes('dock_close_game')), JSON.stringify(m.calls.slice(before)));
+  await emit(page, 'pad', 'ok');
+  await page.waitForTimeout(1000);
+  await until(page, () => window.__calls.some((c) => c[0] === 'launch_resume'));
+  m = await menu();
+  const asked = m.calls.slice(before).filter((c) => c.includes('dock_close_game'));
+  check('... held, it asks the game Lamplit read to close, and gives it the screen to answer', JSON.stringify(asked) === JSON.stringify([JSON.stringify(['dock_close_game', { force: false, id: 'pc:1', session: 7 }])]), JSON.stringify(m.calls.slice(before)));
+  await close(page);
+}
+{
+  // A game whose programs Lamplit can't tell has no Close game.
+  const page = await open({ games: [game(1)], running: 'pc:1' });
+  await page.evaluate((reading) => (window.__settings = { dock_state: reading }), like(ipc('dock-game'), { id: 'pc:1', closable: false, force_close: false }));
+  await emit(page, 'pad', 'menu');
+  await idle(page);
+  await page.waitForTimeout(200);
+  const rows = await page.evaluate(() => [...document.querySelectorAll('#dChoices .row')].map((r) => r.querySelector('.label').firstChild.textContent));
+  check("... not when Lamplit can't tell which programs are the game's", !rows.includes('Close game') && rows[0] === 'Back to game', JSON.stringify(rows));
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1, { manual: true })] });
+  await page.evaluate(() => (window.__settings = { library_remove_game: () => [] }));
+  await emit(page, 'pad', 'menu');
+  await settled(page);
+  const at = await page.evaluate(() => {
+    const r = [...document.querySelectorAll('#dChoices .row')].at(-1).getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  const removes = () => page.evaluate(() => window.__calls.filter((c) => c[0] === 'library_remove_game').length);
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.waitForTimeout(250);
+  await page.mouse.up();
+  await page.waitForTimeout(900);
+  const early = await removes();
+  await page.mouse.down();
+  await page.waitForTimeout(1100);
+  await page.mouse.up();
+  await idle(page);
+  check('with the mouse, Remove is held from button down to button up', early === 0 && (await removes()) === 1, `${early}`);
+  await close(page);
+}
+
+// 47. The status capsule replaces the bare clock: the batteries, the volume, quiet mode and the time, as the dock's
+// chips, on the plate's glass. Settings grows down out of it, which stays as its header, and goes back into it; the
+// plate's height follows what it holds, sections push inside it with their icons, and with Reduce Motion it all
+// fades in place.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.evaluate(
+    ([accessories, sound, quiet]) => (window.__settings = { accessories_state: accessories, sound_state: sound, quiet_state: quiet }),
+    [ipc('accessories'), like(ipc('sound'), { volume: 45, muted: false }), like(ipc('quiet'), { active: true })]
+  );
+  // Read again as Rust says the accessories changed.
+  await emit(page, 'accessories', null);
+  await until(page, () => document.querySelectorAll('#chips .chip').length === 5);
+  const capsule = await page.evaluate(() => {
+    const st = getComputedStyle(document.getElementById('status'));
+    return {
+      chips: [...document.querySelectorAll('#chips .chip')].map((c) => [c.querySelector('use')?.getAttribute('href'), c.textContent]),
+      clock: /^\d\d:\d\d$/.test(document.getElementById('clock').textContent),
+      glass: st.backgroundColor === getComputedStyle(document.getElementById('settings')).backgroundColor && st.boxShadow.includes('inset'),
+      oldClock: !!document.querySelector('body > #clock'),
+    };
+  });
+  check(
+    'the status capsule shows the batteries, the volume, quiet mode and the time, on the plate\'s glass',
+    JSON.stringify(capsule.chips) === JSON.stringify([['#i-controller', '60%'], ['#i-controller', 'Medium'], ['#i-headset', '80%'], ['#i-volume', '45%'], ['#i-quiet-on', '']]) && capsule.clock && capsule.glass && !capsule.oldClock,
+    JSON.stringify(capsule)
+  );
+  /** What shows of the plate: its box, less its clip. */
+  const shown = () =>
+    page.evaluate(() => {
+      const el = document.getElementById('settings');
+      const r = el.getBoundingClientRect();
+      const v = (getComputedStyle(el).clipPath.match(/inset\(([^)]*?)(?: round|\))/)?.[1] ?? '0px').split(' ').map(parseFloat);
+      const [t, ri, b, l] = [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]];
+      return [r.left + l, r.top + t, r.right - ri, r.bottom - b].map(Math.round);
+    });
+  const box = (sel) =>
+    page.evaluate((sel) => {
+      const r = document.querySelector(sel).getBoundingClientRect();
+      return [r.left, r.top, r.right, r.bottom].map(Math.round);
+    }, sel);
+  const at = await box('#status');
+  await page.evaluate(() => {
+    window.__emit('pad', 'triangle');
+    const grow = document.getElementById('settings').getAnimations().find((a) => !('transitionProperty' in a));
+    grow.pause();
+  });
+  const start = await shown();
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 2);
+  check('Settings grows down out of the capsule', near(start, at), JSON.stringify({ start, at }));
+  await page.evaluate(() => document.getElementById('settings').getAnimations().forEach((a) => a.finish()));
+  await settled(page);
+  const open1 = await page.evaluate(() => {
+    const plate = document.getElementById('settings').getBoundingClientRect();
+    const face = document.getElementById('settingsFace').getBoundingClientRect();
+    const status = document.getElementById('status');
+    const c = status.getBoundingClientRect();
+    const title = document.getElementById('settingsTitle').getBoundingClientRect();
+    return {
+      header: c.top >= plate.top && c.right <= plate.right && c.bottom < title.top && getComputedStyle(status).backgroundColor === 'rgba(0, 0, 0, 0)' && Number(getComputedStyle(status).zIndex) > Number(getComputedStyle(document.getElementById('settings')).zIndex),
+      fits: Math.abs(plate.height - face.height) <= 1,
+      height: plate.height,
+      icons: [...document.querySelectorAll('#settingsList .row')].map((r) => r.querySelector('.glyph use')?.getAttribute('href') ?? null),
+    };
+  });
+  check('... which stays as its header, over the plate, without glass of its own', open1.header, JSON.stringify(open1));
+  await emit(page, 'notice', 'Sound: TV');
+  await settled(page);
+  const beside = await page.evaluate(() => {
+    const t = document.getElementById('toast').getBoundingClientRect();
+    const p = document.getElementById('settings').getBoundingClientRect();
+    return { right: Math.round(t.right), plate: Math.round(p.left), on: document.getElementById('toast').classList.contains('on') };
+  });
+  check('... a message meanwhile stands beside the plate, not over its rows', beside.on && beside.right <= beside.plate, JSON.stringify(beside));
+  check('... each section with its icon', open1.icons.length >= 8 && open1.icons.every((h) => h && h.startsWith('#i-')) && open1.icons.at(-1) === '#i-power', JSON.stringify(open1.icons));
+  // Into Power, the last section: the plate turns to its height, the rows come in from the right.
+  const k = await page.evaluate(() => document.querySelectorAll('#settingsList .row').length - 1);
+  for (let i = 0; i < k; i++) await emit(page, 'pad', 'down');
+  await settled(page);
+  const pushed = await page.evaluate(() => {
+    window.__emit('pad', 'ok');
+    const turn = document.getElementById('settings').getAnimations().find((a) => !('transitionProperty' in a));
+    const slide = document.getElementById('settingsList').getAnimations()[0];
+    return { turn: !!turn, from: slide?.effect.getKeyframes()[0].translate ?? null };
+  });
+  await settled(page);
+  const power = await page.evaluate(() => ({
+    plate: document.getElementById('settings').getBoundingClientRect().height,
+    face: document.getElementById('settingsFace').getBoundingClientRect().height,
+  }));
+  check('... the plate\'s height follows what it holds', open1.fits && Math.abs(power.plate - power.face) <= 1 && power.plate < open1.height - 100, JSON.stringify({ open1: open1.height, power }));
+  check('... and a section is pushed inside it, its rows coming in from the right', pushed.turn && /^6vw( 0px)?$/.test(pushed.from), JSON.stringify(pushed));
+  const popped = await page.evaluate(() => {
+    window.__emit('pad', 'back');
+    return document.getElementById('settingsList').getAnimations()[0]?.effect.getKeyframes()[0].translate ?? null;
+  });
+  check('... and back out from the left', /^-6vw( 0px)?$/.test(popped), String(popped));
+  await settled(page);
+  await page.evaluate(() => window.__emit('pad', 'back'));
+  await page.evaluate(() => document.getElementById('settings').getAnimations().forEach((a) => a.pause() || (a.currentTime = a.effect.getComputedTiming().endTime)));
+  const back = await shown();
+  check('Back closes Settings up into the capsule', near(back, at), JSON.stringify({ back, at }));
+  await page.evaluate(() => document.getElementById('settings').getAnimations().forEach((a) => a.finish()));
+  await settled(page);
+  // Into Add a game: the clip ends on the face where it is laid out, not where it still comes in from the right.
+  await emit(page, 'pad', 'triangle');
+  await settled(page);
+  const add = await page.evaluate(() => [...document.querySelectorAll('#settingsList .row')].findIndex((r) => r.textContent.startsWith('Add a game')));
+  for (let i = 0; i < add; i++) await emit(page, 'pad', 'down');
+  await settled(page);
+  await page.evaluate(() => {
+    window.__emit('pad', 'ok');
+    const turn = document.getElementById('settings').getAnimations().find((a) => !('transitionProperty' in a));
+    turn.pause();
+    turn.currentTime = turn.effect.getTiming().duration;
+  });
+  const end = await shown();
+  const face = await page.evaluate(() => {
+    const p = document.getElementById('settings').getBoundingClientRect();
+    const f = document.getElementById('add');
+    return [p.right - f.offsetWidth, p.top, p.right, p.top + f.offsetHeight].map(Math.round);
+  });
+  check("... and turning to Add a game ends on its face's box", near(end, face), JSON.stringify({ end, face }));
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.evaluate(() => (window.__settings = {}));
+  const moves = await page.evaluate(() => {
+    window.__emit('pad', 'triangle');
+    return document.getElementById('settings').getAnimations().filter((a) => !('transitionProperty' in a)).length;
+  });
+  await settled(page);
+  const slide = await page.evaluate(() => {
+    window.__emit('pad', 'ok');
+    const a = document.getElementById('settingsList').getAnimations()[0];
+    return { turns: document.getElementById('settings').getAnimations().filter((x) => !('transitionProperty' in x)).length, keys: a?.effect.getKeyframes().map((k) => k.translate ?? null), ms: a?.effect.getTiming().duration };
+  });
+  check('Reduce Motion: Settings fades in at its place, and a section fades in where it is', moves === 0 && slide.turns === 0 && slide.keys?.every((t) => t === null) && slide.ms <= 150, JSON.stringify({ moves, slide }));
+  await close(page);
+}
+
+// 48. Find on the filter line (the menu audit's first finding). With a search set, its pill above the row widens into
 // the field, and the keyboard rises out of the field's bottom-left corner; the store chip's list grows up out of the
 // chip. They open on the tap spring and go back on the close spring. The row stays sharp below them, with nothing over
 // it; the game's info fades while Find is open, and the hero keeps drifting. One focus ring moves across keys and chips.
@@ -3245,9 +3613,9 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await close(page);
 }
 
-// 46. Messages are pills, the dock's (pill.js; the menu audit's eighth finding). One about a game stands on the line
+// 49. Messages are pills, the dock's (pill.js; the menu audit's eighth finding). One about a game stands on the line
 // above the row, after what narrows it, with its icon, and names the game; any other at the top right, under the
-// clock. Neither is ever over the covers. Each is the plate's glass round its icon's badge, comes in on the tap spring
+// status capsule. Neither is ever over the covers. Each is the plate's glass round its icon's badge, comes in on the tap spring
 // and goes on the close spring.
 {
   const games = [game(1), game(2), game(3)];
@@ -3274,7 +3642,8 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
         };
       };
       const covers = Math.min(...[...document.querySelectorAll('#track .cover')].map((c) => c.getBoundingClientRect().top));
-      const clock = document.getElementById('clock').getBoundingClientRect();
+      // Under the status capsule, which holds the clock.
+      const clock = document.getElementById('status').getBoundingClientRect();
       const plate = getComputedStyle(document.getElementById('settings'));
       return { game: one('gameNews'), system: one('toast'), covers, clock: { bottom: clock.bottom, right: clock.right }, plate: { fill: plate.backgroundColor }, width: innerWidth };
     });
@@ -3303,12 +3672,12 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     p.game.on && p.game.text === "Game 002: Steam couldn't start it." && p.game.warn && p.game.icon === '#i-warn' && p.game.game === 'pc:2' && !p.system.on,
     JSON.stringify(p.game)
   );
-  // Anything else: at the top right, under the clock.
+  // Anything else: at the top right, under the status capsule.
   await emit(page, 'notice', 'Sound: TV');
   await settled(page);
   p = await pills();
   check(
-    'any other message stands at the top right, under the clock, clear of the covers, with its icon',
+    'any other message stands at the top right, under the status capsule, clear of the covers, with its icon',
     p.system.on && p.system.text === 'Sound: TV' && p.system.icon === '#i-info' && p.system.box.top >= p.clock.bottom && Math.abs(p.system.box.right - p.clock.right) <= 2 && p.system.box.bottom <= p.covers && !p.system.inLine,
     JSON.stringify({ system: p.system, clock: p.clock })
   );
@@ -3332,7 +3701,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await close(page);
 }
 
-// 47. The starting screen: the step the player can act on carries its action as a chip on its line, ✕ and what it
+// 50. The starting screen: the step the player can act on carries its action as a chip on its line, ✕ and what it
 // does, as well as in the hints, and a click on it does it; only the newest such step has one. Every step's icon is
 // one of the icons both pages share, not a text character.
 {

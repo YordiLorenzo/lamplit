@@ -40,7 +40,8 @@
     </div>
   </header>
 
-  <div id="clock"></div>
+  <!-- The status capsule (status.js): batteries, volume, quiet mode and the time. Settings grows down out of it. -->
+  <div id="status"><span id="chips"></span><span id="clock"></span></div>
   <div id="empty">Looking for games…</div>
 
   <div id="overlay">
@@ -54,8 +55,8 @@
   <div id="filters"><div id="gameNews" class="news"></div></div>
   <main id="row"><div id="track"></div><div id="noMatch" hidden>No games match</div></main>
 
-  <!-- A game's menu (library.js, lift.js): the focused cover lifted over the blurred screen, the menu or Change art
-       (art.js) beside it. -->
+  <!-- A game's menu (library.js, lift.js): the focused cover lifted over the blurred screen, and one plate beside it
+       that grows out of the card's edge, with two faces: the menu, and Change art (art.js). -->
   <div id="lift">
     <div class="veil"></div>
     <div id="card">
@@ -63,23 +64,21 @@
       <div class="glow"></div>
       <div id="face"><div class="name"></div><div class="sheen"></div></div>
     </div>
-    <aside id="details" class="sheet">
-      <h2 id="dName"></h2>
-      <dl>
-        <dt>Store</dt><dd id="dStore"></dd>
-        <dt>Last played</dt><dd id="dPlayed"></dd>
-        <dt>Play time</dt><dd id="dTime"></dd>
-        <dt>Folder</dt><dd id="dDir"></dd>
-      </dl>
-      <div id="dChoices"></div>
-    </aside>
-    <aside id="artPick" class="sheet">
-      <h2>Change art</h2>
-      <div id="artField" class="field" data-id="search"><svg class="glass" aria-hidden="true"><use href="#i-search"/></svg><span id="artQuery" class="typed"></span></div>
-      <div id="artKeys" class="keys"></div>
-      <div id="artStatus"></div>
-      <div id="artTiles"></div>
-      <div id="artChoices" class="choices"></div>
+    <aside id="sheet">
+      <section id="details" class="sheet-face">
+        <h2 id="dName"></h2>
+        <p id="dMeta"><span id="dStore"></span><span class="dot"> · </span><span id="dPlayed"></span><span class="dot"> · </span><span id="dTime"></span></p>
+        <div id="dChoices"></div>
+        <p id="dDir"></p>
+      </section>
+      <section id="artPick" class="sheet-face">
+        <h2>Change art</h2>
+        <div id="artField" class="field" data-id="search"><svg class="glass" aria-hidden="true"><use href="#i-search"/></svg><span id="artQuery" class="typed"></span></div>
+        <div id="artKeys" class="keys"></div>
+        <div id="artStatus"></div>
+        <div id="artTiles"></div>
+        <div id="artChoices" class="choices"></div>
+      </section>
     </aside>
   </div>
 

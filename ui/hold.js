@@ -22,22 +22,32 @@ export function holdRing() {
   return svg;
 }
 
+/** Letting go of the hold in progress: one button holds one thing at a time. */
+let current = () => {};
+
 /**
  * The button goes down on `el`: its ring fills over `ms`, and `done` runs once it is full. Returns what letting go
- * does: before it is full, the ring drains and `done` never runs; after, nothing.
+ * does: before it is full, the ring drains and `done` never runs; after, nothing. A hold in progress is let go first.
  * @param {HTMLElement} el  holds a holdRing
  * @param {() => void} done
  * @param {number} [ms]
  */
 export function hold(el, done, ms = HOLD_MS) {
+  current();
   el.style.setProperty('--hold-ms', `${ms}ms`);
   el.classList.add('holding');
   const full = setTimeout(() => {
+    current = () => {};
     el.classList.remove('holding');
     done();
   }, ms);
-  return () => {
+  current = () => {
     clearTimeout(full);
     el.classList.remove('holding');
+    current = () => {};
   };
+  return current;
 }
+
+/** Lets go of the hold in progress, if any: the button came up, or what it was on changed underneath. */
+export const letGo = () => current();

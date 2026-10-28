@@ -1,7 +1,7 @@
 // @ts-check
 // Morph, for both pages: one plate changing shape. Its clip and its place spring between boxes on screen: it grows out
-// of what it opens from (a line of text, a card's edge, a chip), widens for another face, and goes back into what it
-// came from on close. Clip, translate and opacity only, so nothing is laid out or painted again on the way. With
+// of what it opens from (a line of text, a card's edge, the status capsule), turns from one face to another, and goes
+// back into what it came from on close. Clip, translate and opacity only, so nothing is laid out or painted again on the way. With
 // Reduce Motion it neither moves nor changes shape: it fades in place (each page's CSS), and what was to run once it
 // ends runs at once. Each morph tells the frame probe (probe.js, in measurement builds only), which logs its frames.
 
@@ -15,17 +15,20 @@ export const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matc
 /** Tells the probe that morph `name` plays for `ms`. @param {string} name @param {number} ms */
 const tell = (name, ms) => document.dispatchEvent(new CustomEvent('morph', { detail: { name, ms } }));
 
-/** Plates whose clip settles when its spring ends. */
-const watched = new WeakSet();
 /** The shape a plate holds after going back into what it came from, until it opens again. */
 const held = new WeakMap();
 
 /**
- * @typedef {{ box: DOMRect, round?: number, anchor?: 'left' | 'bottom-left' }} Place  a box on screen; its corners round
- *   by half its height unless `round` says otherwise, as a line of text, a pill or a chip does. The plate shows its
- *   middle there, or with `anchor` its left end or its bottom-left corner: a field widening out of a pill keeps its
- *   text where it was, and a plate rising out of a field shows its bottom row first.
+ * @typedef {{ box: DOMRect, round?: number, anchor?: 'left' | 'bottom-left', still?: boolean }} Place  a box on screen;
+ *   its corners round by half its height unless `round` says otherwise, as a line of text, a pill or a chip does. The
+ *   plate shows its middle there, or with `anchor` its left end or its bottom-left corner: a field widening out of a
+ *   pill keeps its text where it was, and a plate rising out of a field shows its bottom row first. Or, `still`, a box
+ *   over the plate: the plate stays where it is and only its clip shows the box, so what the plate holds stays where
+ *   it is too.
  */
+
+/** @param {number} n */
+const px = (n) => `${Math.max(0, n)}px`;
 
 /**
  * The plate's clip and place that show `place` out of its own box `own`, or its own box when `place` is null.
@@ -34,6 +37,10 @@ const held = new WeakMap();
 function shape(own, place, round) {
   if (!place) return { translate: '0px 0px', clipPath: `inset(0px round ${round}px)` };
   const { box, anchor } = place;
+  if (place.still) {
+    const sides = [box.top - own.top, own.right - box.right, own.bottom - box.bottom, box.left - own.left].map(px);
+    return { translate: '0px 0px', clipPath: `inset(${sides.join(' ')} round ${place.round ?? round}px)` };
+  }
   if (anchor) {
     const right = Math.max(0, own.width - box.width);
     const top = Math.max(0, anchor === 'left' ? (own.height - box.height) / 2 : own.height - box.height);
@@ -50,12 +57,13 @@ function shape(own, place, round) {
 }
 
 /**
- * The plate, laid out at its own box, goes from showing `from` to showing `to` (null: its own box) on spring `spring`.
- * With `hold` it stays at `to` until `rest`. `done` runs once it is there.
+ * The plate, laid out at its own box, goes from showing `from` to showing `to` (null: its own box) on spring `spring`,
+ * `delay` ms from now, showing `from` meanwhile. With `hold` it stays at `to` until `rest`. `done` runs once it is
+ * there.
  * @param {HTMLElement} plate
- * @param {{ name: string, from: Place | null, to: Place | null, spring?: SpringName, hold?: boolean, done?: () => void }} how
+ * @param {{ name: string, from: Place | null, to: Place | null, spring?: SpringName, delay?: number, hold?: boolean, done?: () => void }} how
  */
-export function morph(plate, { name, from, to, spring = 'tap', hold = false, done }) {
+export function morph(plate, { name, from, to, spring = 'tap', delay = 0, hold = false, done }) {
   rest(plate);
   if (reduced()) {
     done?.();
@@ -64,9 +72,9 @@ export function morph(plate, { name, from, to, spring = 'tap', hold = false, don
   const own = plate.getBoundingClientRect();
   const round = parseFloat(getComputedStyle(plate).borderTopLeftRadius);
   const { easing, ms } = SPRINGS[spring];
-  const move = plate.animate([shape(own, from, round), shape(own, to, round)], { duration: ms, easing, fill: hold ? 'forwards' : 'none' });
+  const move = plate.animate([shape(own, from, round), shape(own, to, round)], { duration: ms, easing, delay, fill: hold ? 'both' : 'backwards' });
   if (hold) held.set(plate, move);
-  tell(name, ms);
+  tell(name, delay + ms);
   move.finished.then(() => done?.(), () => {});
 }
 
@@ -90,28 +98,23 @@ export function rest(plate) {
 }
 
 /**
- * The plate takes its other width, for another face: its box takes the wider width at once while a clip shows the
- * width it had, the clip springs to the new width on the tap spring, and the box settles there (the page's CSS:
- * style.css #settings.moving).
+ * The plate turns from one face to another, each laid out where it shows (`from` and `to`, boxes on screen): only its
+ * clip moves, from the one to the other, while `cover` has the plate hold both; `settle` gives it the new face's size
+ * once its clip is there. With Reduce Motion the plate takes that size at once, and its faces fade in place (the
+ * page's CSS).
  * @param {HTMLElement} plate
- * @param {boolean} wide
+ * @param {{ name: string, from: DOMRect, to: DOMRect, spring?: SpringName, cover: () => void, settle: () => void }} how
  */
-export function widen(plate, wide) {
-  if (plate.classList.contains('wide') === wide) return;
-  // Its faces fade where they are, and the plate takes its width with them.
+export function turn(plate, { name, from, to, spring = 'tap', cover, settle }) {
   if (reduced()) {
-    plate.classList.toggle('wide', wide);
-    return;
+    rest(plate);
+    return settle();
   }
-  if (!watched.has(plate)) {
-    watched.add(plate);
-    plate.addEventListener('transitionend', (e) => {
-      if (e.target === plate && e.propertyName === 'clip-path') plate.classList.remove('moving');
-    });
-  }
-  plate.classList.add('moving');
-  // The clip starts at the width the plate shows now.
-  void getComputedStyle(plate).clipPath;
-  plate.classList.toggle('wide', wide);
-  tell(`${plate.id}-${wide ? 'widen' : 'narrow'}`, SPRINGS.tap.ms);
+  const round = parseFloat(getComputedStyle(plate).borderTopLeftRadius);
+  cover();
+  const done = () => {
+    settle();
+    rest(plate);
+  };
+  morph(plate, { name, from: { box: from, round, still: true }, to: { box: to, round, still: true }, spring, hold: true, done });
 }

@@ -42,8 +42,8 @@ export function showHints() {
       ? b('ok', 'Select') + b('square', 'Delete') + b('triangle', 'Space') + b('back', 'Cancel')
       : b('ok', 'Select') + b('square', 'Edit search') + b('back', 'Back');
   } else if (state.mode === 'details') {
-    const choice = detailChoices(g, state.running, state.removing)[state.detailsIdx];
-    html = b('ok', choice.kind === 'play' ? choice.label : 'Select') + b('back', 'Close');
+    const choice = detailChoices(g, state.running, state.closer)[state.detailsIdx];
+    html = b('ok', choice.kind === 'play' ? choice.label : (choice.hold ?? 'Select')) + b('back', 'Close');
   } else if (state.mode === 'add' && state.add.view === 'name') {
     html = b('ok', 'Select') + b('square', 'Delete') + b('triangle', 'Space') + b('back', 'Back');
   } else if (state.mode === 'add') {
@@ -53,7 +53,7 @@ export function showHints() {
   } else if (state.mode === 'settings') {
     const row = state.settings.rows[state.settings.idx];
     if (row?.adjust) html += b('adjust', 'Adjust');
-    else if (row?.kind) html += b('ok', row.kind === 'section' ? 'Open' : 'Select');
+    else if (row?.kind) html += b('ok', row.kind === 'section' ? 'Open' : (row.hold ?? 'Select'));
     html += b('back', state.settings.section ? 'Back' : 'Close');
   } else if (state.mode === 'find' && state.findList) {
     html = b('ok', 'Select') + b('back', 'Back');

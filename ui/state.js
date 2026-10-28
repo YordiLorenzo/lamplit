@@ -22,6 +22,9 @@
  * @property {string} [value]
  * @property {string} [tone]  good or warn
  * @property {boolean} [adjust]
+ * @property {import('./icons.js').IconId} [icon]
+ * @property {string} [hold]  can't be taken back: Cross is held for it (hold.js), as this hint says
+ * @property {string} [note]  what a held row does, shown before the press
  */
 
 /** @param {string} id */
@@ -36,6 +39,8 @@ export const els = {
   note: $('note'),
   played: $('played'),
   playtime: $('playtime'),
+  status: $('status'),
+  chips: $('chips'),
   clock: $('clock'),
   empty: $('empty'),
   noMatch: $('noMatch'),
@@ -48,6 +53,7 @@ export const els = {
   lift: $('lift'),
   card: $('card'),
   face: $('face'),
+  sheet: $('sheet'),
   details: $('details'),
   dName: $('dName'),
   dStore: $('dStore'),
@@ -68,6 +74,7 @@ export const els = {
   addName: $('addName'),
   addKeys: $('addKeys'),
   settings: $('settings'),
+  settingsFace: $('settingsFace'),
   settingsTitle: $('settingsTitle'),
   settingsList: $('settingsList'),
   find: $('find'),
@@ -105,7 +112,8 @@ export const state = {
   /** the focused choice in a game's menu (logic.js detailChoices) */
   detailsIdx: 0,
   /** ✕ was pressed once on Remove from Lamplit */
-  removing: false,
+  /** @type {import('./api.js').DockGame | null} the running game as the dock reads it, for the game menu's Close game */
+  closer: null,
   /** @type {string | null} the game whose cover is lifted (lift.js); its cover in the row hides meanwhile */
   lifted: null,
   /**
@@ -179,14 +187,13 @@ export const state = {
   display: null,
   /**
    * Section null is the list of sections. `focus` names the focused row (logic.js rowKey); `idx` is where that row is
-   * in `rows`, worked out again on every render. `confirm` is the Power row that ✕ was pressed on once.
+   * in `rows`, worked out again on every render.
    */
   settings: {
     section: /** @type {string | null} */ (null),
     focus: /** @type {string | null} */ (null),
     idx: 0,
     rows: /** @type {Row[]} */ ([]),
-    confirm: /** @type {string | null} */ (null),
   },
 };
 

@@ -2,10 +2,12 @@
 // The home screen: the cover row, the hero art, logo and details of the focused game, and its menu, which lifts its
 // cover (lift.js).
 
-import { assetUrl, libraryRemoveGame, librarySetFavourite, librarySetHidden } from './api.js';
+import { assetUrl, dockCloseGame, dockState, libraryRemoveGame, librarySetFavourite, librarySetHidden } from './api.js';
 import { showHints, toast } from './hints.js';
+import { hold, holdRing, letGo } from './hold.js';
+import { backToGame } from './launch.js';
 import { face, lift, lower, settle, showSheet } from './lift.js';
-import { accentOf, detailChoices, lightOf, folderParts, narrowed, playTimeText, playedText, rowOf, storeWarning, words } from './logic.js';
+import { accentOf, detailChoices, folderParts, lightOf, metaParts, narrowed, playTimeText, playedText, rowOf, storeWarning, words } from './logic.js';
 import { reduced } from './morph.js';
 import { sfx } from './sounds.js';
 import { byId, els, focused, icon, state, storeName, withStoreLogo } from './state.js';
@@ -147,14 +149,15 @@ export function showInfo() {
 export function openDetails() {
   const g = focused();
   els.dName.textContent = g.name;
-  els.dStore.replaceChildren(...withStoreLogo(g.store, g.manual ? 'Added by hand' : storeName(g.store) ?? 'Not from a store'));
-  els.dPlayed.textContent = playedText(g.last_played).replace(/^Played /, '') || 'Not yet';
-  // Lamplit counts from 0.2.0 on, so a game played before has no count of its own.
-  els.dTime.textContent = playTimeText(g.play_minutes, true) || 'Not counted yet';
+  // Lamplit counts from 0.2.0 on, so a game played before has no time of its own, and the line leaves it out.
+  const [store, played, time = ''] = metaParts(g, g.manual ? 'Added by hand' : storeName(g.store));
+  els.dStore.replaceChildren(...withStoreLogo(g.store, store));
+  els.dPlayed.textContent = played;
+  els.dTime.textContent = time;
   els.dDir.replaceChildren(...folderParts(g.dir).map((part) => Object.assign(document.createElement('span'), { textContent: part })));
   state.detailsIdx = 0;
-  state.removing = false;
   renderChoices();
+  readCloser(g.id);
   state.mode = 'details';
   showSheet('menu');
   lift(g.id, restingCover(), coverLook(g.name, g.art.portrait));
@@ -188,47 +191,109 @@ export function backToMenu() {
   showHints();
 }
 
-/** The choices in the menu, the focused one marked. */
+/** The choices of the focused game's menu. */
+const choices = () => detailChoices(focused(), state.running, state.closer);
+
+/**
+ * The running game as the dock reads it: whether Lamplit knows which programs are its own, so the menu can offer
+ * Close game, and whether it stopped responding. The menu shows the choice once the answer is in.
+ * @param {string} id
+ */
+async function readCloser(id) {
+  state.closer = null;
+  if (state.running !== id) return;
+  const read = await dockState().catch(() => null);
+  if (state.mode !== 'details' || focused()?.id !== id) return;
+  state.closer = read;
+  renderChoices();
+}
+
+/**
+ * The choices in the menu, each with its icon, the focused one marked: Play lit, Favourite's star filled when on.
+ * One that can't be taken back says what it does, and has a ring that fills while Cross is held on it (hold.js); a
+ * hold in progress is let go, as the rows it was on are made again.
+ */
 function renderChoices() {
-  const rows = detailChoices(focused(), state.running, state.removing).map((c, i) => {
+  letGo();
+  const g = focused();
+  const rows = choices().map((c, i) => {
     const row = document.createElement('div');
-    row.className = 'row' + (i === state.detailsIdx ? ' focus' : '') + (c.kind === 'remove' && state.removing ? ' warn' : '');
-    row.textContent = c.label;
+    row.className = 'row';
+    row.classList.toggle('focus', i === state.detailsIdx);
+    row.classList.toggle('primary', c.kind === 'play');
+    if (c.kind === 'favourite') {
+      row.classList.toggle('on', g.favourite);
+      row.setAttribute('aria-pressed', String(g.favourite));
+    }
+    row.append(glyph(c.icon, !!c.hold), labelled(c.label, c.note));
     return row;
   });
   els.dChoices.replaceChildren(...rows);
 }
 
+/**
+ * A row's icon, with the ring a hold fills round it.
+ * @param {import('./icons.js').IconId} id @param {boolean} held
+ */
+export function glyph(id, held) {
+  const box = document.createElement('span');
+  box.className = 'glyph';
+  const svg = icon(id);
+  svg.setAttribute('class', 'icon');
+  box.append(svg, ...(held ? [holdRing()] : []));
+  return box;
+}
+
+/**
+ * A row's label, and under it what it does when that can't be taken back.
+ * @param {string} label @param {string} [note]
+ */
+export function labelled(label, note) {
+  const box = document.createElement('span');
+  box.className = 'label';
+  box.append(label);
+  if (note) box.append(Object.assign(document.createElement('span'), { className: 'note', textContent: note }));
+  return box;
+}
+
 /** The choice ✕ picks in the menu. */
-export const detailChoice = () => detailChoices(focused(), state.running, state.removing)[state.detailsIdx];
+export const detailChoice = () => choices()[state.detailsIdx];
 
 /** @param {number} delta */
 export function moveDetails(delta) {
-  const next = Math.max(0, Math.min(detailChoices(focused(), state.running).length - 1, state.detailsIdx + delta));
+  const next = Math.max(0, Math.min(choices().length - 1, state.detailsIdx + delta));
   if (next === state.detailsIdx) return sfx.edge();
   state.detailsIdx = next;
-  // Remove asks again once focus has left it.
-  state.removing = false;
   sfx.move();
   renderChoices();
   showHints();
 }
 
+/** Cross held on a choice that can't be taken back: it happens once the ring round its icon is full. */
+export function holdChoice() {
+  sfx.move();
+  // Made again with focus on it, as a mouse may hold one that wasn't in focus.
+  renderChoices();
+  hold(/** @type {HTMLElement} */ (els.dChoices.children[state.detailsIdx]), markGame);
+}
+
 /**
- * The menu's choices other than Play and Change art: the focused game in or out of the favourites, hidden, or, for a
- * game added by hand, removed (✕ once asks, ✕ again removes).
+ * The menu's choices other than Play and Change art: the focused game in or out of the favourites, hidden, closed
+ * while it runs, or, for a game added by hand, removed. The last two come once Cross has been held (holdChoice).
  */
 export async function markGame() {
   const g = focused();
   const { kind } = detailChoice();
-  if (kind === 'remove' && !state.removing) {
-    state.removing = true;
-    sfx.open();
-    renderChoices();
-    return showHints();
-  }
   try {
-    if (kind === 'favourite') {
+    if (kind === 'close') {
+      const closer = /** @type {import('./api.js').DockGame} */ (state.closer);
+      sfx.launch();
+      closeDetails();
+      // Rust closes the game it read, in its session, and nothing else. Asked to close, the game may ask whether to
+      // quit: it comes forward to ask. Ended, Lamplit stays in front.
+      await dockCloseGame(closer.force_close, closer.id, closer.session);
+      if (!closer.force_close) backToGame();
+    } else if (kind === 'favourite') {
       sfx.open();
       // The row moves around the game, and focus stays on it.
       setGames(await librarySetFavourite(g.id, !g.favourite));

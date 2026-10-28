@@ -11,15 +11,13 @@ import { layout, onArt, setGames } from './library.js';
 import { startScreensaver, wake } from './screensaver/index.js';
 import { refreshAccessories, setSetup, setStores } from './settings.js';
 import { nameSprings } from './springs.js';
+import { readStatus, startStatus } from './status.js';
 import { els, state } from './state.js';
 
 // The springs and the icons both pages share.
 nameSprings(document.documentElement);
 mountIcons(document);
 
-function tickClock() {
-  els.clock.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-}
 
 /**
  * Coming forward (after a game, or summoned) is when new installs should show up. The rescan waits until the way in
@@ -33,6 +31,8 @@ function rescanSoon() {
   rescanTimer = setTimeout(() => api.libraryRescan(), RESCAN_AFTER_MS);
 }
 window.addEventListener('focus', rescanSoon);
+// Back from a game, the volume or the batteries may have changed.
+window.addEventListener('focus', readStatus);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) rescanSoon();
 });
@@ -76,8 +76,7 @@ window.addEventListener('error', (e) => api.log.error(`${e.message} at ${e.filen
 window.addEventListener('unhandledrejection', (e) => api.log.error(`unhandled: ${e.reason?.message ?? e.reason}`));
 
 async function init() {
-  tickClock();
-  setInterval(tickClock, 5000);
+  startStatus();
   let heardGames = false;
   let heardKind = false;
   await Promise.all([
@@ -103,7 +102,10 @@ async function init() {
     }),
     api.onLaunchStep(onStep),
     api.onStores(setStores),
-    api.onAccessories(refreshAccessories),
+    api.onAccessories(() => {
+      refreshAccessories();
+      readStatus();
+    }),
     api.onNotice(toast),
     api.onSetup(setSetup),
   ]);

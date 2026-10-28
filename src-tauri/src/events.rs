@@ -15,7 +15,8 @@ pub enum Event<'a> {
     Games(&'a [Game]),
     /// Art for one game came in.
     Art { id: &'a str, art: &'a Art },
-    /// A controller press for the page while Lamplit is in front: "up", "ok", "back" and so on.
+    /// A controller press for the page while Lamplit is in front: "up", "ok", "back" and so on, or Cross let go
+    /// ("ok-up").
     Pad(&'a str),
     /// Another kind of controller than before was used, so the hints show its buttons.
     PadKind(pad::Kind),
@@ -33,7 +34,7 @@ pub enum Event<'a> {
     Notice(String),
     /// Setup started from Settings has ended: whether it is still needed.
     Setup(setup::Status),
-    /// A controller press for the dock while the dock is in front: "left", "ok", "back" and so on.
+    /// A controller press for the dock while the dock is in front: "left", "ok", "back" and so on, or Cross let go.
     DockPad(&'a str),
     /// The dock opens over the game, folds away, or shows news for a moment.
     Dock(dock::Show),

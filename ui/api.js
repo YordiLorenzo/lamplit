@@ -204,7 +204,7 @@ const tauri = /** @type {any} */ (window).__TAURI__;
 
 /** @typedef {'headset' | 'controller'} DockIcon */
 
-/** Cross let go after a press, which only the dock hears of: its Close game asks for Cross to be held. @typedef {'ok-up'} DockRelease */
+/** Cross let go after a press: the dock's Close game, and the home screen's actions that can't be taken back, ask for Cross to be held. @typedef {'ok-up'} DockRelease */
 
 /**
  * What the dock shows: open over the game, folded away, or news for a moment in the folded pill.
@@ -392,7 +392,7 @@ const on = (name, handle) => tauri.event.listen(name, (/** @type {{ payload: T }
 export const onGames = (handle) => on('games', handle);
 /** Art for one game came in. @param {(update: { id: string, art: Art }) => void} handle */
 export const onArt = (handle) => on('art', handle);
-/** A controller press while Lamplit is in front. @param {(action: Action) => void} handle */
+/** A controller press while Lamplit is in front, or Cross let go. @param {(action: Action | DockRelease) => void} handle */
 export const onPad = (handle) => on('pad', handle);
 /** Another kind of controller than before was used: the hints show its buttons. @param {(kind: PadKind) => void} handle */
 export const onPadKind = (handle) => on('pad-kind', handle);

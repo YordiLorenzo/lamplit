@@ -20,6 +20,9 @@
   --safe-x: 5vw;
   --safe-y: 5vh;
   --cover-h: 30vh;
+  /* The status capsule: where it sits, inset in Settings' plate as its header, and how tall it is. */
+  --status-top: calc(var(--safe-y) + var(--plate-inset));
+  --status-h: 5.4vh;
   --glide: cubic-bezier(.2, .9, .25, 1);
   font-family: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   color: var(--ink);
@@ -63,10 +66,10 @@ body.pointer { cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .hero { animation: none; }
 }
-/* Nobody is using Lamplit (input.js), or a game's menu is up: the drift holds where it is. Under a panel it keeps
-   going: held still, the GPU drops to its idle clocks within 2 s, and the panel's close then stutters on screen while
-   they come back (about 12 W more while a panel is open, the same as the home row). */
-body.still .hero, body:has(#lift.on) .hero { animation-play-state: paused; }
+/* Nobody is using Lamplit (input.js): the drift holds where it is. Under a panel and a game's menu it keeps going:
+   held still, the GPU drops to its idle clocks within 2 s, and what closes then stutters on screen while they come
+   back (about 12 W more while one is open, the same as the home row). */
+body.still .hero { animation-play-state: paused; }
 
 .shade {
   position: absolute;
@@ -159,16 +162,32 @@ body.still .hero, body:has(#lift.on) .hero { animation-play-state: paused; }
 }
 #steps .store-logo { margin-right: 0; }
 
-#clock {
+/* The status capsule (status.js), top right: the batteries, the volume, quiet mode and the time, on a pill of the
+   plate's glass. Settings grows down out of it, and it is Settings' header while Settings is open: its own glass goes,
+   and it stays sharp over the plate. */
+#status {
   position: fixed;
-  right: var(--safe-x);
-  top: 7vh;
+  top: var(--status-top);
+  right: calc(var(--safe-x) + var(--plate-inset));
   z-index: 2;
-  font-size: 3.2vh;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  text-shadow: 0 .2vh 1vh rgb(0 0 0 / .5);
+  display: flex;
+  align-items: center;
+  gap: 2vh;
+  /* Inside Settings' plate, as its header: what doesn't fit is cut at the left. */
+  max-width: calc(38vw - 2 * var(--plate-inset));
+  height: var(--status-h);
+  padding: 0 2.2vh;
+  border-radius: calc(var(--status-h) / 2);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  font-size: 1.9vh;
+  transition: background 200ms ease, box-shadow 200ms ease;
 }
+body:has(#settings.on) #status { z-index: 5; background: transparent; box-shadow: none; }
+#chips { display: flex; justify-content: flex-end; align-items: center; gap: 1.6vh; min-width: 0; overflow: hidden; color: var(--ink-dim); }
+#chips .chip .icon { width: 2.4vh; height: 2.4vh; }
+#chips:empty { display: none; }
+#clock { flex: none; font-size: 2.3vh; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 #empty {
   position: fixed;
@@ -501,6 +520,8 @@ body.launching .cover.focus { scale: 1.1; }
   background: linear-gradient(transparent, rgb(0 0 0 / .75));
 }
 #face.has-art .name { display: none; }
+/* The art that was, fading out over the next as Change art moves through the covers (lift.js face). */
+#face .was { position: absolute; inset: 0; background: center / cover no-repeat; }
 /* Light from above on a glossy card. */
 #face::after {
   content: '';
@@ -524,59 +545,80 @@ body.launching .cover.focus { scale: 1.1; }
   to   { opacity: 1; transform: translateX(60%); }
 }
 
-/* The menu, and Change art, beside the card: they slide out from behind it. Centred on the card, so a full one has
-   room above and below it, between the screen's safe area and the hints (6vh over its bottom edge). */
-.sheet {
+/* The menu's plate beside the card (lift.js): it grows out of the card's edge once the card is most of the way up
+   (--grow-after), from a sliver to its full size on the tap spring, and goes back into it on lowering (morph.js). Its
+   two faces, the menu and Change art, take turns. Each is laid out at its own size where it shows, centred on the
+   card and against its edge, and the plate takes the size of the one that shows (lift.js --sheet-h), so the face
+   that goes stays where it was while the plate's clip moves from one to the other. A full face has room above and
+   below it, between the screen's safe area and the hints (6vh over its bottom edge). */
+#sheet {
   --middle: calc(var(--card-y) + var(--card-h) / 2);
   position: absolute;
   top: var(--middle);
-  translate: 0 -50%;
   left: var(--menu-x);
   width: var(--menu-w);
-  max-height: calc(2 * min(var(--middle) - var(--safe-y), 100vh - var(--middle) - var(--safe-y) - 6vh));
-  display: flex;
-  flex-direction: column;
-  padding: 3.6vh 4vh;
+  height: var(--sheet-h, auto);
+  transform: translateY(-50%);
   border-radius: var(--plate-radius);
   background: var(--plate-fill);
   box-shadow: var(--plate-rim), var(--plate-shadow);
+  overflow: clip;
   opacity: 0;
-  transform: translateX(calc(var(--side) * -5vh)) scale(.96);
-  transform-origin: calc(50% - var(--side) * 50%) 50%;
   pointer-events: none;
-  transition: opacity 160ms ease, transform var(--close-ms) var(--close);
+  transition: opacity 160ms ease;
 }
-#lift.on .sheet.on {
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
-  transition: opacity 240ms ease 150ms, transform var(--lift-ms) var(--lift) 90ms;
+#sheet.art { left: var(--wide-x); width: var(--wide-w); }
+#lift.on #sheet { opacity: 1; pointer-events: auto; transition: opacity 100ms ease var(--grow-after); }
+.sheet-face {
+  --w: var(--menu-w);
+  position: absolute;
+  top: 50%;
+  /* Against the card's side of the plate: its left edge with the menu on the right (--side 1), else its right. */
+  left: calc((1 - var(--side)) / 2 * (100% - var(--w)));
+  width: var(--w);
+  translate: 0 -50%;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(2 * min(var(--middle) - var(--safe-y), 100vh - var(--middle) - var(--safe-y) - 6vh));
+  padding: 3.6vh 4vh;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
 }
-.sheet h2 { flex: none; font-size: 4.6vh; font-weight: 650; line-height: 1.1; margin-bottom: 2.4vh; }
+#artPick { --w: var(--wide-w); }
+/* What the plate holds fades in from 45% of its way: as it grows out of the card, or into the other face's size. */
+#lift.on .sheet-face.on { opacity: 1; pointer-events: auto; transition: opacity 180ms ease calc(var(--grow-after) + var(--tap-ms) * .45); }
+#lift.on #sheet.turned .sheet-face.on { transition-delay: calc(var(--tap-ms) * .45); }
+.sheet-face h2 { flex: none; font-size: 4.6vh; font-weight: 650; line-height: 1.1; margin-bottom: 2.4vh; }
 /* A long name takes three lines at most. */
-#dName { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
-/* The details give way first: when the name, the details and the choices don't all fit, the details are cut short,
-   never a choice. */
-#details dl {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 1.4vh 3vh;
-  min-height: 0;
-  overflow: hidden;
-  font-size: 2.4vh;
-}
-#details dt { color: var(--ink-dim); white-space: nowrap; }
-#details dd { min-width: 0; overflow-wrap: anywhere; }
-/* The folder in two lines at most: the path to it, cut short at its end (the middle of the whole path), and the
-   folder's own name, which says the most, cut short at its end if it must be. Both on one line when they fit. */
-#dDir { display: flex; flex-wrap: wrap; }
-#dDir span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#dName { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin-bottom: 1.2vh; }
+/* One line under the name: the store, when it was last played, how long. */
+#dMeta { flex: none; display: flex; align-items: center; font-size: 2.3vh; color: var(--ink-dim); white-space: nowrap; overflow: hidden; }
+#dMeta .dot { white-space: pre; }
+#dMeta .dot:has(+ :empty) { display: none; }
 #dChoices { flex: none; display: grid; gap: .8vh; margin-top: 3vh; padding: .4vh; }
-#dChoices .row { font-size: 2.6vh; padding: 1.5vh 2vh; }
+#dChoices .row { justify-content: flex-start; gap: 1.8vh; font-size: 2.6vh; padding: 1.5vh 2vh; }
+#dChoices .row.on .icon { color: rgb(var(--lamp)); }
 #dChoices .row.warn { color: #ffc75e; font-weight: 600; }
+/* Play, or Back to game: lit, as the dock's Resume, with its icon on a lamp. */
+#dChoices .row.primary { font-weight: 650; background: linear-gradient(90deg, rgb(var(--lamp) / .3), rgb(var(--lamp) / .1)); }
+#dChoices .row.primary.focus { background: linear-gradient(90deg, rgb(var(--lamp) / .42), rgb(var(--lamp) / .16)); }
+#dChoices .row.primary .icon {
+  width: 4.4vh;
+  height: 4.4vh;
+  margin: -.7vh 0;
+  padding: 1vh .8vh 1vh 1.2vh;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffe0ad, rgb(var(--lamp)) 55%, #cf6f16);
+  color: #2b1605;
+}
+/* The folder, dim at the bottom, and the first to give way when the menu doesn't fit: in two lines at most, the path
+   to it cut short at its end (the middle of the whole path), and the folder's own name, which says the most, cut
+   short at its end if it must be. Both on one line when they fit. */
+#dDir { flex: 0 1 auto; min-height: 0; display: flex; flex-wrap: wrap; margin-top: 2.4vh; overflow: hidden; font-size: 1.9vh; color: var(--ink-dim); }
+#dDir span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Change art: the search, then Steam's matches as a row of covers, then no art and back to automatic. */
-#artPick { left: var(--wide-x); width: var(--wide-w); }
 #artPick h2 { margin-bottom: 2.4vh; }
 #artField.focus { background: rgb(255 255 255 / .14); box-shadow: inset 0 0 0 .25vh #fff; }
 #artPick:not(.editing) #artQuery::after { display: none; }
@@ -660,7 +702,11 @@ body.launching .cover.focus { scale: 1.1; }
   #card, #lift.on #card, #lift.away #card { transform: none; transition: opacity 200ms ease; }
   #card { opacity: 0; }
   #lift.on #card { opacity: 1; }
-  .sheet, #lift.on .sheet.on { transform: none; }
+  #lift.on #sheet { transition: opacity var(--fade-ms) ease; }
+  .sheet-face { transition: opacity calc(var(--fade-ms) / 2) ease; }
+  #lift.on .sheet-face.on, #lift.on #sheet.turned .sheet-face.on {
+    transition: opacity calc(var(--fade-ms) / 2) ease calc(var(--fade-ms) / 2);
+  }
   #lift.on #face .sheen { animation: none; }
 }
 
@@ -689,33 +735,37 @@ body.launching .cover.focus { scale: 1.1; }
 /* Settings rows take clicks; Details lets them through to the covers beneath it. */
 #settings.on { pointer-events: auto; }
 
-/* Settings and Add a game are faces of one plate. Add a game is pushed inside it: Settings' face moves out to the left
-   and fades, Add a game's comes in from the right once it has, so the two never show at once, and the plate widens
-   from Settings' width to Add a game's on the same spring (morph.js widen). The widening is a clip: the box takes the
-   wider width at once, a clip keeps showing the width it had and springs open, and the box settles. Nothing is laid
-   out or painted again on the way. */
+/* Settings is one plate, top right, that grows down out of the status capsule and goes back into it (settings.js,
+   morph.js), with the capsule as its header. Its height follows what it holds. Its faces, Settings and Add a game, are
+   each laid out where they show, against the plate's top right corner, and the plate takes the size of the one that
+   shows (settings.js --plate-w and --plate-h). Add a game, and each section, is pushed inside it: only the plate's
+   clip moves from the one size to the other, so nothing is laid out or painted again on the way. */
 #settings {
   --narrow: 38vw;
   --wide: 46vw;
+  --plate-max: calc(100vh - 2 * var(--safe-y) - 6vh);
+  top: var(--safe-y);
+  bottom: auto;
+  width: var(--plate-w, var(--narrow));
+  height: var(--plate-h, auto);
   padding: 0;
   /* Clipped, not hidden: a hidden overflow can still be scrolled, and a face's focused row scrolled into view would
      scroll the whole plate sideways while the face comes in from the right. */
   overflow: clip;
-  transition: transform var(--close-ms) var(--close), opacity 220ms ease, clip-path var(--tap-ms) var(--tap);
+  transform: none;
+  /* Going back into the capsule, it fades once most of the way there. */
+  transition: opacity 120ms ease calc(var(--close-ms) * .6);
 }
-#settings.on { transition: transform var(--tap-ms) var(--tap), opacity 220ms ease, clip-path var(--tap-ms) var(--tap); }
-#settings.wide { width: var(--wide); }
-#settings.moving { width: var(--wide); clip-path: inset(0 0 0 calc(var(--wide) - var(--narrow)) round var(--plate-radius)); }
-#settings.moving.wide { clip-path: inset(0 round var(--plate-radius)); }
-/* A face that comes fades in once the one that goes has faded out. */
+#settings.on { transition: opacity 120ms ease; }
+/* A face that comes fades in once the one that goes has faded out. Under the capsule, which is its header. */
 .face {
   position: absolute;
   top: 0;
   right: 0;
-  bottom: 0;
   display: flex;
   flex-direction: column;
-  padding: 5vh 4vh;
+  max-height: var(--plate-max);
+  padding: calc(var(--status-h) + var(--plate-inset) + 2.6vh) 4vh 4vh;
   transition: opacity 160ms ease 100ms, translate var(--tap-ms) var(--tap);
 }
 #settingsFace { width: var(--narrow); }
@@ -763,6 +813,14 @@ body:has(#settings.on) #empty { opacity: 0; }
   transition: background 150ms ease;
 }
 .row .value { color: var(--ink-dim); font-size: 2.1vh; }
+.row .label { flex: 1; min-width: 0; display: grid; gap: .3vh; }
+/* What a row that can't be taken back does, said before the press. */
+.row .note { font-size: 1.9vh; font-weight: 400; color: var(--ink-dim); }
+/* A row's icon, and the ring a hold fills round it (hold.js, plate.css .hold). */
+.row .glyph { position: relative; flex: none; display: grid; place-items: center; }
+.row .glyph .icon { width: 3vh; height: 3vh; transition: scale var(--snap-ms) var(--snap); }
+.row .glyph .hold { width: 5.4vh; height: 5.4vh; }
+.row.holding .glyph .icon { scale: .9; }
 .row .value.warn { color: #ffc75e; font-weight: 600; }
 .row .value.good { color: #7be09a; }
 .row.focus { background: rgb(255 255 255 / .12); box-shadow: inset 0 0 0 .25vh #fff; }
@@ -1008,7 +1066,8 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
 
 /* ---------- messages: pills (pill.js, hints.js toast) ----------
    A message about a game stands on the line above the row, after what narrows it; any other at the top right, under
-   the clock, where the status capsule will hold them. Never over the covers. Each comes in on the tap spring, from a
+   the status capsule, or beside Settings' plate while it is open, so it never covers the plate's rows. Never over the
+   covers. Each comes in on the tap spring, from a
    little below the line or above, and goes on the close spring. Sized as Find's chips on the same line. */
 #toast, #gameNews {
   --u: .85vh;
@@ -1021,7 +1080,15 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
 }
 #toast.on, #gameNews.on { opacity: 1; translate: 0 0; transition: translate var(--tap-ms) var(--tap), opacity 220ms ease; }
 #gameNews { translate: 0 1vh; }
-#toast { position: fixed; top: 12.5vh; right: var(--safe-x); z-index: 6; translate: 0 -1vh; }
+#toast {
+  position: fixed;
+  top: calc(var(--status-top) + var(--status-h) + var(--plate-inset));
+  right: calc(var(--safe-x) + var(--plate-inset));
+  z-index: 6;
+  translate: 0 -1vh;
+}
+body:has(#settings.on) #toast { top: var(--status-top); right: calc(var(--safe-x) + 38vw + 2vh); }
+body:has(#settings.on #add.on) #toast { right: calc(var(--safe-x) + 46vw + 2vh); }
 /* The line keeps the height of a pill, so one coming doesn't move what narrows the row. */
 #filters { min-height: 5.6vh; }
 

@@ -351,9 +351,12 @@ fn act(app: &AppHandle, kind: Kind, action: Action) {
                 events::emit(app, Event::DockPad(nav));
             }
         }
-        // Only the dock asks for a button to be held.
+        // Letting go ends a hold: the dock's Close game, and the home screen's actions that can't be taken back, ask
+        // for Cross to be held.
         Action::Release(step) => {
-            if dock::is_open() {
+            if window::lamplit_in_front() {
+                events::emit(app, Event::Pad(step));
+            } else if dock::is_open() {
                 events::emit(app, Event::DockPad(step));
             }
         }

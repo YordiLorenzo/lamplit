@@ -85,7 +85,8 @@ pub struct Input {
 pub enum Action {
     /// A step for the page: "up", "ok", "back" and so on.
     Nav(&'static str),
-    /// A button let go after Lamplit saw it pressed: "ok-up". The dock's Close game asks for Cross to be held.
+    /// A button let go after Lamplit saw it pressed: "ok-up". The dock's Close game, and the home screen's actions
+    /// that can't be taken back, ask for Cross to be held.
     Release(&'static str),
     /// Home, or View and Menu, was held: bring Lamplit to the front.
     Summon,
@@ -105,7 +106,8 @@ const BUTTON_STEPS: [(Button, &str); 7] = [
     (|i| i.west, "square"),
 ];
 
-/// The buttons whose letting go is a step too, with that step: the dock asks for Cross to be held to close a game.
+/// The buttons whose letting go is a step too, with that step: the dock and the home screen ask for Cross to be held
+/// for what can't be taken back.
 const RELEASE_STEPS: [(Button, &str); 1] = [(|i| i.south, "ok-up")];
 
 /// One controller's buttons, fed every input report.

@@ -38,7 +38,8 @@ ui/
   state.js         the page's state and its elements
   input.js         controller, keyboard and mouse as one set of actions
   library.js       the cover row, the focused game and its menu
-  lift.js          a game's menu lifting its cover over the blurred screen
+  lift.js          a game's menu lifting its cover over the blurred screen, with one plate beside it that grows out
+                   of the card's edge and holds the menu and Change art as its two faces
   art.js           Change art, in a game's menu
   add.js           Add a game, a face of Settings' plate: the programs Lamplit passed over, browsing the drives,
                    naming the game
@@ -47,20 +48,24 @@ ui/
                    there, the on-screen keyboard grows up out of the field and the store list out of its chip
   launch.js        the starting screen: the launch's steps with the shared icons, and on the step the player can
                    act on a chip with what ✕ does there (Show the window, Open Steam)
-  settings.js      the Settings panel, a plate with two faces: Settings and Add a game
+  settings.js      the Settings panel, a plate with two faces, Settings and Add a game, that grows down out of the
+                   status capsule; its height follows what it holds, and sections are pushed inside it
+  status.js        the status capsule, top right: batteries, volume, quiet mode and the time
   morph.js         one plate changing shape, for both pages: its clip and place spring between boxes on screen
-                   (growing out of what it opens from, from its middle or keeping an end or a corner there, widening
-                   for another face, going back on close); with Reduce Motion it fades in place; each morph logs its
-                   frames in measurement builds (probe.js)
+                   (growing out of what it opens from, from its middle or keeping an end or a corner there, turning
+                   from one face to another, going back on close); with Reduce Motion it fades in place; each morph
+                   logs its frames in measurement builds (probe.js)
   springs.js       the springs both pages move on, named for what they move (tap, lift, snap, close), and Reduce
                    Motion's fade; set on each page's CSS as --tap and --tap-ms and so on
   steady.js        waits for the frames to come on time before an animation starts (the dock's spring, the
                    screensaver)
   icons.js         the icons both pages draw, in one stroked style; mountIcons puts them in the page for <use>
   plate.css        the pieces both pages draw: the plate's glass as one set of tokens (its fill from the art's
-                   brightness, rim, shadow, concentric corners), the focus ring, hold to confirm and the pill
+                   brightness, rim, shadow, concentric corners), the focus ring, hold to confirm, the pill, and the
+                   chips with their batteries
   ring.js          the focus ring: one ring that springs from what had the focus to what has it
-  hold.js          hold to confirm: a ring fills round the icon, and the action happens once it is full
+  hold.js          hold to confirm: a ring fills round the icon, and the action happens once it is full; one hold
+                   at a time, which Cross let go (the pad's "ok-up", Enter's keyup, the mouse button up) ends
   pill.js          the pill a short message shows in, with its icon in a round badge: the dock's news and the
                    home screen's messages
   logic.js         pure functions (the cover row's search and order, the Settings rows), tested in Node
@@ -259,9 +264,10 @@ backdrop (what is behind the window, blurred live by Windows) and clipped to the
 for a whole window (`DWMWA_SYSTEMBACKDROP_TYPE`, Tauri's window effect) fills the window's rectangle and ignores a
 window region, and goes flat on a window that isn't in front, so it can't take the island's shape. The glass doesn't
 follow the island's springs: before the island moves, the page puts its own glass back and lets the real glass go, and
-asks for it again where the island comes to rest. Close game asks for Cross held: the pad sends `dock-pad` with
-`ok-up` when Cross is let go after a press (`devices/pad/navigation.rs`), or when the controller holding it goes, and
-only the open dock hears of it. Home draws a veil in the game's colours over the whole of the open dock's window,
+asks for it again where the island comes to rest. Close game asks for Cross held: the pad sends `ok-up` when Cross
+is let go after a press (`devices/pad/navigation.rs`), or when the controller holding it goes, as `dock-pad` to the
+open dock and as `pad` to the home screen while Lamplit is in front, whose actions that can't be taken back are held
+too (`ui/hold.js`). Home draws a veil in the game's colours over the whole of the open dock's window,
 which covers the screen; behind the veil the home window comes forward under a veil of its own (`dock/mod.rs` home).
 Its first frames in front redraw the whole screen (65 to 80 ms on TOASTER), so the home page waits for its hero to
 decode and two frames to pass, then says so (`dock_home_drawn`): the dock's window goes, and the home page lifts its
@@ -324,7 +330,7 @@ Rust sends these without being asked (`events.rs`):
 | --- | --- | --- |
 | `games` | Every game | The game list changed, or a game that ran has ended with more play time |
 | `art` | `{ id, art }` | Art for one game came in |
-| `pad` | `up`, `down`, `left`, `right`, `ok`, `back`, `menu`, `triangle`, `l1`, `r1` or `square` | A controller press, while Lamplit is in front |
+| `pad` | `up`, `down`, `left`, `right`, `ok`, `back`, `menu`, `triangle`, `l1`, `r1` or `square`, and `ok-up` when Cross is let go | A controller press, while Lamplit is in front |
 | `pad-kind` | `dualsense`, `playstation`, `xbox` or `other` | Another kind of controller than before was used; the hints show its buttons |
 | `play` | `{ state, id }`, plus `message` when `state` is `failed` | A launched game is `running`, `starting` again, `ended` or `failed` |
 | `summoned` | The running game's id, or `null` | Holding PS, or View and Menu, brought Lamplit forward |

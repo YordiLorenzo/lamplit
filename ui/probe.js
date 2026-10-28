@@ -293,10 +293,9 @@ async function home() {
       narrowed: narrowed(state.find),
       running: !!state.running,
       playing: !!g && state.running === g.id,
-      choice: state.mode === 'details' && g ? detailChoices(g, state.running, state.removing)[state.detailsIdx]?.kind : null,
+      choice: state.mode === 'details' && g ? detailChoices(g, state.running, state.closer)[state.detailsIdx]?.kind : null,
       row: s.rows[s.idx],
       section: s.section,
-      confirm: s.confirm,
       findFocus: state.findFocus,
       add: state.add.view,
       addKind: state.add.rows.filter((r) => r.kind)[state.add.idx]?.kind,
@@ -317,7 +316,7 @@ async function home() {
       if ((action === 'right' || action === 'ok') && row?.kind === 'section') return row.key === 'add' ? 'add-open' : `settings-section-${row.key}`;
       if (action === 'left' && s.section) return 'settings-back';
       if (action !== 'ok' || !row?.kind) return null;
-      if (row.kind === 'power') return s.confirm === row.id ? 'settings-power-confirm' : 'settings-power-ask';
+      if (row.kind === 'power') return `settings-power-${row.id}`;
       if (row.kind === 'savernow') return 'screensaver-wait';
       return `settings-select-${row.kind}`;
     }
@@ -418,7 +417,7 @@ async function home() {
     }
   }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true });
   // A toast, and the screensaver woken (by a key it keeps to itself), start interactions of their own.
-  watch('#clock, #saver', (m) => {
+  watch('#status, #saver', (m) => {
     const on = flipped(m, 'on');
     const id = /** @type {Element} */ (m.target).id;
     if (on === null) return null;
