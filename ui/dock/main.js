@@ -6,6 +6,7 @@
 import * as api from '../api.js';
 import { accentOf, buttonFace, counts, nothingSeen, quietMode } from '../logic.js';
 import { meter } from '../frames.js';
+import { steady } from '../steady.js';
 import { sfx } from '../sounds.js';
 import { HOLD_MS, chips, hints, outputIcon, sessionText, spring, tiles, volumeText } from './logic.js';
 
@@ -229,37 +230,6 @@ const shown = () => state.mode === 'open' && els.island.dataset.mode === 'open';
 /** The longest the spring waits for the frames to come on time after the window shows (steady). */
 const STEADY_MS = 100;
 
-/**
- * Calls `then` once two frames in a row have come on time, or STEADY_MS in at the latest. On time is within half a
- * frame of the shortest gap between frames so far, both by the time each frame was due and by when it ran: Chromium
- * may hand a frame that ran late the time it was due.
- * @param {() => void} then
- */
-function steady(then) {
-  /** The gaps between the frames by when they were due. @type {number[]} */
-  const due = [];
-  /** Each gap by when the frame was due or by when it ran, the longer. @type {number[]} */
-  const gaps = [];
-  let first = 0;
-  let last = 0;
-  let lastRan = 0;
-  /** @param {number} t */
-  const frame = (t) => {
-    const now = performance.now();
-    if (last) {
-      due.push(t - last);
-      gaps.push(Math.max(t - last, now - lastRan));
-    }
-    first ||= now;
-    last = t;
-    lastRan = now;
-    const onTime = (/** @type {number} */ gap) => gap <= Math.min(...due) * 1.5;
-    if ((gaps.length >= 2 && gaps.slice(-2).every(onTime)) || now - first >= STEADY_MS) then();
-    else requestAnimationFrame(frame);
-  };
-  requestAnimationFrame(frame);
-}
-
 function open() {
   state.leaving = false;
   document.body.classList.remove('home', 'lift');
@@ -280,11 +250,14 @@ function open() {
   // The window has just come up over the game, and its first frames come late while Windows composes the screen anew,
   // for one frame or a few: the spring starts once they come on time.
   const mine = ++openings;
-  steady(() => {
-    if (mine !== openings) return;
-    shape('open');
-    meter('dock: open', springMs + 130);
-  });
+  steady(
+    () => {
+      if (mine !== openings) return;
+      shape('open');
+      meter('dock: open', springMs + 130);
+    },
+    { cap: STEADY_MS }
+  );
   sfx.open();
   refresh();
   clearInterval(gameTimer);

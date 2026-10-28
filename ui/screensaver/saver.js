@@ -4,6 +4,7 @@
 // themselves. Without WebGL2 it shows a CSS gradient that moves the same way. Lamplit (index.js) and the preview
 // (preview.js) both drive this.
 
+import { steady } from '../steady.js';
 import { LAMPLIT } from './palette.js';
 import { Renderer, WAYS } from './renderer.js';
 import { nextOrder, scenesFor, showsMark } from './scenes.js';
@@ -27,6 +28,11 @@ import { nextOrder, scenesFor, showsMark } from './scenes.js';
 
 /** At most 30 frames a second: the scenes move slowly, and a TV at 120 Hz would otherwise draw four times as often. */
 const FRAME_MS = 1000 / 30;
+/**
+ * The longest the fade-in waits for the frames to come on time (shown). A GPU that sat idle for a couple of seconds
+ * has dropped to its idle clocks, and takes about 0.45 s to come back up; until then a frame at 4K costs it up to 100 ms.
+ */
+const FADE_WAIT_MS = 500;
 /** A scene lasts this long, in seconds, give or take a third of SCENE_SPREAD. */
 const SCENE_S = 95;
 const SCENE_SPREAD = 30;
@@ -250,6 +256,8 @@ export class Saver {
     this.opening = null;
     /** prime() has drawn its hidden frame. */
     this.primed = false;
+    /** How many shows have started, so a fade-in still waiting knows whether its show is still on (shown). */
+    this.starts = 0;
     this.frame = this.frame.bind(this);
     this.resize = this.resize.bind(this);
   }
@@ -339,6 +347,7 @@ export class Saver {
   /** Starts the show, on `scene` if given. @param {Scene} [scene] */
   start(scene) {
     if (this.running) return;
+    this.starts++;
     clearTimeout(this.releaseTimer);
     const gl = this.gl();
     this.root.dataset.mode = gl ? 'webgl' : 'css';
@@ -505,11 +514,21 @@ export class Saver {
     }
   }
 
-  /** The first frame is on the canvas: only now does the screensaver fade in over the home screen. */
+  /**
+   * The first frame is on the canvas. The screensaver fades in over the home screen once two of its frames in a row
+   * come on time, or FADE_WAIT_MS in: the frames before, which the GPU may take its time over, stay unseen. A press
+   * meanwhile calls the show off as before.
+   */
   shown() {
     if (this.drawn) return;
     this.drawn = true;
-    this.root.classList.add('on');
+    const starts = this.starts;
+    // Any screen Lamplit drives shows 60 frames a second or more, so a frame later than 25 ms is late from the first.
+    steady(() => this.running && starts === this.starts && this.root.classList.add('on'), {
+      cap: FADE_WAIT_MS,
+      span: 2 * FRAME_MS,
+      frame: 1000 / 60,
+    });
   }
 
   /**
