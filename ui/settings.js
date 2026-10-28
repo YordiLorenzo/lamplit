@@ -221,6 +221,8 @@ export function openSettings(focus = null) {
 }
 
 export function closeSettings() {
+  // A hold on a Power row ends with it, also when a game's news closes it (launch.js).
+  letGo();
   state.mode = 'browse';
   els.settings.classList.remove('on');
   // Back up into the capsule, fading once most of the way there (style.css).

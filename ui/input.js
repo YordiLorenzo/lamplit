@@ -39,7 +39,11 @@ stir();
 window.addEventListener('blur', () => {
   clearTimeout(stillTimer);
   document.body.classList.add('still');
+  // A button let go in another window never comes here: a hold ends as Lamplit loses the keyboard.
+  letGo();
 });
+// Behind a game, likewise.
+document.addEventListener('visibilitychange', () => document.hidden && letGo());
 window.addEventListener('focus', stir);
 
 /**
@@ -47,8 +51,10 @@ window.addEventListener('focus', stir);
  * @param {'pad' | 'key' | 'mouse'} source
  */
 export function act(action, source) {
-  // Cross let go: a hold in progress ends there, before its ring is full (hold.js).
+  // Cross let go: a hold in progress ends there, before its ring is full (hold.js). So does any other press: a move, or
+  // what closes the menu or Settings it is in.
   if (action === 'ok-up') return letGo();
+  if (action !== 'ok') letGo();
   stir();
   // The press that ends the screensaver does nothing else; keys and clicks it catches itself (screensaver/index.js).
   if (wake(action)) return;

@@ -172,6 +172,8 @@ export function openDetails() {
  * @param {boolean} [away]
  */
 export function closeDetails(away = false) {
+  // A hold on one of its choices ends with it, also when a game's news closes it (launch.js).
+  letGo();
   state.mode = 'browse';
   state.art.open = false;
   state.typing = null;
@@ -195,6 +197,16 @@ export function backToMenu() {
 const choices = () => detailChoices(focused(), state.running, state.closer);
 
 /**
+ * The choices again, as what they offer changed underneath: the game ended, so Close game goes. Focus stays on a
+ * choice that is there.
+ */
+export function refreshChoices() {
+  if (state.mode !== 'details') return;
+  renderChoices();
+  showHints();
+}
+
+/**
  * The running game as the dock reads it: whether Lamplit knows which programs are its own, so the menu can offer
  * Close game, and whether it stopped responding. The menu shows the choice once the answer is in.
  * @param {string} id
@@ -216,7 +228,9 @@ async function readCloser(id) {
 function renderChoices() {
   letGo();
   const g = focused();
-  const rows = choices().map((c, i) => {
+  const list = choices();
+  state.detailsIdx = Math.min(state.detailsIdx, list.length - 1);
+  const rows = list.map((c, i) => {
     const row = document.createElement('div');
     row.className = 'row';
     row.classList.toggle('focus', i === state.detailsIdx);
@@ -274,19 +288,20 @@ export function holdChoice() {
   sfx.move();
   // Made again with focus on it, as a mouse may hold one that wasn't in focus.
   renderChoices();
-  hold(/** @type {HTMLElement} */ (els.dChoices.children[state.detailsIdx]), markGame);
+  // What it is for, as it was when the button went down: once the ring is full, that is what happens, to that game.
+  const target = { g: focused(), kind: detailChoice().kind, closer: state.closer };
+  hold(/** @type {HTMLElement} */ (els.dChoices.children[state.detailsIdx]), () => markGame(target));
 }
 
 /**
  * The menu's choices other than Play and Change art: the focused game in or out of the favourites, hidden, closed
- * while it runs, or, for a game added by hand, removed. The last two come once Cross has been held (holdChoice).
+ * while it runs, or, for a game added by hand, removed. The last two come once Cross has been held (holdChoice), on
+ * the game and choice the hold began on.
+ * @param {{ g?: Shown, kind?: import('./logic.js').DetailChoice['kind'], closer?: import('./api.js').DockGame | null }} [target]
  */
-export async function markGame() {
-  const g = focused();
-  const { kind } = detailChoice();
+export async function markGame({ g = focused(), kind = detailChoice().kind, closer = state.closer } = {}) {
   try {
-    if (kind === 'close') {
-      const closer = /** @type {import('./api.js').DockGame} */ (state.closer);
+    if (kind === 'close' && closer) {
       sfx.launch();
       closeDetails();
       // Rust closes the game it read, in its session, and nothing else. Asked to close, the game may ask whether to
