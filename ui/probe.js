@@ -30,7 +30,7 @@ const page = location.pathname.endsWith('dock.html') ? 'dock' : 'home';
 
 /**
  * @typedef {{ name: string, t0: number, frames: number[], work: number[], inputs: number, busy: number, end: number, cut: boolean,
- *   hidden: boolean }} Run
+ *   hidden: boolean, after?: number }} Run
  */
 /** @type {Run | null} */
 let run = null;
@@ -179,6 +179,7 @@ function report(r) {
   // The frames that came late (half a frame or more over the usual), and when: what the page did then is the cause.
   const late = timed.filter(([, gap]) => gap > 1.5 * at(gaps, 0.5)).slice(0, 4);
   if (late.length) line += `, late ${late.map(([when, gap]) => `${ms(gap)} at +${Math.round(when)}`).join(' ')}`;
+  if (r.after !== undefined) line += `, after ${Math.round(r.after)} ms`;
   if (r.inputs > 1) line += `, inputs ${r.inputs}`;
   if (!named.has(r.name)) line += ', cold';
   if (r.cut) line += ', cut';
@@ -298,7 +299,7 @@ async function home() {
       if (action === 'left' && s.section) return 'settings-back';
       if (action !== 'ok' || !row?.kind) return null;
       if (row.kind === 'power') return s.confirm === row.id ? 'settings-power-confirm' : 'settings-power-ask';
-      if (row.kind === 'savernow') return 'screensaver-show';
+      if (row.kind === 'savernow') return 'screensaver-wait';
       return `settings-select-${row.kind}`;
     }
     if (s.mode === 'details' && s.art && s.editing) {
@@ -345,6 +346,14 @@ async function home() {
     return null;
   };
 
+  /** When Show it now was pressed, for how long the screensaver took to start fading in. */
+  let waitFrom = NaN;
+  /** A press: begins its interaction, noting Show it now's. @param {string | null} n @param {number} [t] */
+  const press = (n, t = performance.now()) => {
+    if (n === 'screensaver-wait') waitFrom = t;
+    begin(n, t);
+  };
+
   // input.js's keys, which it doesn't share.
   /** @type {Record<string, string>} */
   const KEYS = {
@@ -362,7 +371,7 @@ async function home() {
       if (s.mode === 'find' && typing) return begin('find-type', e.timeStamp);
       if (s.typing && typing && (s.mode === 'details' || s.mode === 'add')) return begin(s.mode === 'add' ? 'add-type' : 'art-type', e.timeStamp);
       const action = KEYS[e.key];
-      if (action && !(e.repeat && !DIRECTIONS.includes(action))) begin(name(action, s), e.timeStamp);
+      if (action && !(e.repeat && !DIRECTIONS.includes(action))) press(name(action, s), e.timeStamp);
     },
     true
   );
@@ -370,17 +379,29 @@ async function home() {
   let still = snap();
   afterFinish = () => (still = snap());
   await Promise.all([
-    api.onPad((action) => begin(name(action, still))),
+    api.onPad((action) => press(name(action, still))),
     // Brought forward over a game (holding PS, the dock's Home): the screen settles in.
     api.onSummoned(() => heard('arrive')),
   ]);
-  // A toast, and the screensaver starting or woken (by a key it keeps to itself), start interactions of their own.
+  // Show it now waits (screensaver-wait) until the screensaver's frames come on time, unseen; screensaver-show starts as
+  // it fades in (#saver gets .on), also when it starts on its own after minutes without input, and its line says how
+  // long after the press that was.
+  new MutationObserver((list) => {
+    for (const m of list) {
+      if (/** @type {Element} */ (m.target).id !== 'saver' || flipped(m, 'on') !== true) continue;
+      if (run) finish();
+      begin('screensaver-show');
+      if (!Number.isNaN(waitFrom)) run.after = performance.now() - waitFrom;
+      waitFrom = NaN;
+    }
+  }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+  // A toast, and the screensaver woken (by a key it keeps to itself), start interactions of their own.
   watch('#clock, #saver', (m) => {
     const on = flipped(m, 'on');
     const id = /** @type {Element} */ (m.target).id;
     if (on === null) return null;
     if (id === 'toast') return on ? 'toast-show' : 'toast-hide';
-    if (id === 'saver') return on ? 'screensaver-start' : 'screensaver-wake';
+    if (id === 'saver') return on ? null : 'screensaver-wake';
     return null;
   });
 }
