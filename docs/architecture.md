@@ -73,7 +73,8 @@ ui/
                    (saver.js), the WebGL2 renderer with its particles, the scenes' shaders, palettes from the game art,
                    and preview.html to view it in a browser
   dock.html, dock/ the in-game dock's page: main.js draws it and acts on presses, logic.js (pure, tested in Node)
-                   works out its tiles, hints and spring, dock.css
+                   works out its tiles and hints, dock.css; it moves on springs.js and draws icons.js, plate.css's
+                   rim, ring.js, hold.js and pill.js
 tests/
   ipc/             payloads both sides are tested against
   *.test.mjs       the page's tests; page.mjs serves the page with a fake Tauri
@@ -216,13 +217,13 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   thread then waited with it. Should Windows still keep the foreground with the game, the controller works in the
   open dock all the same: Lamplit reads it whatever window is in front.
 - **Folding**, the island keeps its size and a `clip-path` squeezes it into the pill at its bottom centre on the
-  opening's spring, which then drops onto the edge and goes; its shadow, a layer of its own, fades at once. What it
+  close spring, which then drops onto the edge and goes; its shadow, a layer of its own, fades at once. What it
   shows fades in the squeeze's first 110 ms, tiles, top line and hints with it, which only then take their places for
   the next opening, out of sight. With reduced motion (Windows' animation effects off), the island and its shadow fade
   in place in 150 ms instead, opening and folding, and so does the real glass (a fold that stays where it is); Home's
   veil fades the same way, and the island fades into it without growing, on its own glass. The clip,
   translate and opacity run on the compositor (Chromium animates `clip-path` there), so nothing on the full-screen
-  window is laid out or painted again per frame. The page sends Rust the pill and the spring's curve
+  window is laid out or painted again per frame. The page sends Rust the pill and the close spring's curve
   (`dock_glass_fold`), and Rust squeezes the real glass's clip the same way with Windows.UI.Composition key frames,
   then hides the window 520 ms in. Only then does the window that was in front when the dock opened get the foreground
   back (or the game's window, if that one has gone): a game coming back to full speed, and window calls, cost the fold
@@ -243,12 +244,14 @@ shows, places and hides it with `win/dock.rs` rather than Tauri, which can only 
   no Close game at all.
 
 The page sizes the dock in hundredths of the screen's height (`--u`, from `screen.height`), as the home screen is sized
-in `vh`. The island opens and folds on a spring built as a CSS `linear()` curve, which overshoots once. Resized while
-open, it follows the face it shows on a quicker one that settles without going past (a press throws nothing), and so
-does the one focus ring, from tile to tile; opening, the ring comes on Resume with Resume's own fade. The ring is placed
-from the dock's bottom, as the dock is laid out, so what grows above doesn't move it. The list of sound outputs grows out of
-its tile: clipped to the tile and on its fill at first, it opens with the island and the ring. Behind the faces, the
-game's own art is drawn small (`createImageBitmap` scales it down off the page's thread) and blurred into a canvas,
+in `vh`. It moves on the springs both pages share (`ui/springs.js`): the island opens on lift, which overshoots once,
+and folds on close; resized while open, it follows the face it shows on snap, and so does the one focus ring
+(`ui/ring.js`), from tile to tile; with reduced motion it fades for the shared 150 ms. Opening, the ring comes on Resume
+with Resume's own fade. The ring is placed from the dock's bottom, as the dock is laid out, so what grows above doesn't
+move it. The list of sound outputs grows out of its tile: clipped to the tile and on its fill at first, it opens with
+the island and the ring. Its icons, Close game's hold and the news pill are the ones both pages draw (`ui/icons.js`,
+`ui/hold.js`, `ui/pill.js`); news shows on the island's own glass, so its pill has no plate of its own.
+Behind the faces, the game's own art is drawn small (`createImageBitmap` scales it down off the page's thread) and blurred into a canvas,
 which the page scales up to the island: a blur that costs nothing while the island moves. It shows at half strength,
 blurred enough that it reads as the game's colours rather than its shapes, and without a colour boost. CSS
 `backdrop-filter` couldn't see the game behind a transparent window at all. Once the island rests open,

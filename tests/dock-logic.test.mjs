@@ -1,7 +1,7 @@
 // The pure functions of the in-game dock's page (ui/dock/logic.js), in Node: `node --test tests/dock-logic.test.mjs`.
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { chips, hints, outputLabel, sessionText, spring, tiles, volumeText } from '../ui/dock/logic.js';
+import { chips, hints, outputLabel, sessionText, tiles, volumeText } from '../ui/dock/logic.js';
 import { ipc, known, like } from './fixtures.mjs';
 
 /** What the dock knows, as Rust sends it, with some parts changed. */
@@ -112,16 +112,4 @@ test('the hints say what the buttons do where the focus is', () => {
   assert.deepEqual(hints('tiles', 'close', data({ game: like(ipc('dock-game'), { force_close: false }) }))[0], ['ok', 'Hold to close game']);
   assert.deepEqual(hints('volume', 'resume', d), [['adjust', 'Volume'], ['ok', 'Mute'], ['down', 'Back']]);
   assert.deepEqual(hints('outputs', 'output', d), [['ok', 'Use'], ['back', 'Back']]);
-});
-
-test('the spring overshoots a little, settles at 1, and is quick', () => {
-  const { easing, ms } = spring(0.46, 0.7);
-  const points = easing.slice('linear('.length, -1).split(', ').map(Number);
-  assert.equal(points[0], 0);
-  assert.equal(points.at(-1), 1);
-  const peak = Math.max(...points);
-  assert.ok(peak > 1.02 && peak < 1.1, `peak ${peak}`);
-  assert.ok(ms > 300 && ms < 700, `${ms} ms`);
-  // Critically damped would never overshoot; this one comes close to it.
-  assert.ok(Math.max(...spring(0.46, 0.99).easing.slice(7, -1).split(', ').map(Number)) <= 1.0001);
 });

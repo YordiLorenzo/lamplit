@@ -17,8 +17,9 @@ Every release of Lamplit, newest first. The format follows
   game to close, and the dock offers Force close, held the same way, when the game isn't responding. The folded dock
   also shows for a moment when the headset turns on or off, a controller connects or disconnects, or a battery runs low.
   It is Lamplit's own window above the game, and over a game in exclusive full screen holding PS brings the home screen
-  as before. Settings > Overlay and pop-ups switches it off. Lamplit's log has a line on how smoothly each of the dock's
-  animations ran.
+  as before. Settings > Overlay and pop-ups switches it off. It moves on the home screen's springs and draws its icons:
+  Close game shows an app window with a cross rather than the power symbol. Lamplit's log has a line on how smoothly
+  each of the dock's animations ran.
 - A screensaver. After a few minutes without input, while Lamplit is in front and no game runs, generative art covers
   the screen, so a still home screen can't mark an OLED TV: seven scenes drawn with WebGL2 (Gallery, Drift, Dunes,
   Ocean, Ink, Nebula and Aurora), coloured from the art of your games, and finished with a soft bloom, a filmic tone
