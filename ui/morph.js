@@ -10,6 +10,9 @@ const TAP = spring(omega * omega, 2 * omega);
 document.documentElement.style.setProperty('--tap', TAP.easing);
 document.documentElement.style.setProperty('--tap-ms', `${TAP.ms}ms`);
 
+/** Reduce Motion is on: a plate fades in place rather than moving or changing shape. */
+export const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 /** Plates whose clip settles when its spring ends. */
 const watched = new WeakSet();
 /** The shape a plate holds after returning into its source, until it opens again. */
@@ -23,6 +26,11 @@ const held = new WeakMap();
  */
 export function widen(plate, wide) {
   if (plate.classList.contains('wide') === wide) return;
+  // Its faces cross-fade where they are (style.css), and the plate takes its width with them.
+  if (reduced()) {
+    plate.classList.toggle('wide', wide);
+    return;
+  }
   if (!watched.has(plate)) {
     watched.add(plate);
     plate.addEventListener('transitionend', (e) => {
@@ -44,6 +52,11 @@ export function widen(plate, wide) {
  */
 export function grow(plate, source, { back = false, done } = {}) {
   rest(plate);
+  // It fades where it opens, and closes where it is (style.css).
+  if (reduced()) {
+    done?.();
+    return;
+  }
   const own = plate.getBoundingClientRect();
   const round = parseFloat(getComputedStyle(plate).borderTopLeftRadius);
   const at = {

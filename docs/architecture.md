@@ -46,7 +46,8 @@ ui/
   find.js          the Find panel: the on-screen keyboard, the store filter and the sort
   launch.js        the starting screen
   settings.js      the Settings panel, a plate with two faces: Settings and Add a game
-  morph.js         one plate changing shape: widening for another face, growing out of the line it opens from
+  morph.js         one plate changing shape: widening for another face, growing out of the line it opens from;
+                   with Reduce Motion it fades in place
   logic.js         pure functions (the cover row's search and order, the Settings rows), tested in Node
   hints.js         the button hints and short messages
   sounds.js        interface sounds made with Web Audio

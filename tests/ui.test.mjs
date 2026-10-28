@@ -2810,6 +2810,80 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await close(page);
 }
 
+// 40. Reduce Motion: Settings, Find, Add a game and the toast fade in place for 150 ms instead of sliding, Add a game
+// takes its width at once with the faces fading where they are, the plate doesn't grow from the empty screen's line,
+// and the covers move without overshoot and don't bump at the end of the row.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.evaluate(() => (window.__settings = { library_programs: [] }));
+  /** Every frame for `ms` after `run` (in the page): what moves on `selector`, and its transition. */
+  const watch = (run, selector, ms = 300) =>
+    page.evaluate(
+      async ([run, selector, ms]) => {
+        const frames = [];
+        const t0 = performance.now();
+        new Function(run)();
+        while (performance.now() - t0 < ms) {
+          await new Promise((r) => requestAnimationFrame(r));
+          const els = [...document.querySelectorAll(selector)];
+          frames.push(els.map((el) => {
+            const st = getComputedStyle(el);
+            const ms = (v) => parseFloat(v) * (v.endsWith('ms') ? 1 : 1000);
+            return { el: el.id, place: `${st.transform} ${st.translate}`, clip: st.clipPath, fade: ms(st.transitionDuration.split(',')[0]) + ms(st.transitionDelay.split(',')[0]) };
+          }));
+        }
+        return frames.flat();
+      },
+      [run, selector, ms]
+    );
+  /** Nothing moves: each element keeps one place on every frame, unclipped, and has faded within 150 ms. */
+  const still = (frames) =>
+    frames.every((f) => f.place === frames.find((g) => g.el === f.el).place && f.clip === 'none' && f.fade > 0 && f.fade <= 150);
+  let f = await watch("window.__emit('pad', 'triangle')", '#settings');
+  check('Reduce Motion: Settings fades in place for 150 ms', still(f), JSON.stringify(f.slice(0, 3)));
+  await settled(page);
+  const k = await page.evaluate(() => [...document.querySelectorAll('#settingsList .row')].findIndex((r) => r.textContent.startsWith('Add a game')));
+  for (let i = 0; i < k; i++) await emit(page, 'pad', 'down');
+  await settled(page);
+  f = await watch("window.__emit('pad', 'ok')", '#settings, #settingsFace, #add');
+  const wide = await page.evaluate(() => Math.round((document.getElementById('settings').getBoundingClientRect().width / innerWidth) * 100));
+  check('... Add a game takes its width at once, its faces fading where they are', still(f) && wide === 46, `${wide} ${JSON.stringify(f.filter((x) => !still([x])).slice(0, 3))}`);
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  f = await watch("window.__emit('pad', 'square')", '#find');
+  check('... Find fades in place for 150 ms', still(f), JSON.stringify(f.slice(0, 3)));
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  f = await watch("window.__emit('notice', 'Hello')", '#toast');
+  check('... a toast fades in place for 150 ms', still(f), JSON.stringify(f.slice(0, 3)));
+  const covers = await page.evaluate(() => {
+    const ease = getComputedStyle(document.querySelector('.cover')).transitionTimingFunction;
+    // A cubic-bezier with a y beyond 0 to 1 overshoots.
+    return { ease, overshoot: [...ease.matchAll(/cubic-bezier\(([^)]*)\)/g)].some((m) => m[1].split(',').map(Number).some((v, i) => i % 2 === 1 && (v > 1 || v < 0))) };
+  });
+  await emit(page, 'pad', 'left');
+  const bumps = await page.evaluate(() => document.querySelector('.cover.focus').getAnimations().filter((a) => !('transitionProperty' in a)).length);
+  check('... the covers move without overshoot, and the end of the row doesn\'t bump', !covers.overshoot && bumps === 0, JSON.stringify({ ...covers, bumps }));
+  await close(page);
+}
+{
+  const page = await open({ games: [] });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.evaluate(() => (window.__settings = { library_programs: [] }));
+  await until(page, () => document.getElementById('empty').textContent === 'No games found');
+  const grows = await page.evaluate(() => {
+    window.__emit('pad', 'ok');
+    return document.getAnimations().filter((a) => a.effect?.target?.id === 'settings' && !('transitionProperty' in a)).length;
+  });
+  await settled(page);
+  const at = await page.evaluate(() => ({ translate: getComputedStyle(document.getElementById('settings')).translate, on: document.getElementById('settings').classList.contains('on') }));
+  check('Reduce Motion: from the empty home screen the plate fades in at its place', grows === 0 && at.on && at.translate === 'none', JSON.stringify({ grows, ...at }));
+  await close(page);
+}
+
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));
 check('every command Rust registers is called by a test', untested.length === 0, untested.join(', '));

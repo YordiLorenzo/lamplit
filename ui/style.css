@@ -901,3 +901,15 @@ body:has(#settings.on) #empty { opacity: 0; }
   transition: transform 260ms var(--glide), opacity 220ms ease;
 }
 #toast.on { transform: translate(-50%, 0); opacity: 1; }
+
+/* Reduce Motion: Settings, Find, Add a game and the toast fade in place for 150 ms rather than sliding. The faces of
+   Settings' plate fade where they are in the same 150 ms, one out and then the other in, so their titles never show
+   over each other, while the plate takes its width at once (morph.js). The covers move without the overshoot of
+   --spring, and the end of the row doesn't bump (library.js move). */
+@media (prefers-reduced-motion: reduce) {
+  .panel, #settings, #settings.grown { transform: none; transition: opacity 150ms ease; }
+  .face, #add, #settings:has(#add.on) #settingsFace { translate: none; transition: opacity 75ms ease; }
+  #settingsFace, #add.on, #settings.grown #add.on { translate: none; transition: opacity 75ms ease 75ms; }
+  #toast, #toast.on { transform: translate(-50%, 0); transition: opacity 150ms ease; }
+  .cover { transition: transform 170ms var(--glide), scale 420ms var(--glide), box-shadow 200ms ease, opacity 250ms ease; }
+}

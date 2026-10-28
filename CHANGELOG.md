@@ -57,6 +57,8 @@ Every release of Lamplit, newest first. The format follows
 
 ### Changed
 
+- With Reduce Motion on, Settings, Find, Add a game and messages fade in place rather than sliding, the covers move
+  without overshooting, and the end of the row no longer bumps.
 - Add a game opens inside the Settings panel rather than as a second panel over it: Settings moves out, the panel
   widens, and Add a game comes in. Back returns to Settings on Add a game. On the empty home screen the panel grows
   out of the "No games found" line, and goes back into it.

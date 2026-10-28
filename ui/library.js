@@ -6,6 +6,7 @@ import { assetUrl, libraryRemoveGame, librarySetFavourite, librarySetHidden } fr
 import { showHints, toast } from './hints.js';
 import { face, lift, lower, settle, showSheet } from './lift.js';
 import { accentOf, detailChoices, folderParts, narrowed, playTimeText, playedText, rowOf, storeWarning, words } from './logic.js';
+import { reduced } from './morph.js';
 import { sfx } from './sounds.js';
 import { byId, els, focused, icon, state, storeName, withStoreLogo } from './state.js';
 
@@ -403,10 +404,13 @@ export function move(delta) {
   const next = Math.max(0, Math.min(state.games.length - 1, state.idx + delta));
   if (next === state.idx) {
     sfx.edge();
-    focused().el.animate([{ translate: '0 0' }, { translate: `${Math.sign(delta) * 1.2}vh 0` }, { translate: '0 0' }], {
-      duration: 200,
-      easing: 'ease-out',
-    });
+    // The end of the row: the cover bumps against it, and with Reduce Motion only the sound says so.
+    if (!reduced()) {
+      focused().el.animate([{ translate: '0 0' }, { translate: `${Math.sign(delta) * 1.2}vh 0` }, { translate: '0 0' }], {
+        duration: 200,
+        easing: 'ease-out',
+      });
+    }
     return;
   }
   state.idx = next;
