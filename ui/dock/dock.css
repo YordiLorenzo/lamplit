@@ -109,8 +109,8 @@ body.pointer { cursor: default; }
    the first two (.glass, main.js takeGlass): they fade out over it, and come back at once before the island moves. */
 #island::before { content: ''; position: absolute; inset: 0; z-index: 0; background: rgb(14 13 22 / .94); }
 #backdrop, .tint, .rim { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-#backdrop { z-index: 0; opacity: 0; filter: saturate(1.35); transition: opacity 500ms ease; }
-#island.art #backdrop { opacity: .75; }
+#backdrop { z-index: 0; opacity: 0; filter: saturate(.9); transition: opacity 500ms ease; }
+#island.art #backdrop { opacity: .5; }
 #island.glass::before, #island.glass #backdrop { opacity: 0; transition: opacity 260ms ease; }
 .tint {
   z-index: 1;

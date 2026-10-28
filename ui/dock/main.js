@@ -372,9 +372,9 @@ function paintBackdrop(img) {
   els.island.classList.toggle('art', !!img);
   if (!img) return tint(LAMP);
   // A little larger than the canvas, so the blur doesn't darken its edges.
-  const scale = Math.max(canvas.width / img.width, canvas.height / img.height) * 1.15;
+  const scale = Math.max(canvas.width / img.width, canvas.height / img.height) * 1.4;
   const [w, h] = [img.width * scale, img.height * scale];
-  ctx.filter = 'blur(5px)';
+  ctx.filter = 'blur(12px)';
   ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
   ctx.filter = 'none';
   // The art's colour, as the home screen picks a game's accent.

@@ -1,6 +1,8 @@
 // The in-game dock's page (ui/dock.html) in Chromium with the fake Tauri, run by ui.test.mjs: opening and folding,
 // every tile, holding Cross to close a game, the controller, keyboard and mouse, the game's art and play time, news,
 // and its size in the window Rust gives it. And the switch in Settings that turns the dock off.
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pageFile } from './contract.mjs';
 import { ipc, known, like } from './fixtures.mjs';
@@ -823,6 +825,43 @@ export async function dockTests({ open, close, check, shots }) {
     const ringOnTile = near(Object.values(first.ring), Object.values(tile));
     check('the list of outputs grows out of its tile: clipped to it first, the ring still on it, the rows yet to come', near(insets(first.clip), from) && ringOnTile && first.rows < 0.1, `${first.clip} ${JSON.stringify(from)} ${JSON.stringify(first.ring)} ${JSON.stringify(tile)} ${first.rows}`);
     check('... and then it is open all round, its rows shown', insets(last.clip).every((n) => n < 0) && last.rows === 1, `${last.clip} ${last.rows}`);
+    await close(page);
+  }
+
+  // D24. The island's own glass, where Windows has no real glass: the game's art blurred into soft colour, shown at
+  // half strength with no colour boost, so art with a hard edge between bright yellow and black reads as a calm
+  // gradient rather than shapes.
+  {
+    const page = await openDock();
+    const dir = mkdtempSync(path.join(tmpdir(), 'lamplit-dock-art-'));
+    const file = path.join(dir, 'hero.png');
+    const png = await page.evaluate(() => {
+      const c = Object.assign(document.createElement('canvas'), { width: 640, height: 360 });
+      const g = c.getContext('2d');
+      g.fillStyle = '#000';
+      g.fillRect(0, 0, 640, 360);
+      g.fillStyle = '#f5e600';
+      g.fillRect(0, 0, 320, 360);
+      return c.toDataURL('image/png').split(',')[1];
+    });
+    writeFileSync(file, Buffer.from(png, 'base64'));
+    await emit(page, 'dock', closed);
+    await page.evaluate((art) => (window.__settings.game = { ...window.__settings.game, id: 'steam:edge', art }), { portrait: file, hero: file, logo: null });
+    await emit(page, 'dock', opened);
+    await until(page, () => document.getElementById('island').classList.contains('art'));
+    await settled(page);
+    const glass = await page.evaluate(() => {
+      const canvas = document.getElementById('backdrop');
+      const row = canvas.getContext('2d').getImageData(0, canvas.height >> 1, canvas.width, 1).data;
+      const light = [];
+      for (let i = 0; i < row.length; i += 4) light.push(0.2126 * row[i] + 0.7152 * row[i + 1] + 0.0722 * row[i + 2]);
+      const steepest = Math.max(...light.slice(1).map((l, i) => Math.abs(l - light[i])));
+      const s = getComputedStyle(canvas);
+      const boost = Math.max(1, ...[...s.filter.matchAll(/saturate\(([\d.]+)\)/g)].map((m) => Number(m[1])));
+      return { steepest, spread: Math.max(...light) - Math.min(...light), opacity: Number(s.opacity), boost };
+    });
+    rmSync(dir, { recursive: true, force: true });
+    check('the art glass softens a hard edge into a gradient, at half strength and with no colour boost', glass.spread > 60 && glass.steepest < 12 && glass.opacity <= 0.5 && glass.boost === 1, JSON.stringify(glass));
     await close(page);
   }
 

@@ -228,8 +228,9 @@ does the one focus ring, from tile to tile; opening, the ring comes on Resume wi
 from the dock's bottom, as the dock is laid out, so what grows above doesn't move it. The list of sound outputs grows out of
 its tile: clipped to the tile and on its fill at first, it opens with the island and the ring. Behind the faces, the
 game's own art is drawn small (`createImageBitmap` scales it down off the page's thread) and blurred into a canvas,
-which the page scales up to the island: a blur that costs nothing while the island moves,
-where CSS `backdrop-filter` couldn't see the game behind a transparent window at all. Once the island rests open,
+which the page scales up to the island: a blur that costs nothing while the island moves. It shows at half strength,
+blurred enough that it reads as the game's colours rather than its shapes, and without a colour boost. CSS
+`backdrop-filter` couldn't see the game behind a transparent window at all. Once the island rests open,
 Windows' real glass takes the art's place where Windows 11 22H2 or later has transparency effects on (`dock/glass.rs`,
 `win/glass.rs`): a Windows.UI.Composition visual in the dock's own window, behind the page, filled with the host
 backdrop (what is behind the window, blurred live by Windows) and clipped to the island's rounded rectangle. Acrylic
