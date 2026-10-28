@@ -184,7 +184,7 @@ const state = (page) =>
   check('ended returns to browsing', !s.overlay && s.hint.includes('Play') && !s.hint.includes('Back to game'), s.hint);
   await page.keyboard.press('i');
   s = await state(page);
-  check('a game that ran counts as played', s.dPlayed === 'today', s.dPlayed);
+  check('a game that ran counts as played', s.dPlayed === 'Played today', s.dPlayed);
   await close(page);
 }
 
@@ -217,7 +217,7 @@ const state = (page) =>
   check('Escape cancels a launch', s.calls.includes('launch_cancel') && !s.overlay);
   await page.keyboard.press('i');
   s = await state(page);
-  check("a cancelled launch doesn't count as played", s.dPlayed === 'Not yet', s.dPlayed);
+  check("a cancelled launch doesn't count as played", s.dPlayed === 'Not played yet', s.dPlayed);
   await page.keyboard.press('Escape');
   await page.keyboard.press('Enter');
   await emit(page, 'launch-step', step({ id: 'pc:1', key: 'timeout', state: 'warn', label: "Game 001 hasn't started yet", store: 'steam' }));
@@ -959,12 +959,14 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
     page.evaluate(() => ({
       choices: [...document.querySelectorAll('#dChoices .row')].map((r) => r.textContent),
       focus: document.querySelector('#dChoices .row.focus')?.textContent ?? null,
+      pressed: document.querySelector('#dChoices .row.focus')?.getAttribute('aria-pressed') ?? null,
       time: document.getElementById('dTime').textContent,
+      line: document.getElementById('dMeta').innerText.replace(/\s+/g, ' '),
       meta: document.getElementById('meta').innerText.replace(/\s+/g, ' '),
     }));
   await page.keyboard.press('i');
   let d = await details();
-  check('a game Lamplit never saw run has no play time', d.time === 'Not counted yet' && !d.meta.includes('played'), JSON.stringify(d));
+  check('a game Lamplit never saw run has no play time', d.time === '' && /^[^·]+ · Not played yet$/.test(d.line) && !d.meta.includes('played'), JSON.stringify(d));
   await page.keyboard.press('Escape');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
@@ -973,15 +975,15 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('i');
   d = await details();
   let s = await state(page);
-  check('Details show hours and minutes played', d.time === '12 h 34 min', d.time);
-  check('Details open on Play, with the other choices below', d.focus === 'Play' && JSON.stringify(d.choices) === '["Play","Add to favourites","Change art","Hide this game"]' && s.hint.includes('✕Play'), `${JSON.stringify(d)} ${s.hint}`);
+  check('the menu has one line under the name: store, last played and hours played', d.time === '12 h' && /^[^·]+ · (Played|Not played)[^·]+ · 12 h$/.test(d.line), JSON.stringify(d));
+  check('Details open on Play, with the other choices below', d.focus === 'Play' && JSON.stringify(d.choices) === '["Play","Favourite","Change art","Hide this game"]' && s.hint.includes('✕Play'), `${JSON.stringify(d)} ${s.hint}`);
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await idle(page);
   d = await details();
   s = await state(page);
-  check('✕ on Add to favourites asks Rust', JSON.stringify(s.lastCall) === '["library_set_favourite",{"id":"pc:3","on":true}]', JSON.stringify(s.lastCall));
-  check('a favourite moves to the front and keeps focus, Details open', s.details && s.focusIndex === 0 && s.focusName === 'Game 003' && d.focus === 'Remove from favourites', `${s.focusIndex} ${s.focusName} ${d.focus}`);
+  check('✕ on Favourite asks Rust', JSON.stringify(s.lastCall) === '["library_set_favourite",{"id":"pc:3","on":true}]', JSON.stringify(s.lastCall));
+  check('a favourite moves to the front and keeps focus, Details open', s.details && s.focusIndex === 0 && s.focusName === 'Game 003' && d.focus === 'Favourite' && d.pressed === 'true', `${s.focusIndex} ${s.focusName} ${d.focus}`);
   check('Details hint Select on a choice other than Play', s.hint.includes('✕Select'), s.hint);
   await page.keyboard.press('Escape');
   await page.keyboard.press('ArrowRight');
@@ -1687,7 +1689,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   check(`${at}: the menu lifts the focused cover over a blurred, dimmed screen`, l.on && l.veil.opacity === '1' && l.veil.filter.includes('blur') && l.coverHidden, JSON.stringify(l));
   check(`${at}: the lifted cover is larger than in the row, and higher`, l.card.h > rest.cover.h * 1.4 && l.card.y + l.card.h / 2 < rest.cover.y + rest.cover.h / 2 - l.h * 0.1, JSON.stringify([rest.cover, l.card]));
   check(`${at}: the menu opens beside the cover, inside the screen`, l.menuOn && l.menu.x >= l.card.x + l.card.w && l.menu.x + l.menu.w <= l.w * 0.95 + 1 && l.menu.y >= 0 && l.menu.y + l.menu.h <= l.h, JSON.stringify([l.card, l.menu]));
-  check(`${at}: the art behind holds still while the menu is up`, l.drift === 'paused', l.drift);
+  check(`${at}: the art behind keeps drifting while the menu is up, so the GPU stays at speed`, l.drift === 'running', l.drift);
   await page.screenshot({ path: path.join(shots, `menu-${vp.width}x${vp.height}.png`) });
   await page.keyboard.press('Escape');
   await until(page, () => !document.getElementById('lift').classList.contains('shown'));
@@ -2972,13 +2974,13 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await close(page);
 }
 
-// 43. One glass for every plate (plate.css): Settings, Find, the game menu, Change art and the toast have the same
+// 43. One glass for every plate (plate.css): Settings, Find, the game menu (with Change art) and the toast have the same
 // fill, rim, shadow and corners, and the fill is more opaque over brighter art.
 {
   const page = await open({ games: [game(1), game(2, { noArt: true })] });
   const looks = () =>
     page.evaluate(() =>
-      ['#settings', '#find', '#details', '#artPick', '#toast'].map((sel) => {
+      ['#settings', '#find', '#sheet', '#toast'].map((sel) => {
         const st = getComputedStyle(document.querySelector(sel));
         return { sel, fill: st.backgroundColor, shadow: st.boxShadow, round: st.borderTopLeftRadius, border: st.borderTopWidth };
       })
@@ -3091,6 +3093,129 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     return out;
   });
   check("a pill is the plate's glass round its icon's badge and its text", pill.drawn === 'icons' && pill.text === 'Controller battery low' && pill.warn && pill.round && pill.glass, JSON.stringify(pill));
+  await close(page);
+}
+
+// 45. A game's menu is one plate that grows out of the card's edge: a sliver on the card's side, 8vh shorter than the
+// card, that widens to the menu on the tap spring, its rows fading in from 45% of the way. One line under the name,
+// the folder dim at the bottom, Play lit and focused first, every row with its icon from the shared set, Favourite one
+// row that switches its star. Change art is the same plate: it grows from the menu's size to its own while the menu
+// stays where it was, and the card cross-fades as focus moves through the covers. With Reduce Motion it all fades in
+// place.
+{
+  const page = await open({ games: [game(1, { last_played: Math.floor(Date.now() / 1000) - 86400, play_minutes: 1860 }), game(2), game(3)] });
+  await page.evaluate((files) => (window.__settings = { library_art_search: files.map((portrait, i) => ({ appid: i + 1, name: `Match ${i + 1}`, portrait })) }), [art[0].portrait, art[0].hero, null]);
+  /** What shows of a plate: its box, less its clip, moved by its translate. */
+  const shown = (sel) =>
+    page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      const r = el.getBoundingClientRect();
+      const st = getComputedStyle(el);
+      const v = (st.clipPath.match(/inset\(([^)]*?)(?: round|\))/)?.[1] ?? '0px').split(' ').map(parseFloat);
+      const [t, ri, b, l] = [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]];
+      // The box has the translate in it already.
+      return [r.left + l, r.top + t, r.right - ri, r.bottom - b].map(Math.round);
+    }, sel);
+  // The grow, stopped where it starts.
+  const start = await page.evaluate(() => {
+    window.__emit('pad', 'menu');
+    const grow = document.getElementById('sheet').getAnimations().find((a) => !('transitionProperty' in a));
+    grow.pause();
+    grow.currentTime = grow.effect.getTiming().delay;
+    const card = document.getElementById('card');
+    const c = { left: card.offsetLeft, top: card.offsetTop, width: card.offsetWidth, height: card.offsetHeight };
+    const row = getComputedStyle(document.getElementById('details'));
+    return { card: [c.left, c.top, c.left + c.width, c.top + c.height].map(Math.round), delay: grow.effect.getTiming().delay, ms: grow.effect.getTiming().duration, rowsAfter: parseFloat(row.transitionDelay) * (row.transitionDelay.endsWith('ms') ? 1 : 1000) };
+  });
+  const sliver = await shown('#sheet');
+  const vh = 1080 / 100;
+  check(
+    'the menu grows out of a sliver on the card\'s edge, 8vh shorter than the card, once the card is most of the way up',
+    Math.abs((sliver[0] + sliver[2]) / 2 - start.card[2]) <= 2 && Math.abs(sliver[2] - sliver[0] - 3 * vh) <= 2 && Math.abs(sliver[1] - (start.card[1] + 4 * vh)) <= 2 && Math.abs(sliver[3] - (start.card[3] - 4 * vh)) <= 2 && start.delay > 0,
+    JSON.stringify({ sliver, ...start })
+  );
+  check('... on the tap spring, its rows fading in from 45% of the way', start.ms === SPRINGS.tap.ms && Math.abs(start.rowsAfter - (start.delay + 0.45 * SPRINGS.tap.ms)) <= 1, JSON.stringify(start));
+  await page.evaluate(() => document.getElementById('sheet').getAnimations().forEach((a) => a.finish()));
+  await settled(page);
+  const menu = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#dChoices .row')];
+    const box = (el) => el.getBoundingClientRect();
+    return {
+      plates: [...document.querySelectorAll('#lift aside, #lift section')].map((e) => e.id).join(),
+      line: document.getElementById('dMeta').innerText.replace(/\s+/g, ' '),
+      folderBelow: box(document.getElementById('dDir')).top >= box(rows.at(-1)).bottom,
+      folderDim: getComputedStyle(document.getElementById('dDir')).color === getComputedStyle(document.documentElement).getPropertyValue('--ink-dim').trim().replace(/\s/g, '') || getComputedStyle(document.getElementById('dDir')).color !== getComputedStyle(document.getElementById('dName')).color,
+      icons: rows.map((r) => r.querySelector('use')?.getAttribute('href')).join(),
+      shared: rows.every((r) => document.querySelector(r.querySelector('use').getAttribute('href'))?.closest('svg')?.id === 'icons'),
+      first: rows[0].classList.contains('primary') && rows[0].classList.contains('focus') && rows[0].textContent === 'Play',
+      lit: getComputedStyle(rows[0]).backgroundImage.includes('gradient') && !getComputedStyle(rows[1]).backgroundImage.includes('gradient'),
+    };
+  });
+  check('one plate holds the menu and Change art', menu.plates === 'sheet,details,artPick', menu.plates);
+  check('... one line under the name, the folder dim at the bottom', /^[^·]+ · Played yesterday · 31 h$/.test(menu.line) && menu.folderBelow && menu.folderDim, JSON.stringify(menu));
+  check('... Play lit and focused first, every row with its icon from the shared set', menu.first && menu.lit && menu.shared && menu.icons === '#i-play,#i-star,#i-photo,#i-eye-off', JSON.stringify(menu));
+  await page.evaluate((list) => {
+    window.__settings.library_set_favourite = ({ id, on }) => list.map((g) => (g.id === id ? { ...g, favourite: on } : g));
+  }, await page.evaluate(() => window.__state?.games ?? null) ?? [game(1, { last_played: 0 }), game(2), game(3)]);
+  await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  const star = await page.evaluate(() => {
+    const row = document.querySelector('#dChoices .row.focus');
+    return { label: row.textContent, star: row.querySelector('use').getAttribute('href'), pressed: row.getAttribute('aria-pressed') };
+  });
+  check('... Favourite is one row that fills its star', JSON.stringify(star) === JSON.stringify({ label: 'Favourite', star: '#i-star-on', pressed: 'true' }), JSON.stringify(star));
+  // Change art: the plate's clip starts at the menu's box, the menu where it was.
+  await emit(page, 'pad', 'down');
+  await settled(page);
+  const before = await page.evaluate(() => {
+    const r = document.getElementById('sheet').getBoundingClientRect();
+    const m = document.getElementById('details').getBoundingClientRect();
+    return { plate: [r.left, r.top, r.right, r.bottom].map(Math.round), menu: [m.left, m.top, m.right, m.bottom].map(Math.round) };
+  });
+  const turn = await page.evaluate(() => {
+    window.__emit('pad', 'ok');
+    const grow = document.getElementById('sheet').getAnimations().find((a) => !('transitionProperty' in a));
+    grow.pause();
+    const m = document.getElementById('details').getBoundingClientRect();
+    return { name: !!grow, menu: [m.left, m.top, m.right, m.bottom].map(Math.round), on: document.getElementById('artPick').classList.contains('on') };
+  });
+  const clipAt = await shown('#sheet');
+  const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) <= 2);
+  check("Change art grows the same plate from the menu's size, the menu staying where it was", turn.on && near(clipAt, before.plate) && near(turn.menu, before.menu), JSON.stringify({ before, turn, clipAt }));
+  await page.evaluate(() => document.getElementById('sheet').getAnimations().forEach((a) => a.finish()));
+  await settled(page);
+  const own = await page.evaluate(() => {
+    const p = document.getElementById('sheet').getBoundingClientRect();
+    const a = document.getElementById('artPick').getBoundingClientRect();
+    return [Math.round(p.width - a.width), Math.round(p.height - a.height)];
+  });
+  check('... to its own size', own[0] === 0 && Math.abs(own[1]) <= 1, JSON.stringify(own));
+  await until(page, () => document.querySelectorAll('#artTiles .tile').length === 3);
+  const fade = await page.evaluate(() => {
+    window.__emit('pad', 'right');
+    const was = document.querySelector('#face .was');
+    return { was: !!was, fading: was?.getAnimations().length === 1 };
+  });
+  check('... and the card cross-fades as focus moves through the covers', fade.was && fade.fading, JSON.stringify(fade));
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const moves = await page.evaluate(() => {
+    window.__emit('pad', 'menu');
+    return document.getElementById('sheet').getAnimations().filter((a) => !('transitionProperty' in a)).length;
+  });
+  await settled(page);
+  const fades = await page.evaluate(() =>
+    ['#sheet', '#details'].map((sel) => {
+      const st = getComputedStyle(document.querySelector(sel));
+      const ms = (v) => parseFloat(v) * (v.endsWith('ms') ? 1 : 1000);
+      return ms(st.transitionDuration.split(',')[0]) + ms(st.transitionDelay.split(',')[0]);
+    })
+  );
+  check('Reduce Motion: the menu fades in beside the card, no grow', moves === 0 && fades.every((f) => f > 0 && f <= 150), JSON.stringify({ moves, fades }));
   await close(page);
 }
 

@@ -11,6 +11,7 @@ import {
   byPlayed,
   counts,
   detailChoices,
+  metaParts,
   focusIndex,
   folderParts,
   lightOf,
@@ -145,9 +146,13 @@ describe('favourites and hidden games in the row', () => {
 
 describe('detailChoices', () => {
   const labels = (g, running = null, removing = false) => detailChoices(g, running, removing).map((c) => c.label);
-  test('Play first, then favourites, art and hiding', () => {
-    assert.deepEqual(labels(game('a', 'A')), ['Play', 'Add to favourites', 'Change art', 'Hide this game']);
-    assert.deepEqual(labels(game('a', 'A', { favourite: true })), ['Play', 'Remove from favourites', 'Change art', 'Hide this game']);
+  test('Play first, then favourites, art and hiding, each with its icon', () => {
+    assert.deepEqual(labels(game('a', 'A')), ['Play', 'Favourite', 'Change art', 'Hide this game']);
+    assert.deepEqual(detailChoices(game('a', 'A'), null).map((c) => c.icon), ['i-play', 'i-star', 'i-photo', 'i-eye-off']);
+  });
+  test('Favourite is one row that switches: its star is filled while the game is one', () => {
+    assert.deepEqual(labels(game('a', 'A', { favourite: true })), ['Play', 'Favourite', 'Change art', 'Hide this game']);
+    assert.equal(detailChoices(game('a', 'A', { favourite: true }), null)[1].icon, 'i-star-on');
   });
   test('the running game goes back to the game', () => assert.equal(labels(game('a', 'A'), 'a')[0], 'Back to game'));
   test('a game added by hand can be removed, after ✕ once asks', () => {
@@ -155,6 +160,17 @@ describe('detailChoices', () => {
     assert.equal(labels(added).at(-1), 'Remove from Lamplit');
     assert.equal(labels(added, null, true).at(-1), 'Press again to remove');
     assert.equal(detailChoices(added, null).at(-1).kind, 'remove');
+    assert.equal(detailChoices(added, null).at(-1).icon, 'i-remove');
+  });
+});
+
+describe('metaParts', () => {
+  const now = 1_800_000_000;
+  test('the line under a game menu\'s name: store, last played, hours', () => {
+    assert.deepEqual(metaParts(game('a', 'A', { last_played: now - 86400, play_minutes: 1860 }), 'Steam', now), ['Steam', 'Played yesterday', '31 h']);
+  });
+  test('a game Lamplit never saw run, outside any store', () => {
+    assert.deepEqual(metaParts(game('a', 'A', { last_played: 0, play_minutes: 0 }), null, now), ['Not from a store', 'Not played yet']);
   });
 });
 

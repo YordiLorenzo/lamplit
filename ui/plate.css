@@ -4,6 +4,8 @@
 
 :root {
   --u: 1vh;
+  /* Lamplit's lamp amber: Play and Resume, a focus's glow, a hold's ring. */
+  --lamp: 252 165 69;
   /* The plate: the glass every sheet, panel, popover and toast is drawn on. Its fill is darker and more opaque over
      bright art, so text on it stays readable: --plate-light is the art's brightness, 0 to 1, which each page sets from
      the art behind it. A thin rim of light along its top edge and a dark hairline round it, as on glass, and a soft
@@ -36,7 +38,7 @@
   translate: var(--x, 0) var(--y, 0);
   box-shadow:
     0 0 0 calc(var(--u) * .34) #fff,
-    0 0 calc(var(--u) * 3) calc(var(--u) * .3) rgb(var(--ring-glow, 252 165 69) / .5);
+    0 0 calc(var(--u) * 3) calc(var(--u) * .3) rgb(var(--ring-glow, var(--lamp)) / .5);
   opacity: 0;
   pointer-events: none;
   transition:
@@ -64,7 +66,7 @@
 .hold .track { stroke: rgb(255 255 255 / .16); }
 /* Empty, the fill is hidden outright: even a stroke of no length leaves a mark at its start. */
 .hold .fill {
-  stroke: rgb(var(--hold-colour, 252 165 69));
+  stroke: rgb(var(--hold-colour, var(--lamp)));
   stroke-dasharray: 100;
   stroke-dashoffset: 100;
   opacity: 0;
@@ -99,7 +101,7 @@
   background: rgb(255 255 255 / .12);
 }
 .news .badge svg { width: calc(var(--u) * 2.7); height: calc(var(--u) * 2.7); }
-.news.warn .badge { background: rgb(252 165 69 / .26); color: rgb(252 165 69); }
+.news.warn .badge { background: rgb(var(--lamp) / .26); color: rgb(var(--lamp)); }
 .news .text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* Reduce Motion: the ring is where the focus is at once, and a let-go hold empties at once. */

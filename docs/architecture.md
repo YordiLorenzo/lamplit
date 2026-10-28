@@ -38,7 +38,8 @@ ui/
   state.js         the page's state and its elements
   input.js         controller, keyboard and mouse as one set of actions
   library.js       the cover row, the focused game and its menu
-  lift.js          a game's menu lifting its cover over the blurred screen
+  lift.js          a game's menu lifting its cover over the blurred screen, with one plate beside it that grows out
+                   of the card's edge and holds the menu and Change art as its two faces
   art.js           Change art, in a game's menu
   add.js           Add a game, a face of Settings' plate: the programs Lamplit passed over, browsing the drives,
                    naming the game

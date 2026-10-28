@@ -63,10 +63,10 @@ body.pointer { cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .hero { animation: none; }
 }
-/* Nobody is using Lamplit (input.js), or a game's menu is up: the drift holds where it is. Under a panel it keeps
-   going: held still, the GPU drops to its idle clocks within 2 s, and the panel's close then stutters on screen while
-   they come back (about 12 W more while a panel is open, the same as the home row). */
-body.still .hero, body:has(#lift.on) .hero { animation-play-state: paused; }
+/* Nobody is using Lamplit (input.js): the drift holds where it is. Under a panel and a game's menu it keeps going:
+   held still, the GPU drops to its idle clocks within 2 s, and what closes then stutters on screen while they come
+   back (about 12 W more while one is open, the same as the home row). */
+body.still .hero { animation-play-state: paused; }
 
 .shade {
   position: absolute;
@@ -485,6 +485,8 @@ body.launching .cover.focus { scale: 1.1; }
   background: linear-gradient(transparent, rgb(0 0 0 / .75));
 }
 #face.has-art .name { display: none; }
+/* The art that was, fading out over the next as Change art moves through the covers (lift.js face). */
+#face .was { position: absolute; inset: 0; background: center / cover no-repeat; }
 /* Light from above on a glossy card. */
 #face::after {
   content: '';
@@ -508,59 +510,81 @@ body.launching .cover.focus { scale: 1.1; }
   to   { opacity: 1; transform: translateX(60%); }
 }
 
-/* The menu, and Change art, beside the card: they slide out from behind it. Centred on the card, so a full one has
-   room above and below it, between the screen's safe area and the hints (6vh over its bottom edge). */
-.sheet {
+/* The menu's plate beside the card (lift.js): it grows out of the card's edge once the card is most of the way up
+   (--grow-after), from a sliver to its full size on the tap spring, and goes back into it on lowering (morph.js). Its
+   two faces, the menu and Change art, take turns. Each is laid out at its own size where it shows, centred on the
+   card and against its edge, and the plate takes the size of the one that shows (lift.js --sheet-h), so the face
+   that goes stays where it was while the plate's clip moves from one to the other. A full face has room above and
+   below it, between the screen's safe area and the hints (6vh over its bottom edge). */
+#sheet {
   --middle: calc(var(--card-y) + var(--card-h) / 2);
   position: absolute;
   top: var(--middle);
-  translate: 0 -50%;
   left: var(--menu-x);
   width: var(--menu-w);
-  max-height: calc(2 * min(var(--middle) - var(--safe-y), 100vh - var(--middle) - var(--safe-y) - 6vh));
-  display: flex;
-  flex-direction: column;
-  padding: 3.6vh 4vh;
+  height: var(--sheet-h, auto);
+  transform: translateY(-50%);
   border-radius: var(--plate-radius);
   background: var(--plate-fill);
   box-shadow: var(--plate-rim), var(--plate-shadow);
+  overflow: clip;
   opacity: 0;
-  transform: translateX(calc(var(--side) * -5vh)) scale(.96);
-  transform-origin: calc(50% - var(--side) * 50%) 50%;
   pointer-events: none;
-  transition: opacity 160ms ease, transform var(--close-ms) var(--close);
+  transition: opacity 160ms ease;
 }
-#lift.on .sheet.on {
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
-  transition: opacity 240ms ease 150ms, transform var(--lift-ms) var(--lift) 90ms;
+#sheet.art { left: var(--wide-x); width: var(--wide-w); }
+#lift.on #sheet { opacity: 1; pointer-events: auto; transition: opacity 100ms ease var(--grow-after); }
+.sheet-face {
+  --w: var(--menu-w);
+  position: absolute;
+  top: 50%;
+  /* Against the card's side of the plate: its left edge with the menu on the right (--side 1), else its right. */
+  left: calc((1 - var(--side)) / 2 * (100% - var(--w)));
+  width: var(--w);
+  translate: 0 -50%;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(2 * min(var(--middle) - var(--safe-y), 100vh - var(--middle) - var(--safe-y) - 6vh));
+  padding: 3.6vh 4vh;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
 }
-.sheet h2 { flex: none; font-size: 4.6vh; font-weight: 650; line-height: 1.1; margin-bottom: 2.4vh; }
+#artPick { --w: var(--wide-w); }
+/* What the plate holds fades in from 45% of its way: as it grows out of the card, or into the other face's size. */
+#lift.on .sheet-face.on { opacity: 1; pointer-events: auto; transition: opacity 180ms ease calc(var(--grow-after) + var(--tap-ms) * .45); }
+#lift.on #sheet.turned .sheet-face.on { transition-delay: calc(var(--tap-ms) * .45); }
+.sheet-face h2 { flex: none; font-size: 4.6vh; font-weight: 650; line-height: 1.1; margin-bottom: 2.4vh; }
 /* A long name takes three lines at most. */
-#dName { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
-/* The details give way first: when the name, the details and the choices don't all fit, the details are cut short,
-   never a choice. */
-#details dl {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 1.4vh 3vh;
-  min-height: 0;
-  overflow: hidden;
-  font-size: 2.4vh;
-}
-#details dt { color: var(--ink-dim); white-space: nowrap; }
-#details dd { min-width: 0; overflow-wrap: anywhere; }
-/* The folder in two lines at most: the path to it, cut short at its end (the middle of the whole path), and the
-   folder's own name, which says the most, cut short at its end if it must be. Both on one line when they fit. */
-#dDir { display: flex; flex-wrap: wrap; }
-#dDir span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#dName { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin-bottom: 1.2vh; }
+/* One line under the name: the store, when it was last played, how long. */
+#dMeta { flex: none; display: flex; align-items: center; font-size: 2.3vh; color: var(--ink-dim); white-space: nowrap; overflow: hidden; }
+#dMeta .dot { white-space: pre; }
+#dMeta .dot:has(+ :empty) { display: none; }
 #dChoices { flex: none; display: grid; gap: .8vh; margin-top: 3vh; padding: .4vh; }
-#dChoices .row { font-size: 2.6vh; padding: 1.5vh 2vh; }
+#dChoices .row { justify-content: flex-start; gap: 1.8vh; font-size: 2.6vh; padding: 1.5vh 2vh; }
+#dChoices .row .icon { flex: none; width: 3vh; height: 3vh; }
+#dChoices .row.on .icon { color: rgb(var(--lamp)); }
 #dChoices .row.warn { color: #ffc75e; font-weight: 600; }
+/* Play, or Back to game: lit, as the dock's Resume, with its icon on a lamp. */
+#dChoices .row.primary { font-weight: 650; background: linear-gradient(90deg, rgb(var(--lamp) / .3), rgb(var(--lamp) / .1)); }
+#dChoices .row.primary.focus { background: linear-gradient(90deg, rgb(var(--lamp) / .42), rgb(var(--lamp) / .16)); }
+#dChoices .row.primary .icon {
+  width: 4.4vh;
+  height: 4.4vh;
+  margin: -.7vh 0;
+  padding: 1vh .8vh 1vh 1.2vh;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffe0ad, rgb(var(--lamp)) 55%, #cf6f16);
+  color: #2b1605;
+}
+/* The folder, dim at the bottom, and the first to give way when the menu doesn't fit: in two lines at most, the path
+   to it cut short at its end (the middle of the whole path), and the folder's own name, which says the most, cut
+   short at its end if it must be. Both on one line when they fit. */
+#dDir { flex: 0 1 auto; min-height: 0; display: flex; flex-wrap: wrap; margin-top: 2.4vh; overflow: hidden; font-size: 1.9vh; color: var(--ink-dim); }
+#dDir span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Change art: the search, then Steam's matches as a row of covers, then no art and back to automatic. */
-#artPick { left: var(--wide-x); width: var(--wide-w); }
 #artPick h2 { margin-bottom: 2.4vh; }
 #artField.focus { background: rgb(255 255 255 / .14); box-shadow: inset 0 0 0 .25vh #fff; }
 #artPick:not(.editing) #artQuery::after { display: none; }
@@ -644,7 +668,11 @@ body.launching .cover.focus { scale: 1.1; }
   #card, #lift.on #card, #lift.away #card { transform: none; transition: opacity 200ms ease; }
   #card { opacity: 0; }
   #lift.on #card { opacity: 1; }
-  .sheet, #lift.on .sheet.on { transform: none; }
+  #lift.on #sheet { transition: opacity var(--fade-ms) ease; }
+  .sheet-face { transition: opacity calc(var(--fade-ms) / 2) ease; }
+  #lift.on .sheet-face.on, #lift.on #sheet.turned .sheet-face.on {
+    transition: opacity calc(var(--fade-ms) / 2) ease calc(var(--fade-ms) / 2);
+  }
   #lift.on #face .sheen { animation: none; }
 }
 

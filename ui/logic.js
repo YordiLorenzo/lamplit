@@ -176,21 +176,37 @@ export function byPlayed(a, b) {
 }
 
 /**
- * The choices in a game's menu, in order. A game added by hand can be removed again; ✕ once asks (`removing`), ✕
- * again removes it.
+ * @typedef {{ kind: 'play' | 'favourite' | 'art' | 'hide' | 'remove', label: string, icon: import('./icons.js').IconId }} DetailChoice
+ */
+
+/**
+ * The choices in a game's menu, in order, each with its icon. Favourite is one row that switches, its star filled
+ * while the game is one. A game added by hand can be removed again; ✕ once asks (`removing`), ✕ again removes it.
  * @param {Game} g
  * @param {string | null} running  the id of the game that runs
  * @param {boolean} [removing]
- * @returns {{ kind: 'play' | 'favourite' | 'art' | 'hide' | 'remove', label: string }[]}
+ * @returns {DetailChoice[]}
  */
 export function detailChoices(g, running, removing = false) {
   return [
-    { kind: 'play', label: running === g.id ? 'Back to game' : 'Play' },
-    { kind: 'favourite', label: g.favourite ? 'Remove from favourites' : 'Add to favourites' },
-    { kind: 'art', label: 'Change art' },
-    { kind: 'hide', label: 'Hide this game' },
-    ...(g.manual ? [{ kind: /** @type {const} */ ('remove'), label: removing ? 'Press again to remove' : 'Remove from Lamplit' }] : []),
+    { kind: 'play', label: running === g.id ? 'Back to game' : 'Play', icon: 'i-play' },
+    { kind: 'favourite', label: 'Favourite', icon: g.favourite ? 'i-star-on' : 'i-star' },
+    { kind: 'art', label: 'Change art', icon: 'i-photo' },
+    { kind: 'hide', label: 'Hide this game', icon: 'i-eye-off' },
+    ...(g.manual ? [/** @type {DetailChoice} */ ({ kind: 'remove', label: removing ? 'Press again to remove' : 'Remove from Lamplit', icon: 'i-remove' })] : []),
   ];
+}
+
+/**
+ * The line under the name in a game's menu: its store, when it was last played and how long, as
+ * "Steam · Played yesterday · 31 h". A game Lamplit never saw run has no time.
+ * @param {Game} g
+ * @param {string | null} store  the store's name, or what stands in for one
+ * @param {number} [now] Unix seconds
+ * @returns {string[]}
+ */
+export function metaParts(g, store, now = Date.now() / 1000) {
+  return [store ?? 'Not from a store', playedText(g.last_played, now) || 'Not played yet', playTimeText(g.play_minutes)].filter(Boolean);
 }
 
 /**

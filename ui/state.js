@@ -48,6 +48,7 @@ export const els = {
   lift: $('lift'),
   card: $('card'),
   face: $('face'),
+  sheet: $('sheet'),
   details: $('details'),
   dName: $('dName'),
   dStore: $('dStore'),

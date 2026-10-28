@@ -5,7 +5,7 @@
 import { assetUrl, libraryRemoveGame, librarySetFavourite, librarySetHidden } from './api.js';
 import { showHints, toast } from './hints.js';
 import { face, lift, lower, settle, showSheet } from './lift.js';
-import { accentOf, detailChoices, lightOf, folderParts, narrowed, playTimeText, playedText, rowOf, storeWarning, words } from './logic.js';
+import { accentOf, detailChoices, folderParts, lightOf, metaParts, narrowed, playTimeText, playedText, rowOf, storeWarning, words } from './logic.js';
 import { reduced } from './morph.js';
 import { sfx } from './sounds.js';
 import { byId, els, focused, icon, state, storeName, withStoreLogo } from './state.js';
@@ -147,10 +147,11 @@ export function showInfo() {
 export function openDetails() {
   const g = focused();
   els.dName.textContent = g.name;
-  els.dStore.replaceChildren(...withStoreLogo(g.store, g.manual ? 'Added by hand' : storeName(g.store) ?? 'Not from a store'));
-  els.dPlayed.textContent = playedText(g.last_played).replace(/^Played /, '') || 'Not yet';
-  // Lamplit counts from 0.2.0 on, so a game played before has no count of its own.
-  els.dTime.textContent = playTimeText(g.play_minutes, true) || 'Not counted yet';
+  // Lamplit counts from 0.2.0 on, so a game played before has no time of its own, and the line leaves it out.
+  const [store, played, time = ''] = metaParts(g, g.manual ? 'Added by hand' : storeName(g.store));
+  els.dStore.replaceChildren(...withStoreLogo(g.store, store));
+  els.dPlayed.textContent = played;
+  els.dTime.textContent = time;
   els.dDir.replaceChildren(...folderParts(g.dir).map((part) => Object.assign(document.createElement('span'), { textContent: part })));
   state.detailsIdx = 0;
   state.removing = false;
@@ -188,12 +189,22 @@ export function backToMenu() {
   showHints();
 }
 
-/** The choices in the menu, the focused one marked. */
+/** The choices in the menu, each with its icon, the focused one marked: Play lit, Favourite's star filled when on. */
 function renderChoices() {
-  const rows = detailChoices(focused(), state.running, state.removing).map((c, i) => {
+  const g = focused();
+  const rows = detailChoices(g, state.running, state.removing).map((c, i) => {
     const row = document.createElement('div');
-    row.className = 'row' + (i === state.detailsIdx ? ' focus' : '') + (c.kind === 'remove' && state.removing ? ' warn' : '');
-    row.textContent = c.label;
+    row.className = 'row';
+    row.classList.toggle('focus', i === state.detailsIdx);
+    row.classList.toggle('primary', c.kind === 'play');
+    row.classList.toggle('warn', c.kind === 'remove' && state.removing);
+    if (c.kind === 'favourite') {
+      row.classList.toggle('on', g.favourite);
+      row.setAttribute('aria-pressed', String(g.favourite));
+    }
+    const glyph = icon(c.icon);
+    glyph.setAttribute('class', 'icon');
+    row.append(glyph, c.label);
     return row;
   });
   els.dChoices.replaceChildren(...rows);

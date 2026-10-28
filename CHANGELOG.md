@@ -59,6 +59,12 @@ Every release of Lamplit, newest first. The format follows
 
 ### Changed
 
+- A game's menu grows out of the lifted card: a sliver on the card's edge widens into the menu, and its rows fade in
+  as it does. Under the game's name one line says its store, when it was last played and for how long, and the
+  folder sits dim at the bottom. Play (or Back to game) is lit and comes first, every choice has an icon, and
+  Favourite is one choice that fills its star. Change art opens in the same panel, which grows from the menu's size
+  to its own, and the card fades from one cover to the next as you move through the choices. The background keeps
+  drifting under the menu, so Change art closes without a stutter.
 - Everything on the home screen moves on one set of springs, named for what they move. A step along the row no longer
   overshoots its place; Settings, Find and messages open on one spring and close on a quicker one; the game menu's card
   lifts a little past its place and settles, and lowers without.

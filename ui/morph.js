@@ -21,9 +21,14 @@ const watched = new WeakSet();
 const held = new WeakMap();
 
 /**
- * @typedef {{ box: DOMRect, round?: number }} Place  a box on screen; its corners round by half its height unless
- *   `round` says otherwise, as a line of text, a pill or a chip does
+ * @typedef {{ box: DOMRect, round?: number, still?: boolean }} Place  a box on screen; its corners round by half its
+ *   height unless `round` says otherwise, as a line of text, a pill or a chip does. The plate moves onto it, centred
+ *   on it; or, `still`, a box over the plate, the plate stays where it is and only its clip shows the box, so what the
+ *   plate holds stays where it is too.
  */
+
+/** @param {number} n */
+const px = (n) => `${Math.max(0, n)}px`;
 
 /**
  * The plate's clip and place that show `place` out of its own box `own`, or its own box when `place` is null.
@@ -32,6 +37,10 @@ const held = new WeakMap();
 function shape(own, place, round) {
   if (!place) return { translate: '0px 0px', clipPath: `inset(0px round ${round}px)` };
   const { box } = place;
+  if (place.still) {
+    const sides = [box.top - own.top, own.right - box.right, own.bottom - box.bottom, box.left - own.left].map(px);
+    return { translate: '0px 0px', clipPath: `inset(${sides.join(' ')} round ${place.round ?? round}px)` };
+  }
   return {
     translate: `${box.left + box.width / 2 - (own.left + own.width / 2)}px ${box.top + box.height / 2 - (own.top + own.height / 2)}px`,
     clipPath: `inset(${Math.max(0, (own.height - box.height) / 2)}px ${Math.max(0, (own.width - box.width) / 2)}px round ${place.round ?? box.height / 2}px)`,
@@ -39,12 +48,13 @@ function shape(own, place, round) {
 }
 
 /**
- * The plate, laid out at its own box, goes from showing `from` to showing `to` (null: its own box) on spring `spring`.
- * With `hold` it stays at `to` until `rest`. `done` runs once it is there.
+ * The plate, laid out at its own box, goes from showing `from` to showing `to` (null: its own box) on spring `spring`,
+ * `delay` ms from now, showing `from` meanwhile. With `hold` it stays at `to` until `rest`. `done` runs once it is
+ * there.
  * @param {HTMLElement} plate
- * @param {{ name: string, from: Place | null, to: Place | null, spring?: SpringName, hold?: boolean, done?: () => void }} how
+ * @param {{ name: string, from: Place | null, to: Place | null, spring?: SpringName, delay?: number, hold?: boolean, done?: () => void }} how
  */
-export function morph(plate, { name, from, to, spring = 'tap', hold = false, done }) {
+export function morph(plate, { name, from, to, spring = 'tap', delay = 0, hold = false, done }) {
   rest(plate);
   if (reduced()) {
     done?.();
@@ -53,9 +63,9 @@ export function morph(plate, { name, from, to, spring = 'tap', hold = false, don
   const own = plate.getBoundingClientRect();
   const round = parseFloat(getComputedStyle(plate).borderTopLeftRadius);
   const { easing, ms } = SPRINGS[spring];
-  const move = plate.animate([shape(own, from, round), shape(own, to, round)], { duration: ms, easing, fill: hold ? 'forwards' : 'none' });
+  const move = plate.animate([shape(own, from, round), shape(own, to, round)], { duration: ms, easing, delay, fill: hold ? 'both' : 'backwards' });
   if (hold) held.set(plate, move);
-  tell(name, ms);
+  tell(name, delay + ms);
   move.finished.then(() => done?.(), () => {});
 }
 
