@@ -311,9 +311,8 @@ body.still .hero { animation-play-state: paused; }
   width: 3vh;
   height: 3vh;
   border-radius: 50%;
-  font-size: 1.8vh;
-  font-weight: 700;
 }
+#steps .icon svg { width: 2vh; height: 2vh; margin: 0; vertical-align: 0; }
 #steps .busy .icon { border: .4vh solid rgb(255 255 255 / .18); border-top-color: rgb(var(--accent)); animation: spin 900ms linear infinite; }
 #steps .ok .icon { background: rgb(80 200 120 / .25); color: #7be09a; }
 #steps .warn .icon { background: rgb(255 190 80 / .22); color: #ffc75e; }
@@ -321,6 +320,23 @@ body.still .hero { animation-play-state: paused; }
 #steps .error .icon { background: rgb(255 100 100 / .25); color: #ff8a8a; }
 #steps .ok { color: var(--ink-dim); }
 #steps .block, #steps .warn { font-weight: 600; }
+/* The step the player can act on carries its action as a chip on its line (launch.js renderSteps): ✕ and what it
+   does, on the plate's glass, as Find's chips. It takes clicks, though the starting screen lets them through. */
+#steps .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.2vh;
+  height: 4.6vh;
+  margin-left: 1vh;
+  padding: 0 2vh 0 .8vh;
+  border-radius: 2.3vh;
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  font-size: 2.1vh;
+  font-weight: 600;
+  color: var(--ink);
+  pointer-events: auto;
+}
 
 .spinner {
   width: 5vh;
@@ -755,7 +771,7 @@ body:has(#settings.on) #empty { opacity: 0; }
   padding: .4vh;
   scrollbar-width: none;
 }
-#settingsList h3, #find h3, #addList h3 {
+#settingsList h3, #addList h3 {
   margin-top: 2vh;
   font-size: 1.8vh;
   font-weight: 650;
@@ -790,18 +806,110 @@ body:has(#settings.on) #empty { opacity: 0; }
 .row.adjust.focus .value::before { content: '‹  '; color: var(--ink-dim); }
 .row.adjust.focus .value::after { content: '  ›'; color: var(--ink-dim); }
 
-/* ---------- find ---------- */
+/* ---------- find (find.js) ----------
+   Find works on the filter line above the row, in #filters' place: the field, the store and sort chips and the count
+   stand there. The keyboard plate grows up out of the field, and the store list up out of the store chip (morph.js
+   grow); one focus ring (ring.js) moves across keys and chips. The row stays sharp below: it is the result list. The
+   game's info fades while Find is open. The hero keeps drifting: held still, the GPU drops to its idle clocks, and
+   Find's close then stutters while they come back. */
+#find {
+  --line: calc(12vh + var(--cover-h) * 1.2 + 1.6vh);
+  --line-h: 5.6vh;
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+#findPlate, #findLine, #findStores { opacity: 0; transition: opacity 160ms ease; }
+#find.on #findPlate, #find.on #findLine, #find.on #findStores.on { opacity: 1; pointer-events: auto; }
+/* Going, the field and the keyboard go back into the search's pill (or the field's glass) and fade there; the chips,
+   the count and the list fade at once. */
+#find.going :is(#findStore, #findSort, #findCount, #findStores) { opacity: 0; transition: opacity 120ms ease; }
+#find.going :is(#findPlate, #findLine, #findStores), #findStores.going { pointer-events: none; }
+body:has(#find.on:not(.going)) #info { opacity: 0; transition-duration: 160ms; }
+body:has(#find.on) #filters { opacity: 0; transition: none; }
 
-/* Wider than Settings for a keyboard ten keys across; the row's first covers stay in view beside it. With every store
-   it fits a 16:9 screen without scrolling: one closed while scrolled took the GPU most of a frame and more on a 4K
-   TV. On a 4:3 screen it scrolls. */
-#find { width: 46vw; padding: 3.6vh 4vh; overflow-y: auto; scroll-padding: 3.6vh 0; scrollbar-width: none; }
-#find.on { pointer-events: auto; }
-#find h2 { margin-bottom: 2vh; }
-#find h3 { margin: 2vh 0 1vh; }
+#findLine {
+  position: absolute;
+  left: var(--safe-x);
+  bottom: var(--line);
+  display: flex;
+  gap: 1.4vh;
+  align-items: center;
+  font-size: 2.2vh;
+  color: var(--ink-dim);
+  text-shadow: 0 .2vh 1vh rgb(0 0 0 / .5);
+}
+#findField, #find .chip {
+  display: flex;
+  align-items: center;
+  height: var(--line-h);
+  border-radius: calc(var(--line-h) / 2);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  color: var(--ink);
+  text-shadow: none;
+  white-space: nowrap;
+}
+#findField { gap: 1.2vh; width: 30vw; padding: 0 2.2vh; font-size: 2.6vh; backdrop-filter: var(--plate-blur); }
+#findField .glass { flex: none; width: 2.6vh; height: 2.6vh; color: var(--ink-dim); }
+#find .chip { gap: 1vh; padding: 0 2.2vh; font-size: 2.2vh; font-weight: 600; }
+#find .chip .store-logo { margin-right: 0; }
+/* The store chip's list opens upward. */
+#find .chip .up { width: 1.8vh; height: 1.8vh; rotate: 90deg; color: var(--ink-dim); }
+
+/* The keyboard, grown up out of the field: ten keys across, its first row level with the game's name. */
+#findPlate {
+  position: absolute;
+  left: var(--safe-x);
+  bottom: calc(var(--line) + var(--line-h) + 1.4vh);
+  width: 46vw;
+  padding: 2.2vh;
+  border-radius: var(--plate-radius);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  backdrop-filter: var(--plate-blur);
+}
 #findKeys .key { height: 4.8vh; }
+/* The ring shows the focused key. */
+#findKeys .key.focus { box-shadow: none; }
 
-#findField, .field {
+/* The store chip's list: a logo and a name each, grown up out of the chip, in a second column past six. */
+#findStores {
+  position: absolute;
+  left: var(--store-x, var(--safe-x));
+  bottom: calc(var(--line) + var(--line-h) + 1.4vh);
+  /* At least as wide as its chip, which it grows out of. */
+  min-width: var(--store-w, 0);
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(var(--rows, 6), auto);
+  gap: .6vh 1vh;
+  padding: 1.2vh;
+  border-radius: var(--plate-radius);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  backdrop-filter: var(--plate-blur);
+}
+#findStores .choice {
+  gap: 1.2vh;
+  height: 4.6vh;
+  padding: 0 1.8vh;
+  border: none;
+  border-radius: var(--plate-inner);
+  background: none;
+  font-size: 2.1vh;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+#findStores .choice.on { background: rgb(var(--accent) / .3); }
+#findStores .choice.focus { box-shadow: none; }
+#findStores .store-logo { margin-right: 0; }
+
+/* Shared by the names keyboard's fields: Change art's search and Add a game's name. */
+.field {
   display: flex;
   align-items: center;
   gap: 1.4vh;
@@ -812,7 +920,7 @@ body:has(#settings.on) #empty { opacity: 0; }
   border: .12vh solid rgb(255 255 255 / .2);
   font-size: 3.4vh;
 }
-#findField .glass, .field .glass { flex: none; width: 3vh; height: 3vh; color: var(--ink-dim); }
+.field .glass { flex: none; width: 3vh; height: 3vh; color: var(--ink-dim); }
 /* The caret follows the search; with nothing typed, it stands before the dimmed placeholder. */
 #findQuery, .typed { display: flex; align-items: center; min-height: 1.3em; white-space: pre; overflow: hidden; }
 #findQuery::after, .typed::after {
@@ -828,10 +936,14 @@ body:has(#settings.on) #empty { opacity: 0; }
 @keyframes blink { 50% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
   #findQuery::after, .typed::after { animation: none; }
+  /* Find fades in place: nothing grows or goes back (morph.js), and the game's info fades on the same 150 ms. */
+  #findPlate, #findLine, #findStores, #find.going :is(#findStore, #findSort, #findCount, #findStores), #info {
+    transition: opacity var(--fade-ms) ease;
+  }
 }
 
 /* Half-key columns, so the QWERTY rows can step right by half a key (keyboard.js). */
-#findKeys, .keys { display: grid; grid-template-columns: repeat(20, 1fr); gap: .8vh; }
+.keys { display: grid; grid-template-columns: repeat(20, 1fr); gap: .8vh; }
 .key {
   display: grid;
   place-items: center;
@@ -847,7 +959,7 @@ body:has(#settings.on) #empty { opacity: 0; }
 /* Shift: the next letter is a capital. */
 .key.on { color: rgb(var(--accent)); }
 
-/* Store and sort choices, drawn like the store pill on the home screen. */
+/* Change art's choices, drawn like the store pill on the home screen. */
 .choices { display: flex; flex-wrap: wrap; gap: 1vh; }
 .choice {
   display: inline-flex;
@@ -907,7 +1019,7 @@ body:has(#settings.on) #empty { opacity: 0; }
   color: var(--ink-dim);
 }
 #hint span { display: inline-flex; align-items: center; gap: 1vh; }
-#hint b {
+:is(#hint, #steps .chip) b {
   display: inline-grid;
   place-items: center;
   width: 3.2vh;
@@ -918,35 +1030,37 @@ body:has(#settings.on) #empty { opacity: 0; }
   font-weight: 700;
   line-height: 1;
 }
-#hint b svg { width: 2vh; height: 2vh; }
+:is(#hint, #steps .chip) b svg { width: 2vh; height: 2vh; }
 /* The symbol as text, for screen readers: the drawn shape shows instead. */
-#hint b i { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-#hint b.cross { color: #8fb0ff; }
-#hint b.circle { color: #ff7a7a; }
-#hint b.options { color: var(--ink); }
-#hint b.xbox-a { color: #7fd36e; }
-#hint b.xbox-b { color: #ff7a7a; }
-#hint b.xbox-x { color: #8fb0ff; }
-#hint b.xbox-y { color: #ffd166; }
+:is(#hint, #steps .chip) b i { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+:is(#hint, #steps .chip) b.cross { color: #8fb0ff; }
+:is(#hint, #steps .chip) b.circle { color: #ff7a7a; }
+:is(#hint, #steps .chip) b.options { color: var(--ink); }
+:is(#hint, #steps .chip) b.xbox-a { color: #7fd36e; }
+:is(#hint, #steps .chip) b.xbox-b { color: #ff7a7a; }
+:is(#hint, #steps .chip) b.xbox-x { color: #8fb0ff; }
+:is(#hint, #steps .chip) b.xbox-y { color: #ffd166; }
 
-#toast {
-  position: fixed;
-  left: 50%;
-  bottom: calc(var(--safe-y) + 7vh);
-  z-index: 6;
-  max-width: 70vw;
-  padding: 1.4vh 2.6vh;
-  border-radius: var(--plate-radius);
-  background: var(--plate-fill);
-  box-shadow: var(--plate-rim), var(--plate-shadow);
-  font-size: 2.4vh;
-  transform: translate(-50%, 2vh);
+/* ---------- messages: pills (pill.js, hints.js toast) ----------
+   A message about a game stands on the line above the row, after what narrows it; any other at the top right, under
+   the clock, where the status capsule will hold them. Never over the covers. Each comes in on the tap spring, from a
+   little below the line or above, and goes on the close spring. Sized as Find's chips on the same line. */
+#toast, #gameNews {
+  --u: .85vh;
+  max-width: 46vw;
   opacity: 0;
-  transition: transform var(--close-ms) var(--close), opacity 220ms ease;
+  pointer-events: none;
+  text-shadow: none;
+  color: var(--ink);
+  transition: translate var(--close-ms) var(--close), opacity 220ms ease;
 }
-#toast.on { transform: translate(-50%, 0); opacity: 1; transition: transform var(--tap-ms) var(--tap), opacity 220ms ease; }
+#toast.on, #gameNews.on { opacity: 1; translate: 0 0; transition: translate var(--tap-ms) var(--tap), opacity 220ms ease; }
+#gameNews { translate: 0 1vh; }
+#toast { position: fixed; top: 12.5vh; right: var(--safe-x); z-index: 6; translate: 0 -1vh; }
+/* The line keeps the height of a pill, so one coming doesn't move what narrows the row. */
+#filters { min-height: 5.6vh; }
 
-/* Reduce Motion: Settings, Find, Add a game and the toast fade in place for 150 ms rather than sliding. The faces of
+/* Reduce Motion: Settings, Find, Add a game and the messages fade in place for 150 ms rather than sliding. The faces of
    Settings' plate fade where they are in the same 150 ms, one out and then the other in, so their titles never show
    over each other, while the plate takes its width at once (morph.js). A step along the row moves the covers on a short
    eased curve rather than a spring, and the end of the row doesn't bump (library.js move). */
@@ -957,6 +1071,6 @@ body:has(#settings.on) #empty { opacity: 0; }
     translate: none;
     transition: opacity calc(var(--fade-ms) / 2) ease calc(var(--fade-ms) / 2);
   }
-  #toast, #toast.on { transform: translate(-50%, 0); transition: opacity var(--fade-ms) ease; }
+  #toast, #toast.on, #gameNews, #gameNews.on { translate: none; transition: opacity var(--fade-ms) ease; }
   .cover { transition: transform 170ms var(--glide), scale 420ms var(--glide), box-shadow 200ms ease, opacity 250ms ease; }
 }

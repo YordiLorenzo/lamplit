@@ -199,7 +199,7 @@ export async function adjustSetting(dir) {
     } else if (row.kind === 'saverafter') await adjustScreensaver(dir);
     else await adjustHeadset(row.kind, dir);
   } catch (e) {
-    toast(e.message);
+    toast(e.message, { warn: true });
   }
   if (state.mode === 'settings') renderSettings();
 }
@@ -253,7 +253,7 @@ async function power(row) {
   try {
     await POWER[/** @type {keyof typeof POWER} */ (row.id)]();
   } catch (e) {
-    toast(e.message);
+    toast(e.message, { warn: true });
   }
 }
 
@@ -297,7 +297,7 @@ export async function selectSetting() {
       state.prefs = await api.prefsSetDock(!state.prefs?.dock);
     } else if (row.kind === 'padoff') {
       await api.controllerTurnOff(row.id);
-      toast('Controller turned off.');
+      toast('Controller turned off.', { icon: 'i-controller' });
     } else if (row.kind === 'stats') {
       statsBusy = true;
       try {
@@ -311,7 +311,7 @@ export async function selectSetting() {
       const report = await api.quietSet(!state.quiet?.active);
       state.quiet = report;
       const told = report.notes.length ? report.notes.join(' ') : quietMode(report).note;
-      if (told) toast(told);
+      if (told) toast(told, { icon: 'i-quiet' });
     } else if (row.kind === 'setup') {
       // The command returns only once the prompt is answered, and Lamplit says how setup went when it ends.
       toast('Answer the Windows prompt with a keyboard or mouse.');
@@ -322,12 +322,12 @@ export async function selectSetting() {
       showScreensaver();
     } else if (row.kind === 'unhide') {
       setGames(await api.librarySetHidden(row.id, false));
-      toast(`${row.label} is back in the row.`);
+      toast(`${row.label} is back in the row.`, { game: { id: row.id, name: row.label }, icon: 'i-eye' });
     } else if (row.kind === 'power') {
       return power(row);
     }
   } catch (e) {
-    toast(e.message);
+    toast(e.message, { warn: true });
     // The row shows what Rust holds, also after a change that failed halfway.
     if (PREF_ROWS.includes(row.kind)) state.prefs = (await orKeep(api.prefsState())) ?? state.prefs;
   }

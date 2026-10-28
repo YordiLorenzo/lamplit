@@ -21,10 +21,12 @@ const watched = new WeakSet();
 const held = new WeakMap();
 
 /**
- * @typedef {{ box: DOMRect, round?: number, still?: boolean }} Place  a box on screen; its corners round by half its
- *   height unless `round` says otherwise, as a line of text, a pill or a chip does. The plate moves onto it, centred
- *   on it; or, `still`, a box over the plate, the plate stays where it is and only its clip shows the box, so what the
- *   plate holds stays where it is too.
+ * @typedef {{ box: DOMRect, round?: number, anchor?: 'left' | 'bottom-left', still?: boolean }} Place  a box on screen;
+ *   its corners round by half its height unless `round` says otherwise, as a line of text, a pill or a chip does. The
+ *   plate shows its middle there, or with `anchor` its left end or its bottom-left corner: a field widening out of a
+ *   pill keeps its text where it was, and a plate rising out of a field shows its bottom row first. Or, `still`, a box
+ *   over the plate: the plate stays where it is and only its clip shows the box, so what the plate holds stays where
+ *   it is too.
  */
 
 /** @param {number} n */
@@ -36,10 +38,19 @@ const px = (n) => `${Math.max(0, n)}px`;
  */
 function shape(own, place, round) {
   if (!place) return { translate: '0px 0px', clipPath: `inset(0px round ${round}px)` };
-  const { box } = place;
+  const { box, anchor } = place;
   if (place.still) {
     const sides = [box.top - own.top, own.right - box.right, own.bottom - box.bottom, box.left - own.left].map(px);
     return { translate: '0px 0px', clipPath: `inset(${sides.join(' ')} round ${place.round ?? round}px)` };
+  }
+  if (anchor) {
+    const right = Math.max(0, own.width - box.width);
+    const top = Math.max(0, anchor === 'left' ? (own.height - box.height) / 2 : own.height - box.height);
+    const bottom = anchor === 'left' ? top : 0;
+    return {
+      translate: `${box.left - own.left}px ${box.top - (own.top + top)}px`,
+      clipPath: `inset(${top}px ${right}px ${bottom}px 0px round ${place.round ?? box.height / 2}px)`,
+    };
   }
   return {
     translate: `${box.left + box.width / 2 - (own.left + own.width / 2)}px ${box.top + box.height / 2 - (own.top + own.height / 2)}px`,
@@ -71,13 +82,13 @@ export function morph(plate, { name, from, to, spring = 'tap', delay = 0, hold =
 
 /**
  * The plate grows out of `source`, a box on screen, on the tap spring; with `back` it goes back into it on the close
- * spring and holds there, and `done` runs.
+ * spring and holds there, and `done` runs. `anchor` keeps an end or a corner of the plate on the box (Place).
  * @param {HTMLElement} plate
  * @param {DOMRect} source
- * @param {{ back?: boolean, done?: () => void }} [how]
+ * @param {{ back?: boolean, done?: () => void, anchor?: Place['anchor'] }} [how]
  */
-export function grow(plate, source, { back = false, done } = {}) {
-  const place = { box: source };
+export function grow(plate, source, { back = false, done, anchor } = {}) {
+  const place = { box: source, anchor };
   if (back) morph(plate, { name: `${plate.id}-return`, from: null, to: place, spring: 'close', hold: true, done });
   else morph(plate, { name: `${plate.id}-grow`, from: place, to: null, done });
 }
