@@ -100,7 +100,7 @@ function rows() {
 }
 
 /** Icons in front of a row, by its kind. */
-const ICONS = { browse: 'icon-drive', drive: 'icon-drive', folder: 'icon-folder', exe: 'icon-exe', program: 'icon-exe' };
+const ICONS = { browse: 'i-drive', drive: 'i-drive', folder: 'i-folder', exe: 'i-app', program: 'i-app' };
 
 function render() {
   const a = state.add;

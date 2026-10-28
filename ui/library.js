@@ -392,7 +392,7 @@ function showFilters() {
   };
   /** @type {Node[]} */
   const parts = [];
-  if (words(query).length) parts.push(pill('query', icon('icon-search'), query.trim()));
+  if (words(query).length) parts.push(pill('query', icon('i-search'), query.trim()));
   if (store) parts.push(pill('', ...withStoreLogo(store === 'pc' ? null : store, store)));
   if (sort === 'name') parts.push(pill('quiet', 'A to Z'));
   if (narrowed(state.find)) parts.push(document.createTextNode(`${state.games.length} of ${shownCount()} games`));

@@ -28,7 +28,6 @@ import {
   rowOf,
   sectionRows,
   sectionSummary,
-  spring,
   stepAutoOff,
   stepSaverMinutes,
   storeChoices,
@@ -167,22 +166,6 @@ describe('folderParts', () => {
 });
 
 describe('the lifted game menu', () => {
-  test('the lift springs past its place and settles back; the way down only settles', () => {
-    const stops = (s) => s.easing.match(/^linear\((.*)\)$/)[1].split(', ').map(Number);
-    const up = spring(210, 22);
-    const down = spring(500, 45);
-    for (const s of [up, down]) {
-      const p = stops(s);
-      assert.deepEqual([p[0], p.at(-1)], [0, 1]);
-      assert.ok(s.ms > 300 && s.ms < 800, `${s.ms} ms`);
-    }
-    const peak = Math.max(...stops(up));
-    assert.ok(peak > 1.01 && peak < 1.05, `overshoot ${peak}`);
-    assert.ok(Math.max(...stops(down)) <= 1, 'no overshoot on the way down');
-    // Most of the way in the first quarter, so it reads as quick.
-    assert.ok(stops(down)[10] > 0.7, String(stops(down)[10]));
-  });
-
   const screen = { width: 1920, height: 1080 };
   // The focused cover in the row, at 1080p: in the first slot, grown by 1.14.
   const cover = { x: 96, y: 1080 * 0.88 - 369.36, width: 246.24, height: 369.36 };

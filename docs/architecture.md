@@ -48,6 +48,11 @@ ui/
   settings.js      the Settings panel, a plate with two faces: Settings and Add a game
   morph.js         one plate changing shape: widening for another face, growing out of the line it opens from;
                    with Reduce Motion it fades in place
+  springs.js       the springs both pages move on, named for what they move (tap, lift, snap, close), and Reduce
+                   Motion's fade; set on each page's CSS as --tap and --tap-ms and so on
+  steady.js        waits for the frames to come on time before an animation starts (the dock's spring, the
+                   screensaver)
+  icons.js         the icons both pages draw, in one stroked style; mountIcons puts them in the page for <use>
   logic.js         pure functions (the cover row's search and order, the Settings rows), tested in Node
   hints.js         the button hints and short messages
   sounds.js        interface sounds made with Web Audio

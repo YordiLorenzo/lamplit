@@ -2,6 +2,7 @@
 // every tile, holding Cross to close a game, the controller, keyboard and mouse, the game's art and play time, news,
 // and its size in the window Rust gives it. And the switch in Settings that turns the dock off.
 import path from 'node:path';
+import { ICONS } from '../ui/icons.js';
 import { pageFile } from './contract.mjs';
 import { ipc, known, like } from './fixtures.mjs';
 import { emit, idle, settled, until } from './page.mjs';
@@ -669,13 +670,13 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
-  // D8. The dock draws the controller's buttons with index.html's own symbols.
+  // D8. Every symbol the dock draws is in the icons both pages share (ui/icons.js), under its name there: Resume is
+  // Play, and Close game has a glyph of its own rather than the power symbol.
   {
-    const symbols = (file) => pageFile(file).match(/<symbol id="btn-[\s\S]*?<\/symbol>/g) ?? [];
-    // Up and Down are the dock's own: the home screen's hints don't name the d-pad.
-    const dock = symbols('dock.html').filter((s) => !/id="btn-(up|down)"/.test(s));
-    const missing = dock.filter((s) => !symbols('index.html').includes(s));
-    check("the dock's button symbols are the home screen's", dock.length === 3 && missing.length === 0, missing.join('\n'));
+    const renamed = { 'i-resume': 'i-play', 'i-close': 'i-close-game' };
+    const ids = [...pageFile('dock.html').matchAll(/<symbol id="([\w-]+)"/g)].map((m) => renamed[m[1]] ?? m[1]);
+    const missing = ids.filter((id) => !(id in ICONS));
+    check("the dock's symbols are all in the shared icons", ids.length > 10 && missing.length === 0, missing.join(', '));
   }
 
   // D9. Settings > Overlay and pop-ups switches the dock off.

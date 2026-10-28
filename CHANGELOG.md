@@ -57,6 +57,11 @@ Every release of Lamplit, newest first. The format follows
 
 ### Changed
 
+- Everything on the home screen moves on one set of springs, named for what they move. A step along the row no longer
+  overshoots its place; Settings, Find and messages open on one spring and close on a quicker one; the game menu's card
+  lifts a little past its place and settles, and lowers without.
+- The home screen's icons are drawn in the dock's style, with thin round strokes: the search field's glass, the
+  controller's buttons and Add a game's drives, folders and programs.
 - With Reduce Motion on, Settings, Find, Add a game and messages fade in place rather than sliding, the covers move
   without overshooting, and the end of the row no longer bumps.
 - Add a game opens inside the Settings panel rather than as a second panel over it: Settings moves out, the panel

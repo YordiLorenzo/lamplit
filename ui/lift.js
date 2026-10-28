@@ -5,21 +5,12 @@
 // cover settles into its place in the row, and the row shows its own cover again once it has landed. Only transform
 // and opacity change while it moves, so it stays on the compositor at 60 fps on a 4K screen.
 
-import { liftLayout, spring } from './logic.js';
+import { liftLayout } from './logic.js';
+import { SPRINGS } from './springs.js';
 import { els, state } from './state.js';
 
-/** The lift: about 620 ms with a 2% overshoot. */
-const OPEN = spring(210, 22);
-/** The way back: about 460 ms, no overshoot. */
-const CLOSE = spring(500, 45);
-for (const [name, value] of [
-  ['--lift-open', OPEN.easing],
-  ['--lift-open-ms', `${OPEN.ms}ms`],
-  ['--lift-close', CLOSE.easing],
-  ['--lift-close-ms', `${CLOSE.ms}ms`],
-]) {
-  document.documentElement.style.setProperty(name, value);
-}
+/** The cover rises on the lift spring (style.css --lift), 1% past its place and back, and lowers on the close one. */
+const CLOSE = SPRINGS.close;
 
 /** @typedef {{ image: string, art: boolean, name: string }} Look  a cover's art (library.js coverLook) */
 

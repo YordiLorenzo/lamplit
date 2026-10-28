@@ -2,13 +2,10 @@
 // One plate changing shape: Settings' plate widening for Add a game, and growing out of the line it opens from on the
 // empty home screen. Clip, translate and opacity only, so nothing is laid out or painted again on the way.
 
-import { spring } from './logic.js';
+import { SPRINGS } from './springs.js';
 
-/** Sheets and panels opened by a press: critically damped, so they settle without overshoot (0.36 s response). */
-const omega = (2 * Math.PI) / 0.36;
-const TAP = spring(omega * omega, 2 * omega);
-document.documentElement.style.setProperty('--tap', TAP.easing);
-document.documentElement.style.setProperty('--tap-ms', `${TAP.ms}ms`);
+/** What a press opens moves on the tap spring, which settles without overshoot. */
+const TAP = SPRINGS.tap;
 
 /** Reduce Motion is on: a plate fades in place rather than moving or changing shape. */
 export const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;

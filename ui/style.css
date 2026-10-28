@@ -3,15 +3,23 @@
 
 :root {
   --accent: 140 170 255;            /* rgb triplet, sampled from the focused game's art */
-  --tap: ease;                      /* morph.js sets these: the spring of what a press opens */
-  --tap-ms: 360ms;
+  /* The springs (springs.js, which main.js has set them from): what a press opens, the lift, a step or the focus, a
+     dismissal, and Reduce Motion's fade. */
+  --tap: ease;
+  --tap-ms: 425ms;
+  --lift: ease;
+  --lift-ms: 520ms;
+  --snap: ease;
+  --snap-ms: 300ms;
+  --close: ease;
+  --close-ms: 355ms;
+  --fade-ms: 150ms;
   --bg: #07060b;
   --ink: #f5f5f7;
   --ink-dim: rgb(245 245 247 / .72);
   --safe-x: 5vw;
   --safe-y: 5vh;
   --cover-h: 30vh;
-  --spring: cubic-bezier(.34, 1.56, .64, 1);
   --glide: cubic-bezier(.2, .9, .25, 1);
   font-family: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   color: var(--ink);
@@ -138,7 +146,8 @@ body.still .hero, body:has(#lift.on) .hero { animation-play-state: paused; }
 .pill.warn { background: rgb(255 190 80 / .2); border-color: rgb(255 190 80 / .6); color: #ffd58a; }
 .pill:empty { display: none; }
 
-/* Store logos (withStoreLogo in state.js): sized by the text beside them, in its colour. */
+/* Store logos (withStoreLogo in state.js) and the shared icons (icons.js): sized by the text beside them, in its
+   colour. */
 .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .store-logo {
   flex: none;
@@ -220,7 +229,7 @@ body.still .hero, body:has(#lift.on) .hero { animation-play-state: paused; }
   box-shadow: 0 1.2vh 3vh rgb(0 0 0 / .5);
   transform-origin: left bottom;
   opacity: .8;
-  transition: transform 170ms var(--spring), scale 420ms var(--glide), box-shadow 200ms ease, opacity 250ms ease;
+  transition: transform var(--snap-ms) var(--snap), scale 420ms var(--glide), box-shadow 200ms ease, opacity 250ms ease;
 }
 .cover.focus {
   opacity: 1;
@@ -373,8 +382,8 @@ body.launching .cover.focus { scale: 1.1; }
 
 /* ---------- a game's menu: the lifted cover (lift.js) ----------
    lift.js sets --card-x/y/w/h (where the card ends up), --from (the move and scale that put it back on its cover
-   in the row), --side (1 when the menu is on the right), the sheets' --menu-x/w and --wide-x/w, and the springs
-   --lift-open and --lift-close with their durations. Only transform and opacity move. */
+   in the row), --side (1 when the menu is on the right), and the sheets' --menu-x/w and --wide-x/w. It rises on the
+   lift spring and lowers on the close one. Only transform and opacity move. */
 
 #lift {
   position: fixed;
@@ -406,13 +415,13 @@ body.launching .cover.focus { scale: 1.1; }
   width: var(--card-w);
   height: var(--card-h);
   transform: perspective(160vh) var(--from) rotateY(0deg);
-  transition: transform var(--lift-close-ms) var(--lift-close), opacity 200ms ease;
+  transition: transform var(--close-ms) var(--close), opacity 200ms ease;
   will-change: transform;
 }
 /* Lifted: full size, turned a little toward the menu, as if the two stood on an arc around the player. */
 #lift.on #card {
   transform: perspective(160vh) translate(0, 0) scale(1) rotateY(calc(var(--side) * 4deg));
-  transition: transform var(--lift-open-ms) var(--lift-open);
+  transition: transform var(--lift-ms) var(--lift);
 }
 /* Its game is leaving the row: the card drops back and fades instead of landing. */
 #lift.away #card {
@@ -442,19 +451,19 @@ body.launching .cover.focus { scale: 1.1; }
   filter: blur(4.5vh);
   opacity: .4;
   transform: translateY(1vh) scale(.92);
-  transition: opacity var(--lift-close-ms) ease, transform var(--lift-close-ms) var(--lift-close);
+  transition: opacity var(--close-ms) ease, transform var(--close-ms) var(--close);
 }
 #lift.on #card .shadow {
   opacity: .95;
   transform: translateY(7vh) scale(1.05);
-  transition: opacity 500ms ease, transform var(--lift-open-ms) var(--lift-open);
+  transition: opacity 500ms ease, transform var(--lift-ms) var(--lift);
 }
 #card .glow {
   position: absolute;
   inset: -14% -18%;
   background: radial-gradient(closest-side, rgb(var(--accent) / .5), rgb(var(--accent) / 0));
   opacity: .3;
-  transition: opacity var(--lift-close-ms) ease;
+  transition: opacity var(--close-ms) ease;
 }
 #lift.on #card .glow { opacity: .85; transition: opacity 700ms ease; }
 
@@ -520,13 +529,13 @@ body.launching .cover.focus { scale: 1.1; }
   transform: translateX(calc(var(--side) * -5vh)) scale(.96);
   transform-origin: calc(50% - var(--side) * 50%) 50%;
   pointer-events: none;
-  transition: opacity 160ms ease, transform var(--lift-close-ms) var(--lift-close);
+  transition: opacity 160ms ease, transform var(--close-ms) var(--close);
 }
 #lift.on .sheet.on {
   opacity: 1;
   transform: none;
   pointer-events: auto;
-  transition: opacity 240ms ease 150ms, transform var(--lift-open-ms) var(--lift-open) 90ms;
+  transition: opacity 240ms ease 150ms, transform var(--lift-ms) var(--lift) 90ms;
 }
 .sheet h2 { flex: none; font-size: 4.6vh; font-weight: 650; line-height: 1.1; margin-bottom: 2.4vh; }
 /* A long name takes three lines at most. */
@@ -581,7 +590,7 @@ body.launching .cover.focus { scale: 1.1; }
   overflow: hidden;
   background: #1c1a26 center / cover no-repeat;
   box-shadow: 0 .8vh 2vh rgb(0 0 0 / .45);
-  transition: transform 180ms var(--spring), box-shadow 180ms ease;
+  transition: transform var(--snap-ms) var(--snap), box-shadow 180ms ease;
 }
 .tile .art .none {
   position: absolute;
@@ -659,9 +668,9 @@ body.launching .cover.focus { scale: 1.1; }
   transform: translateX(4vw);
   opacity: 0;
   pointer-events: none;
-  transition: transform 260ms var(--glide), opacity 220ms ease;
+  transition: transform var(--close-ms) var(--close), opacity 220ms ease;
 }
-.panel.on { transform: none; opacity: 1; }
+.panel.on { transform: none; opacity: 1; transition: transform var(--tap-ms) var(--tap), opacity 220ms ease; }
 /* Settings rows take clicks; Details lets them through to the covers beneath it. */
 #settings.on { pointer-events: auto; }
 
@@ -677,8 +686,9 @@ body.launching .cover.focus { scale: 1.1; }
   /* Clipped, not hidden: a hidden overflow can still be scrolled, and a face's focused row scrolled into view would
      scroll the whole plate sideways while the face comes in from the right. */
   overflow: clip;
-  transition: transform 260ms var(--glide), opacity 220ms ease, clip-path var(--tap-ms) var(--tap);
+  transition: transform var(--close-ms) var(--close), opacity 220ms ease, clip-path var(--tap-ms) var(--tap);
 }
+#settings.on { transition: transform var(--tap-ms) var(--tap), opacity 220ms ease, clip-path var(--tap-ms) var(--tap); }
 #settings.wide { width: var(--wide); }
 #settings.moving { width: var(--wide); clip-path: inset(0 0 0 calc(var(--wide) - var(--narrow)) round 2vh); }
 #settings.moving.wide { clip-path: inset(0 round 2vh); }
@@ -768,7 +778,7 @@ body:has(#settings.on) #empty { opacity: 0; }
   border: .12vh solid rgb(255 255 255 / .2);
   font-size: 3.4vh;
 }
-#findField .glass, .field .glass { flex: none; width: 3vh; height: 3vh; fill: var(--ink-dim); }
+#findField .glass, .field .glass { flex: none; width: 3vh; height: 3vh; color: var(--ink-dim); }
 /* The caret follows the search; with nothing typed, it stands before the dimmed placeholder. */
 #findQuery, .typed { display: flex; align-items: center; min-height: 1.3em; white-space: pre; overflow: hidden; }
 #findQuery::after, .typed::after {
@@ -898,18 +908,21 @@ body:has(#settings.on) #empty { opacity: 0; }
   font-size: 2.4vh;
   transform: translate(-50%, 2vh);
   opacity: 0;
-  transition: transform 260ms var(--glide), opacity 220ms ease;
+  transition: transform var(--close-ms) var(--close), opacity 220ms ease;
 }
-#toast.on { transform: translate(-50%, 0); opacity: 1; }
+#toast.on { transform: translate(-50%, 0); opacity: 1; transition: transform var(--tap-ms) var(--tap), opacity 220ms ease; }
 
 /* Reduce Motion: Settings, Find, Add a game and the toast fade in place for 150 ms rather than sliding. The faces of
    Settings' plate fade where they are in the same 150 ms, one out and then the other in, so their titles never show
-   over each other, while the plate takes its width at once (morph.js). The covers move without the overshoot of
-   --spring, and the end of the row doesn't bump (library.js move). */
+   over each other, while the plate takes its width at once (morph.js). A step along the row moves the covers on a short
+   eased curve rather than a spring, and the end of the row doesn't bump (library.js move). */
 @media (prefers-reduced-motion: reduce) {
-  .panel, #settings, #settings.grown { transform: none; transition: opacity 150ms ease; }
-  .face, #add, #settings:has(#add.on) #settingsFace { translate: none; transition: opacity 75ms ease; }
-  #settingsFace, #add.on, #settings.grown #add.on { translate: none; transition: opacity 75ms ease 75ms; }
-  #toast, #toast.on { transform: translate(-50%, 0); transition: opacity 150ms ease; }
+  .panel, .panel.on, #settings, #settings.on, #settings.grown { transform: none; transition: opacity var(--fade-ms) ease; }
+  .face, #add, #settings:has(#add.on) #settingsFace { translate: none; transition: opacity calc(var(--fade-ms) / 2) ease; }
+  #settingsFace, #add.on, #settings.grown #add.on {
+    translate: none;
+    transition: opacity calc(var(--fade-ms) / 2) ease calc(var(--fade-ms) / 2);
+  }
+  #toast, #toast.on { transform: translate(-50%, 0); transition: opacity var(--fade-ms) ease; }
   .cover { transition: transform 170ms var(--glide), scale 420ms var(--glide), box-shadow 200ms ease, opacity 250ms ease; }
 }

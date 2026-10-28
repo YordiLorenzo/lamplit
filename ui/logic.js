@@ -197,30 +197,6 @@ export function folderParts(dir) {
 // ---------- the lifted game menu ----------
 
 /**
- * A damped spring from 0 to 1 (mass 1), as a CSS linear() easing and the time it takes to come to rest. Below
- * critical damping (2 × √stiffness) it overshoots and settles back, as a card lifted by hand would.
- * @param {number} stiffness
- * @param {number} damping
- */
-export function spring(stiffness, damping) {
-  const dt = 1 / 1000;
-  let x = 0, v = 0, t = 0;
-  /** @type {number[]} position every millisecond */
-  const path = [0];
-  // At rest: within 0.1% of the end and barely moving. Semi-implicit Euler is stable at this step for these springs.
-  while (t < 3 && (Math.abs(1 - x) > 0.001 || Math.abs(v) > 0.01)) {
-    v += (stiffness * (1 - x) - damping * v) * dt;
-    x += v * dt;
-    t += dt;
-    path.push(x);
-  }
-  path[path.length - 1] = 1;
-  const stops = 40;
-  const points = Array.from({ length: stops + 1 }, (_, i) => +path[Math.round((i / stops) * (path.length - 1))].toFixed(4));
-  return { easing: `linear(${points.join(', ')})`, ms: Math.round(t * 1000) };
-}
-
-/**
  * Where a lifted cover and its menu go. The cover grows from its place in the row (`from`) to `height` and rises to
  * the middle of the screen, staying over its column inside the safe area (5% at each edge). The menu, `menuWidth`
  * wide, opens beside it on the side that has room for it, else on the roomier side, narrowed to fit. `side` is 1 for

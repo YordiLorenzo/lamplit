@@ -16,6 +16,7 @@ import { dockTests } from './dock.mjs';
 import { probeTests } from './probe.mjs';
 import { assetOrigin, commands, cspHeader, emit, idle, open as openPage, pageOrigin, serveFile, settled, until } from './page.mjs';
 import { SCENES } from '../ui/screensaver/scenes.js';
+import { SPRINGS } from '../ui/springs.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const uiDir = process.argv[2] ?? path.join(here, '..', 'ui');
@@ -2881,6 +2882,93 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await settled(page);
   const at = await page.evaluate(() => ({ translate: getComputedStyle(document.getElementById('settings')).translate, on: document.getElementById('settings').classList.contains('on') }));
   check('Reduce Motion: from the empty home screen the plate fades in at its place', grows === 0 && at.on && at.translate === 'none', JSON.stringify({ grows, ...at }));
+  await close(page);
+}
+
+// 41. One set of named springs for both pages (springs.js): the page's CSS has each of them, a step along the row moves
+// the covers on snap, which shows no overshoot, Change art's tiles too; Settings, Find and the toast open on tap and go
+// on close; the card lifts on lift and lowers on close.
+{
+  const page = await open({ games: [game(1), game(2), game(3)] });
+  await page.evaluate(() => (window.__settings = { library_programs: [] }));
+  /** The timing function and duration `selector` has for `prop` now. */
+  const curve = (selector, prop = 'transform') =>
+    page.evaluate(
+      ([selector, prop]) => {
+        const st = getComputedStyle(document.querySelector(selector));
+        const i = st.transitionProperty.split(', ').indexOf(prop);
+        const fns = st.transitionTimingFunction.match(/(linear|cubic-bezier|steps)\([^)]*\)|ease(-in-out|-in|-out)?|linear|step-start|step-end/g);
+        const ms = (v) => parseFloat(v) * (v.endsWith('ms') ? 1 : 1000);
+        return { fn: fns[i] ?? null, ms: Math.round(ms(st.transitionDuration.split(', ')[i] ?? '0s')) };
+      },
+      [selector, prop]
+    );
+  /** Which named spring a timing function and duration are, or what they are. Tap and close share a shape, critically
+   * damped both, and differ in how long they take. */
+  const named = ({ fn, ms }) => {
+    const stops = fn?.match(/^linear\((.*)\)$/)?.[1].split(',').map((v) => parseFloat(v));
+    return Object.keys(SPRINGS).find((n) => JSON.stringify(stops) === JSON.stringify(SPRINGS[n].points) && ms === SPRINGS[n].ms) ?? `${fn} ${ms}ms`;
+  };
+  const vars = await page.evaluate(() => ['tap', 'lift', 'snap', 'close'].map((n) => getComputedStyle(document.documentElement).getPropertyValue(`--${n}`).trim()));
+  check('the page has the springs both pages share', vars.every((v, i) => v === SPRINGS[['tap', 'lift', 'snap', 'close'][i]].easing), vars.map((v) => v.slice(0, 30)).join(' | '));
+  const seen = { step: named(await curve('.cover')), panelGoes: named(await curve('#find')), toastGoes: named(await curve('#toast')), cardLowers: named(await curve('#card')) };
+  await emit(page, 'pad', 'triangle');
+  await settled(page);
+  seen.settingsOpens = named(await curve('#settings'));
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  seen.settingsGoes = named(await curve('#settings'));
+  await emit(page, 'pad', 'square');
+  await settled(page);
+  seen.findOpens = named(await curve('#find'));
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  await page.evaluate(() => window.__emit('notice', 'Hello'));
+  seen.toastOpens = named(await curve('#toast'));
+  await emit(page, 'pad', 'menu');
+  await settled(page);
+  seen.cardLifts = named(await curve('#lift.on #card'));
+  const want = { step: 'snap', panelGoes: 'close', toastGoes: 'close', cardLowers: 'close', settingsOpens: 'tap', settingsGoes: 'close', findOpens: 'tap', toastOpens: 'tap', cardLifts: 'lift' };
+  const wrong = Object.keys(want).filter((k) => seen[k] !== want[k]);
+  check('... a step on snap, panels and the toast open on tap and go on close, the card lifts on lift and lowers on close', wrong.length === 0, JSON.stringify(Object.fromEntries(wrong.map((k) => [k, String(seen[k]).slice(0, 40)]))));
+  const tiles = await page.evaluate(() => [...document.styleSheets].flatMap((s) => [...s.cssRules]).filter((r) => r.selectorText === '.tile .art').map((r) => r.style.transition));
+  check('... Change art\'s tiles move on snap, nothing on the overshooting curve', tiles.length === 1 && tiles[0].includes('var(--snap)') && !(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--spring'))), JSON.stringify(tiles));
+  await close(page);
+}
+
+// 42. One stroked icon file for both pages (icons.js): the home screen draws every icon from it, its hints, Find's
+// field and Add a game's rows among them, and keeps only the store logos as its own.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.evaluate(() => (window.__settings = { library_programs: [] }));
+  /** Every <use> on the page now: where its symbol comes from, and how it is drawn. */
+  const uses = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('use')].map((u) => {
+        const id = u.getAttribute('href').slice(1);
+        const symbol = document.getElementById(id);
+        const from = symbol?.closest('svg')?.id === 'icons' ? 'shared' : id.startsWith('store-') && symbol ? 'store' : 'missing';
+        return { id, from, stroke: symbol?.querySelector('g')?.getAttribute('stroke-width') ?? null };
+      })
+    );
+  const seen = await uses();
+  await emit(page, 'pad', 'square');
+  await settled(page);
+  seen.push(...(await uses()));
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  await emit(page, 'pad', 'triangle');
+  await settled(page);
+  const k = await page.evaluate(() => [...document.querySelectorAll('#settingsList .row')].findIndex((r) => r.textContent.startsWith('Add a game')));
+  for (let i = 0; i < k; i++) await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  await settled(page);
+  seen.push(...(await uses()));
+  const ids = [...new Set(seen.map((u) => u.id))];
+  const wrong = seen.filter((u) => u.from === 'missing' || (u.from === 'shared' && !u.stroke && !['i-play', 'i-star-on', 'i-quiet-on'].includes(u.id)));
+  const own = await page.evaluate(() => [...document.querySelectorAll('symbol')].filter((s) => s.closest('svg').id !== 'icons').map((s) => s.id).filter((id) => !id.startsWith('store-')));
+  check('the home screen draws its icons from the shared file, stroked', wrong.length === 0 && ['i-search', 'i-drive', 'btn-cross', 'btn-circle'].every((id) => ids.includes(id)), JSON.stringify({ wrong, ids }));
+  check('... and keeps only the store logos as its own', own.length === 0 && (await page.evaluate(() => document.querySelectorAll('#icons').length)) === 1, own.join(', '));
   await close(page);
 }
 

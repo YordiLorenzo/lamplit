@@ -199,7 +199,7 @@ export function withStoreLogo(key, text) {
   return key && document.getElementById(`store-${key}`) ? [icon(`store-${key}`), text] : [text];
 }
 
-/** A symbol from index.html, sized and coloured like the text beside it. @param {string} id */
+/** A store's logo from index.html, or an icon both pages share (icons.js), sized and coloured like the text beside it. @param {string} id */
 export function icon(id) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.classList.add('store-logo');

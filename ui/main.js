@@ -5,11 +5,17 @@ import * as api from './api.js';
 import { setPadKind, toast } from './hints.js';
 import { meter } from './frames.js';
 import { act } from './input.js';
+import { mountIcons } from './icons.js';
 import { onPlay, onStep, onSummoned } from './launch.js';
 import { layout, onArt, setGames } from './library.js';
 import { startScreensaver, wake } from './screensaver/index.js';
 import { refreshAccessories, setSetup, setStores } from './settings.js';
+import { nameSprings } from './springs.js';
 import { els, state } from './state.js';
+
+// The springs and the icons both pages share.
+nameSprings(document.documentElement);
+mountIcons(document);
 
 function tickClock() {
   els.clock.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
