@@ -4017,6 +4017,44 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   check('Reduce Motion: the veil is drawn and comes in, and nothing holds the drift (it has none)', v.opacity === '1' && !v.morphing, JSON.stringify(v));
   await close(page);
 }
+{
+  // The veil keeps only the images of the screen it last drew (veil.js images).
+  const page = await open({ games: [game(1), game(2)] });
+  await page.evaluate(() => {
+    window.__images = [];
+    const Real = window.Image;
+    window.Image = class extends Real {
+      constructor(...a) {
+        super(...a);
+        // Only the veil's: the accent is read from the same hero elsewhere (library.js sampleAccent).
+        if (new Error().stack.includes('/veil.js')) window.__images.push(this);
+      }
+    };
+  });
+  /** Opens and closes the game menu once its veil is drawn; returns the images loaded meanwhile, by address. */
+  const menu = async () => {
+    const from = await page.evaluate(() => window.__images.length);
+    await emit(page, 'pad', 'menu');
+    await until(page, () => document.querySelector('#lift .veil').classList.contains('drawn'));
+    await emit(page, 'pad', 'back');
+    await settled(page);
+    return page.evaluate((n) => window.__images.slice(n).map((i) => i.src), from);
+  };
+  const first = await menu();
+  const again = await menu();
+  await emit(page, 'games', [game(1, { noArt: true }), game(2, { noArt: true })]);
+  await settled(page);
+  await menu();
+  await emit(page, 'games', [game(1), game(2)]);
+  await settled(page);
+  const after = await menu();
+  check(
+    "the veil loads a screen's images once, and lets go of those the screen no longer shows",
+    first.length > 0 && !again.some((u) => first.includes(u)) && first.every((u) => after.includes(u)),
+    JSON.stringify({ first, again, after })
+  );
+  await close(page);
+}
 
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));

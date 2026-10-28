@@ -18,7 +18,11 @@ const HERO_BLUR_VH = 4;
 /** Paints asked for: one asked before another, whose images came later, draws nothing. */
 let paints = 0;
 
-/** @type {Map<string, Promise<HTMLImageElement | null>>} images, each loaded and decoded once */
+/**
+ * The images of the last paint, each loaded and decoded once: a paint lets go of those the screen no longer shows, so
+ * a launcher left running for weeks doesn't keep the art of every game whose menu was ever opened.
+ * @type {Map<string, Promise<HTMLImageElement | null>>}
+ */
 const images = new Map();
 /** @param {string} url */
 function load(url) {
@@ -70,13 +74,9 @@ export async function paintVeil(canvas) {
     .filter((c) => c.box.right > 0 && c.box.left < innerWidth && c.alpha > 0);
   const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
   const [vw, vh] = [innerWidth, innerHeight];
-  const loaded = new Map(
-    await Promise.all(
-      [...heroes.map((h) => h.url), logo?.url, ...covers.map((c) => c.url)]
-        .filter((url) => !!url)
-        .map(async (url) => /** @type {[string, HTMLImageElement | null]} */ ([/** @type {string} */ (url), await load(/** @type {string} */ (url))]))
-    )
-  );
+  const urls = new Set(/** @type {string[]} */ ([...heroes.map((h) => h.url), logo?.url, ...covers.map((c) => c.url)].filter((url) => !!url)));
+  for (const url of images.keys()) if (!urls.has(url)) images.delete(url);
+  const loaded = new Map(await Promise.all([...urls].map(async (url) => /** @type {[string, HTMLImageElement | null]} */ ([url, await load(url)]))));
   if (asked !== paints) return;
 
   // The scene, with a margin all round, so the blur takes its edges from what lies past them rather than darkening.
