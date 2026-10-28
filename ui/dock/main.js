@@ -142,7 +142,8 @@ const PILL = { width: 18, height: 5.2, round: 2.6 };
 
 /**
  * Folding: the island keeps its size, and a clip squeezes it into the pill at its bottom centre on the opening's
- * spring (dock.css), which then drops onto the edge and goes. Rust squeezes the real glass under it the same way.
+ * spring (dock.css), which then drops onto the edge and goes. Rust squeezes the real glass under it the same way. With
+ * reduced motion the island fades where it is, and so does the glass.
  */
 function squeeze() {
   clearTimeout(glassTimer);
@@ -154,7 +155,10 @@ function squeeze() {
     const box = els.island.getBoundingClientRect();
     const k = devicePixelRatio;
     const to = { x: (box.x + x) * k, y: (box.y + y) * k, width: PILL.width * u * k, height: PILL.height * u * k, radius: PILL.round * u * k };
-    api.dockGlassFold({ to, ms: springMs, curve: springCurve, after: springMs * 0.5, fade: 200, drop: 2.4 * u * k }).catch(() => {});
+    const fold = reduced()
+      ? { to: glassShape(), ms: 1, curve: [0, 1], after: 0, fade: FADE_MS, drop: 0 }
+      : { to, ms: springMs, curve: springCurve, after: springMs * 0.5, fade: 200, drop: 2.4 * u * k };
+    api.dockGlassFold(fold).catch(() => {});
   }
   state.mode = 'gone';
   els.island.dataset.mode = 'gone';
@@ -163,6 +167,9 @@ function squeeze() {
 
 /** How long folding takes: the squeeze, then the drop (dock.css). Rust hides the window then (dock/mod.rs FOLD). */
 const FOLD_MS = 520;
+/** Windows' animation effects are off: the island fades in place in FADE_MS rather than springing (dock.css). */
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FADE_MS = 150;
 let restTimer = 0;
 
 /**
@@ -204,12 +211,16 @@ let glassAsks = 0;
 async function takeGlass() {
   if (state.mode !== 'open') return;
   const asked = ++glassAsks;
+  const on = await api.dockGlass(glassShape()).catch(() => false);
+  if (on && asked === glassAsks && state.mode === 'open') els.island.classList.add('glass');
+}
+
+/** Where the island is, and its corners, in the window's pixels, for the real glass. */
+function glassShape() {
   const box = els.island.getBoundingClientRect();
   const k = devicePixelRatio;
   const radius = parseFloat(getComputedStyle(els.island).borderTopLeftRadius) * k;
-  const island = { x: box.x * k, y: box.y * k, width: box.width * k, height: box.height * k, radius };
-  const on = await api.dockGlass(island).catch(() => false);
-  if (on && asked === glassAsks && state.mode === 'open') els.island.classList.add('glass');
+  return { x: box.x * k, y: box.y * k, width: box.width * k, height: box.height * k, radius };
 }
 
 /** Before the island moves: its own glass is back at once, and the real glass goes once that has been drawn. */
@@ -287,9 +298,15 @@ function goHome() {
   sfx.open();
   state.leaving = true;
   document.body.classList.add('home');
-  // Rust fades the real glass with the island as it grows into the veil (dock/mod.rs home).
-  api.dockHome();
   meter('dock: home', 240);
+  // Rust fades the real glass with the island as it grows into the veil (dock/mod.rs home). With reduced motion the
+  // island only fades, on its own glass: the real glass goes first.
+  if (reduced() && els.island.classList.contains('glass')) {
+    dropGlass();
+    requestAnimationFrame(() => requestAnimationFrame(() => api.dockHome()));
+  } else {
+    api.dockHome();
+  }
 }
 
 /** @param {Extract<import('../api.js').DockShow, { mode: 'status' }>} news */

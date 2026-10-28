@@ -664,6 +664,82 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
+  // D21. With reduced motion the island fades in place in 150 ms rather than springing: opening, in its open shape from
+  // its first frame, with what it shows; folding, keeping that shape until it has gone, on real glass that Rust fades
+  // where it is. Home's veil fades the same way, and the island fades into it without growing, its real glass gone
+  // before Rust is asked for the home screen.
+  {
+    const page = await openDock();
+    await page.evaluate(() => (window.__settings.dock_glass = ({ island }) => island !== null));
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await emit(page, 'dock', closed);
+    await page.waitForTimeout(700);
+    /** The island frame by frame for `ms`: how much shows, its shape, and how much of its tiles. */
+    const frames = (ms) =>
+      page.evaluate(
+        (ms) =>
+          new Promise((resolve) => {
+            const [island, dock, tile] = [document.getElementById('island'), document.getElementById('dock'), document.querySelector('.tile')];
+            const seen = [];
+            const start = performance.now();
+            const step = () => {
+              const s = getComputedStyle(island);
+              const tiles = Number(getComputedStyle(dock).opacity) * Number(getComputedStyle(tile).opacity);
+              seen.push({ shows: Number(s.opacity), shape: `${s.clipPath}|${s.scale}|${s.translate}|${s.borderRadius}`, tiles });
+              if (performance.now() - start < ms) requestAnimationFrame(step);
+              else resolve(seen);
+            };
+            requestAnimationFrame(step);
+          }),
+        ms
+      );
+    const fades = (seen) => seen.filter((f) => f.shows > 0.02 && f.shows < 0.98).length;
+    const opening = frames(400);
+    await emit(page, 'dock', opened);
+    let seen = (await opening).filter((f) => f.shows > 0);
+    const open = seen.at(-1);
+    check('reduced motion: the dock fades open in place, in its open shape and with its tiles from the first frame', fades(seen) >= 2 && open.shows === 1 && seen.every((f) => f.shape === open.shape && f.tiles === 1), JSON.stringify(seen.map((f) => `${f.shows.toFixed(2)} ${f.tiles.toFixed(2)} ${f.shape}`)));
+    await page.waitForTimeout(800);
+    const glass = () => page.evaluate(() => document.getElementById('island').classList.contains('glass'));
+    const onGlass = await glass();
+    const shape = await page.evaluate(() => {
+      const b = document.getElementById('island').getBoundingClientRect();
+      return { x: b.x, y: b.y, width: b.width, height: b.height, radius: parseFloat(getComputedStyle(document.getElementById('island')).borderTopLeftRadius) };
+    });
+    let from = (await view(page)).calls.length;
+    const folding = frames(300);
+    await emit(page, 'dock', closed);
+    seen = (await folding).filter((f) => f.shows > 0);
+    const asked = (await since(page, from)).find((c) => c.startsWith('dock_glass_fold'));
+    const fold = asked ? JSON.parse(asked.slice('dock_glass_fold '.length)).fold : {};
+    const inPlace = fold.ms === 1 && fold.after === 0 && fold.fade === 150 && fold.drop === 0 && Object.entries(shape).every(([k, v]) => Math.abs(fold.to[k] - v) < 0.01);
+    check('reduced motion: folding, it fades where it is, keeping its shape and tiles, and the real glass fades there too', onGlass && fades(seen) >= 2 && seen.every((f) => f.shape === open.shape && f.tiles === 1) && inPlace, `${onGlass} ${JSON.stringify(fold)} ${JSON.stringify(seen.map((f) => `${f.shows.toFixed(2)} ${f.tiles.toFixed(2)} ${f.shape}`))}`);
+    await page.waitForTimeout(600);
+    await emit(page, 'dock', opened);
+    await page.waitForTimeout(1000);
+    for (let i = 0; i < 4; i++) await emit(page, 'dock-pad', 'right');
+    from = (await view(page)).calls.length;
+    const home = page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const [island, veil] = [document.getElementById('island'), document.getElementById('veil')];
+          const seen = [];
+          const start = performance.now();
+          const step = () => {
+            seen.push({ veil: Number(getComputedStyle(veil).opacity), scale: getComputedStyle(island).scale });
+            if (performance.now() - start < 300) requestAnimationFrame(step);
+            else resolve(seen);
+          };
+          requestAnimationFrame(step);
+        })
+    );
+    await emit(page, 'dock-pad', 'ok');
+    seen = await home;
+    const calls = (await since(page, from)).filter((c) => c.startsWith('dock_glass') || c === 'dock_home');
+    check('reduced motion: Home fades the veil in, and the island into it without growing, off its real glass first', seen.filter((f) => f.veil > 0.02 && f.veil < 0.98).length >= 2 && seen.every((f) => f.scale === 'none' || f.scale === '1') && calls.join() === 'dock_glass {"island":null},dock_home', `${calls} ${JSON.stringify(seen.map((f) => `${f.veil.toFixed(2)} ${f.scale}`))}`);
+    await close(page);
+  }
+
   // D19. A game starting gets the hidden dock ready: it reads what it shows and draws it then. Its first opening then
   // springs open on a clip at its own size, with nothing laid out frame by frame.
   {

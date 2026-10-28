@@ -541,12 +541,20 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
 #hint b.xbox-a { color: #7fd36e; }
 #hint b.xbox-b { color: #ff7a7a; }
 
+/* Reduced motion (Windows' animation effects off): the island and its shadow fade in place in 150 ms instead of
+   springing (main.js FADE_MS). Coming, they take their shape at once, with what they show; going, they keep it until
+   they have gone. Home's veil fades the same way, and the island fades into it without growing. The focus ring jumps. */
 @media (prefers-reduced-motion: reduce) {
-  #island, #shade, :is(#island, #shade)[data-mode='gone'], .face, #ring, #island[data-mode='open'] :is(#top, .tile, #hint) {
-    transition-duration: 1ms;
-    transition-delay: 0s;
+  :is(#island, #shade)[data-mode] { transition: opacity 150ms ease; }
+  :is(#island, #shade)[data-mode='gone'] {
+    transition: opacity 150ms ease, clip-path 0s linear 150ms, scale 0s linear 150ms, translate 0s linear 150ms, border-radius 0s linear 150ms;
   }
-  #island[data-mode='gone'] { transition: opacity 150ms ease; }
+  #island[data-mode] :is(#news, #dock), #ring, #ring.instant { transition: none; }
+  #island[data-mode='open'] :is(#top, .tile, #hint) { transition: background 160ms ease; }
+  #island[data-mode='gone'] :is(#news, #dock), #island:not([data-mode='open']) :is(#top, .tile, #hint) {
+    transition: opacity 0s linear 150ms, scale 0s linear 150ms, translate 0s linear 150ms;
+  }
+  #veil, body.home.lift #veil { transition: opacity 150ms ease; }
+  body.home #island { scale: 1; transition: opacity 150ms ease; }
   .tile.closing, .output.picked, .output.picked .check { animation: none; }
-  #veil, body.home.lift #veil, body.home #island { transition-duration: 1ms; }
 }
