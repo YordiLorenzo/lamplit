@@ -683,7 +683,10 @@ export async function dockTests({ open, close, check, shots }) {
             const step = () => {
               const s = getComputedStyle(island);
               const tiles = Number(getComputedStyle(dock).opacity) * Number(getComputedStyle(tile).opacity);
-              seen.push({ shows: Number(s.opacity), shape: `${s.clipPath}|${s.scale}|${s.translate}|${s.borderRadius}`, tiles });
+              // Resting open, the island's rounded corners clip it rather than a clip-path (D27), the same shape on
+              // the screen as inset(0 round its radius).
+              const clip = s.clipPath === 'none' && s.overflow === 'hidden' ? `inset(0px round ${s.borderTopLeftRadius})` : s.clipPath;
+              seen.push({ shows: Number(s.opacity), shape: `${clip}|${s.scale}|${s.translate}|${s.borderRadius}`, tiles });
               if (performance.now() - start < ms) requestAnimationFrame(step);
               else resolve(seen);
             };
