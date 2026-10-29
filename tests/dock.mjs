@@ -903,6 +903,33 @@ export async function dockTests({ open, close, check, shots }) {
     await close(page);
   }
 
+  // D27. Over a game every dock frame is drawn at the GPU's low clocks, so a step paints nothing again: the focus
+  // moves as opacity (icon, label, the tile's light) and the ring as translate, which the compositor draws. Resting
+  // open, the island's corners clip it rather than a clip-path, which costs a pass of its own every frame; folding
+  // still squeezes it from its full shape (D18).
+  {
+    const page = await openDock();
+    await page.waitForTimeout(900);
+    const rest = await page.evaluate(() => {
+      const s = getComputedStyle(document.getElementById('island'));
+      return { clip: s.clipPath, radius: parseFloat(s.borderTopLeftRadius), overflow: s.overflow };
+    });
+    await emit(page, 'dock-pad', 'right');
+    await settled(page);
+    await emit(page, 'dock-pad', 'right');
+    const moving = await page.evaluate(() => [...new Set(document.getAnimations().map((a) => a.transitionProperty ?? a.animationName))].sort());
+    const look = await page.evaluate(() => {
+      const opacity = (sel) => Number(getComputedStyle(document.querySelector(sel)).opacity);
+      return { focused: opacity('.tile.focus .label'), other: opacity('.tile[data-key="home"] .label') };
+    });
+    check('a step moves the focus as opacity and the ring as translate, and nothing is painted again', moving.length > 0 && moving.every((p) => ['opacity', 'scale', 'translate'].includes(p)), JSON.stringify(moving));
+    check('resting open, the island is clipped by its corners, not a clip-path', rest.clip === 'none' && rest.radius > 0 && rest.overflow === 'hidden', JSON.stringify(rest));
+    await settled(page);
+    const after = await page.evaluate(() => ({ focused: Number(getComputedStyle(document.querySelector('.tile.focus .label')).opacity), other: Number(getComputedStyle(document.querySelector('.tile[data-key="home"] .label')).opacity) }));
+    check('the focused tile is lit and the others dimmed, by opacity', after.focused === 1 && after.other === 0.7, JSON.stringify({ during: look, after }));
+    await close(page);
+  }
+
   // D19. A game starting gets the hidden dock ready: it reads what it shows and draws it then. Its first opening then
   // springs open on a clip at its own size, with nothing laid out frame by frame.
   {

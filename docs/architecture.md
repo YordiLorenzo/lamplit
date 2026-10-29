@@ -254,30 +254,32 @@ and folds on close; resized while open, it follows the face it shows on snap, an
 (`ui/ring.js`), from tile to tile; with reduced motion it fades for the shared 150 ms. Opening, the ring comes on Resume
 with Resume's own fade. The ring is placed from the dock's bottom, as the dock is laid out, so what grows above doesn't
 move it. The list of sound outputs grows out of its tile: clipped to the tile and on its fill at first, it opens with
-the island and the ring. Its icons, Close game's hold and the news pill are the ones both pages draw (`ui/icons.js`,
-`ui/hold.js`, `ui/pill.js`); news shows on the island's own glass, so its pill has no plate of its own.
-Behind the faces, the game's own art is drawn small (`createImageBitmap` scales it down off the page's thread) and blurred into a canvas,
-which the page scales up to the island: a blur that costs nothing while the island moves. It shows at half strength,
-blurred enough that it reads as the game's colours rather than its shapes, and without a colour boost. CSS
-`backdrop-filter` couldn't see the game behind a transparent window at all. Once the island rests open,
-Windows' real glass takes the art's place where Windows 11 22H2 or later has transparency effects on (`dock/glass.rs`,
-`win/glass.rs`): a Windows.UI.Composition visual in the dock's own window, behind the page, filled with the host
-backdrop (what is behind the window, blurred live by Windows) and clipped to the island's rounded rectangle. Acrylic
-for a whole window (`DWMWA_SYSTEMBACKDROP_TYPE`, Tauri's window effect) fills the window's rectangle and ignores a
-window region, and goes flat on a window that isn't in front, so it can't take the island's shape. The glass doesn't
-follow the island's springs: before the island moves, the page puts its own glass back and lets the real glass go, and
-asks for it again where the island comes to rest. Close game asks for Cross held: the pad sends `ok-up` when Cross
-is let go after a press (`devices/pad/navigation.rs`), or when the controller holding it goes, as `dock-pad` to the
-open dock and as `pad` to the home screen while Lamplit is in front, whose actions that can't be taken back are held
-too (`ui/hold.js`). Home draws a veil in the game's colours over the whole of the open dock's window,
-which covers the screen; behind the veil the home window comes forward under a veil of its own (`dock/mod.rs` home).
-Its first frames in front redraw the whole screen (65 to 80 ms on TOASTER), so the home page waits for its hero to
-decode and two frames to pass, then says so (`dock_home_drawn`): the dock's window goes. Windows composes the screen
+the island and the ring. Over a game every dock frame is drawn while the GPU is at its low clocks, so a step paints
+nothing again: the tiles' focus fades as opacity on layers of their own, and resting open the island is clipped by its
+rounded corners rather than a `clip-path`, which costs a pass of its own every frame. Its icons, Close game's hold and
+the news pill are the ones both pages draw (`ui/icons.js`, `ui/hold.js`, `ui/pill.js`); news shows on the island's own
+glass, so its pill has no plate of its own. Behind the faces, the game's own art is drawn small (`createImageBitmap`
+scales it down off the page's thread) and blurred into a canvas, which the page scales up to the island: a blur that
+costs nothing while the island moves. It shows at half strength, blurred enough that it reads as the game's colours
+rather than its shapes, and without a colour boost. CSS `backdrop-filter` couldn't see the game behind a transparent
+window at all. Once the island rests open, Windows' real glass takes the art's place where Windows 11 22H2 or later has
+transparency effects on (`dock/glass.rs`, `win/glass.rs`): a Windows.UI.Composition visual in the dock's own window,
+behind the page, filled with the host backdrop (what is behind the window, blurred live by Windows) and clipped to the
+island's rounded rectangle. Acrylic for a whole window (`DWMWA_SYSTEMBACKDROP_TYPE`, Tauri's window effect) fills the
+window's rectangle and ignores a window region, and goes flat on a window that isn't in front, so it can't take the
+island's shape. The glass doesn't follow the island's springs: before the island moves, the page puts its own glass back
+and lets the real glass go, and asks for it again where the island comes to rest. Close game asks for Cross held: the
+pad sends `ok-up` when Cross is let go after a press (`devices/pad/navigation.rs`), or when the controller holding it
+goes, as `dock-pad` to the open dock and as `pad` to the home screen while Lamplit is in front, whose actions that can't
+be taken back are held too (`ui/hold.js`). Home draws a veil in the game's colours over the whole of the open dock's
+window, which covers the screen; behind the veil the home window comes forward under a veil of its own (`dock/mod.rs`
+home). Its first frames in front redraw the whole screen (65 to 80 ms on TOASTER), so the home page waits for its hero
+to decode and two frames to pass, then says so (`dock_home_drawn`): the dock's window goes. Windows composes the screen
 anew then, and frames come late for a moment, so the home page waits under its veil for 50 ms of frames on time (up to
 200 ms, `ui/steady.js`) before it lifts the veil and settles in (`ui/main.js` arrive). Without word from the home page,
-the dock folds 450 ms in all the same.
-Back to game is the reverse: the home page eases out under the same veil, then asks Rust to bring the game forward (`launch_resume`), and drops the veil once its window has lost the
-foreground (`ui/launch.js` backToGame).
+the dock folds 450 ms in all the same. Back to game is the reverse: the home page eases out under the same veil, then
+asks Rust to bring the game forward (`launch_resume`), and drops the veil once its window has lost the foreground
+(`ui/launch.js` backToGame).
 
 ## Commands
 
