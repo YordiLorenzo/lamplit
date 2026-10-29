@@ -490,6 +490,8 @@ export class Saver {
       // The buffers made anew take a refresh of their own, which isn't counted.
       this.tick = 0;
       this.resize();
+      // Measurement builds only (src-tauri/src/probe.rs): the frame probe logs each step down.
+      if (/** @type {any} */ (window).__LAMPLIT_PROBE__) document.dispatchEvent(new CustomEvent('saver-scale', { detail: this.scale }));
     }
   }
 

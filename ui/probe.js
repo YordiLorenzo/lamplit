@@ -371,10 +371,13 @@ async function home() {
   let waitFrom = NaN;
   /** When the game menu was opened, for how long its veil took to be drawn. */
   let liftAt = NaN;
+  /** When Show it now was pressed, for when the screensaver stepped its render scale down (saver.js adapt). */
+  let saverAt = NaN;
   /** A press: begins its interaction, noting Show it now's and the menu's. @param {string | null} n @param {number} [t] */
   const press = (n, t = performance.now()) => {
     if (n === 'screensaver-wait') waitFrom = t;
     if (n === 'lift-open') liftAt = t;
+    if (n === 'screensaver-wait') saverAt = t;
     begin(n, t);
   };
 
@@ -422,6 +425,11 @@ async function home() {
       break;
     }
   }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+  // The screensaver draws lower when the screen misses refreshes (saver.js adapt): each step, and when after Show it now.
+  document.addEventListener('saver-scale', (e) => {
+    const after = Number.isNaN(saverAt) ? '' : `, ${Math.round(performance.now() - saverAt)} ms after the press`;
+    api.log.info(`probe: ${page} screensaver scale ${/** @type {CustomEvent} */ (e).detail.toFixed(2)}${after}`);
+  });
   // The game menu's veil (veil.js) fades in once its canvas is drawn, after its images decode: how long after the press.
   new MutationObserver((list) => {
     for (const m of list) {
