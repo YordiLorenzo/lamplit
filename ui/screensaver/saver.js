@@ -40,9 +40,11 @@ const SCENE_S = 95;
 const SCENE_SPREAD = 30;
 /** The blend from one scene to the next. */
 const BLEND_S = 7;
-/** The scenes render at this part of the canvas's size, less on a GPU that can't keep up. */
+/** The scenes render at this part of the canvas's size, less on a GPU that can't keep up (adapt). */
 const START_SCALE = 0.6;
 const MIN_SCALE = 0.34;
+/** This many refreshes of the screen missed within about half a second step the scale down (adapt). */
+const MISSES = 4;
 /** The canvas itself stops at about 1440p: the grain is all it adds above that. */
 const MAX_PIXELS = 2560 * 1440;
 /** After an hour nobody is watching: the art fades to black over FADE_OUT_S and stops drawing. */
@@ -237,7 +239,10 @@ export class Saver {
     /** The shortest time between frames; the preview sets 0 to measure how fast a scene can draw. */
     this.frameMs = FRAME_MS;
     this.scale = START_SCALE;
-    this.slow = 0;
+    /** The last animation frame's time, the screen's refresh as the frames show it, and refreshes missed lately (adapt). */
+    this.tick = 0;
+    this.refresh = 1000 / 60;
+    this.missed = 0;
     this.fps = 0;
     /** Whether a frame is on the canvas yet, so the screensaver can fade in over the home screen. */
     this.drawn = false;
@@ -361,6 +366,11 @@ export class Saver {
     this.pendingMark = null;
     this.paintMark(this.current);
     if (!gl) this.paintCss(this.current.look);
+    // Each show starts at the full scale: a GPU that had to draw lower last time may be up to speed now.
+    this.scale = START_SCALE;
+    this.tick = 0;
+    this.refresh = 1000 / 60;
+    this.missed = 0;
     this.resize();
     window.addEventListener('resize', this.resize);
     this.running = true;
@@ -445,12 +455,13 @@ export class Saver {
       return;
     }
     this.raf = requestAnimationFrame(this.frame);
+    // Every frame of the screen, also those the scenes skip.
+    this.adapt(now);
     const dt = now - this.last;
     if (dt <= 0 || dt < this.frameMs - 3) return;
     this.last = now;
     this.fps = this.fps ? this.fps * 0.95 + (1000 / dt) * 0.05 : 1000 / dt;
     if (!this.paused) this.clock += (Math.min(dt, 100) / 1000) * this.speed;
-    this.adapt(dt);
     try {
       this.step();
     } catch (e) {
@@ -459,15 +470,25 @@ export class Saver {
   }
 
   /**
-   * Draws lower when frames come late: half a second of frames more than 40% late steps the scale down.
-   * @param {number} dt
+   * Draws lower when the screen misses refreshes. The scenes draw 30 frames a second, but the fade-in, the mark's drift
+   * and the compositor want every refresh, 8.3 ms apart at 120 Hz: a GPU still at a low power state draws a scene in
+   * time for 30 frames a second and still makes the screen miss refreshes. MISSES of them within about half a second
+   * step the scale down, also while the show waits unseen to fade in (shown), so it fades in on time.
+   * @param {number} now  this animation frame's time
    */
-  adapt(dt) {
-    if (!this.renderer || this.paused || !this.frameMs) return;
-    this.slow = dt > this.frameMs * 1.4 ? this.slow + dt : Math.max(0, this.slow - dt);
-    if (this.slow > 500 && this.scale > MIN_SCALE) {
+  adapt(now) {
+    const gap = now - this.tick;
+    this.tick = now;
+    // The first frame of a show, and one after a while hidden, say nothing about the GPU.
+    if (!this.renderer || this.paused || !this.frameMs || gap <= 0 || gap > 1000) return;
+    // A refresh is the shortest gap seen, 60 Hz at most: frames may all come late from the first.
+    this.refresh = Math.min(this.refresh, gap);
+    this.missed = this.missed * Math.exp(-gap / 500) + (gap > this.refresh * 1.5 ? 1 : 0);
+    if (this.missed >= MISSES && this.scale > MIN_SCALE) {
       this.scale = Math.max(MIN_SCALE, this.scale * 0.85);
-      this.slow = 0;
+      this.missed = 0;
+      // The buffers made anew take a refresh of their own, which isn't counted.
+      this.tick = 0;
       this.resize();
     }
   }

@@ -2231,6 +2231,42 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
         fadeIn.late1500.at < 1200,
       JSON.stringify(fadeIn)
     );
+    // A GPU still at a low power state draws the scenes in time for 30 frames a second while the screen misses
+    // refreshes at its own rate, which the fade-in and the mark's drift show. Here the page holds each frame 25 ms, so
+    // the screen misses every other refresh: within about as long as a show waits to fade in, the scale steps down
+    // twice, while frames on time keep it, and the next show starts at the full scale again. Counting only frames late
+    // for 30 frames a second, as it did before, took one step at most.
+    const adapts = await page.evaluate(async () => {
+      const { saver } = window.preview;
+      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      saver.start(saver.current.scene);
+      await wait(500);
+      const onTime = saver.scale;
+      const until = performance.now() + 1000;
+      const hold = () => {
+        const t = performance.now();
+        if (t >= until) return;
+        while (performance.now() - t < 25);
+        requestAnimationFrame(hold);
+      };
+      requestAnimationFrame(hold);
+      await wait(900);
+      const missing = saver.scale;
+      await wait(200);
+      const width = saver.renderer.targets[0]?.width;
+      saver.stop();
+      await wait(1300);
+      saver.start(saver.current.scene);
+      await wait(100);
+      const next = saver.scale;
+      saver.stop();
+      return { onTime, missing, width, next };
+    });
+    check(
+      'refreshes the screen misses step the scale down within the wait to fade in, frames on time keep it, and the next show starts at the full scale',
+      adapts.onTime === 0.6 && adapts.missing <= 0.6 * 0.85 * 0.85 && adapts.next === 0.6,
+      JSON.stringify(adapts)
+    );
   }
   await page.close();
 }
