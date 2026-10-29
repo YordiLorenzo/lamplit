@@ -111,7 +111,10 @@ function shape(mode) {
   // What the island shows now: a dock that has just opened is still the pill until its frames come on time (open).
   const from = els.island.dataset.mode;
   const moves = mode !== from || width !== els.island.style.width || height !== els.island.style.height;
-  if (moves) dropGlass();
+  if (moves) {
+    unstill();
+    dropGlass();
+  }
   if (from === 'gone') unfold(face);
   state.mode = mode;
   for (const el of [els.island, els.shade]) {
@@ -155,6 +158,7 @@ const PILL = { width: 18, height: 5.2, round: 2.6 };
  */
 function squeeze() {
   clearTimeout(glassTimer);
+  unstill();
   const u = screen.height / 100;
   const [x, y] = [Math.max(0, (els.island.offsetWidth - PILL.width * u) / 2), Math.max(0, els.island.offsetHeight - PILL.height * u)];
   els.island.style.setProperty('--fold-x', `${x}px`);
@@ -213,6 +217,7 @@ let glassAsks = 0;
  */
 async function takeGlass() {
   if (state.mode !== 'open') return;
+  els.island.classList.add('still');
   const asked = ++glassAsks;
   const on = await api.dockGlass(glassShape()).catch(() => false);
   if (on && asked === glassAsks && state.mode === 'open') els.island.classList.add('glass');
@@ -224,6 +229,18 @@ function glassShape() {
   const k = devicePixelRatio;
   const radius = parseFloat(getComputedStyle(els.island).borderTopLeftRadius) * k;
   return { x: box.x * k, y: box.y * k, width: box.width * k, height: box.height * k, radius };
+}
+
+/**
+ * Before the island moves: its clip is back (dock.css #island.still), at once, so a fold squeezes it from where it
+ * rests.
+ */
+function unstill() {
+  if (!els.island.classList.contains('still')) return;
+  els.island.style.transition = 'none';
+  els.island.classList.remove('still');
+  void els.island.offsetWidth;
+  els.island.style.transition = '';
 }
 
 /** Before the island moves: its own glass is back at once, and the real glass goes once that has been drawn. */

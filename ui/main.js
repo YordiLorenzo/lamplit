@@ -11,6 +11,7 @@ import { layout, onArt, setGames } from './library.js';
 import { startScreensaver, wake } from './screensaver/index.js';
 import { refreshAccessories, setSetup, setStores } from './settings.js';
 import { nameSprings } from './springs.js';
+import { steady } from './steady.js';
 import { readStatus, startStatus } from './status.js';
 import { els, state } from './state.js';
 
@@ -40,6 +41,9 @@ window.addEventListener('resize', layout);
 
 let arrivedTimer = 0;
 let arrivals = 0;
+/** Back from a game, the settling waits under the veil for this long of frames on time, at most ARRIVE_CAP_MS. */
+const ARRIVE_SPAN_MS = 50;
+const ARRIVE_CAP_MS = 200;
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
 
 /** The hero on screen decoded, or 300 ms on, whichever comes first. */
@@ -54,8 +58,9 @@ function heroDecoded() {
 /**
  * Back from a game: the veil shows on the first frame Lamplit draws in front (a window behind a game draws nothing
  * until it comes forward), then lifts while the screen settles in (style.css #arrival). Behind a game the window had
- * let go of what it drew, so its first frames in front redraw the whole screen: the settling starts once the hero is
- * decoded and those frames are out, and the dock's veil over it lifts then too (dock_home_drawn).
+ * let go of what it drew, so its first frames in front redraw the whole screen: once the hero is decoded and those
+ * frames are out, the dock's window over it goes (dock_home_drawn). Windows then composes the screen anew, and frames
+ * come late for a moment, so the settling waits under the veil until they come on time (steady.js).
  */
 async function arrive() {
   const mine = ++arrivals;
@@ -66,10 +71,16 @@ async function arrive() {
   await nextFrame();
   await nextFrame();
   if (mine !== arrivals) return;
-  api.dockHomeDrawn().catch(() => {});
-  meter('home: arrive', 600);
-  document.body.classList.replace('arriving', 'arrived');
-  arrivedTimer = setTimeout(() => document.body.classList.remove('arrived'), 600);
+  await api.dockHomeDrawn().catch(() => {});
+  steady(
+    () => {
+      // Another arrival, or back to the game, came meanwhile.
+      if (mine !== arrivals || !document.body.classList.replace('arriving', 'arrived')) return;
+      meter('home: arrive', 600);
+      arrivedTimer = setTimeout(() => document.body.classList.remove('arrived'), 600);
+    },
+    { cap: ARRIVE_CAP_MS, span: ARRIVE_SPAN_MS }
+  );
 }
 
 window.addEventListener('error', (e) => api.log.error(`${e.message} at ${e.filename}:${e.lineno}`));

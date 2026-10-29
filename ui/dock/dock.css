@@ -63,6 +63,9 @@ body.pointer { cursor: default; }
   isolation: isolate;
   clip-path: inset(0 round var(--round));
 }
+/* Resting open (main.js still), its corners clip it as the clip did: a clip-path draws the island into a pass of its
+   own every frame, a cost the steps over a game don't need. */
+#island.still { clip-path: none; }
 #shade {
   pointer-events: none;
   box-shadow: 0 calc(var(--u) * 2.4) calc(var(--u) * 7) rgb(0 0 0 / .6);
@@ -183,8 +186,7 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
   translate: 0 0;
   transition:
     opacity 260ms ease calc(120ms + var(--i, 0) * 32ms),
-    translate 520ms var(--glide) calc(120ms + var(--i, 0) * 32ms),
-    background 160ms ease;
+    translate 520ms var(--glide) calc(120ms + var(--i, 0) * 32ms);
 }
 /* Folding, they go with the face as it fades (.face, 110 ms), and only then take their places for the next opening. */
 #island:not([data-mode='open']) :is(#top, .tile, #hint) { transition: opacity 0s linear 120ms, translate 0s linear 120ms; }
@@ -275,7 +277,7 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
 
 /* Something the player can focus: the volume, a tile, an output. */
 .slot { background: rgb(255 255 255 / .07); transition: background 160ms ease; }
-.slot.focus { background: rgb(255 255 255 / .15); }
+.slot.focus:not(.tile) { background: rgb(255 255 255 / .15); }
 
 /* The volume, compact until it has the focus; then it opens into a slider. */
 #volume {
@@ -339,28 +341,50 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
 }
 .tile.on .glyph::before { opacity: 1; }
 .tile.primary .glyph::before { content: none; }
+/* A step moves the focus without painting anything again: the ring springs (ring.js), and the tiles' icon, label and
+   light fade as opacity, each on a layer of its own, which the compositor draws. A colour or a fill that changes is
+   painted again frame by frame, which a GPU at its low clocks under a game can't always do within a frame. Dim is the
+   ink at 70%, as --ink-dim. */
 .tile .icon {
   position: relative;
   width: calc(var(--u) * 5.4);
   height: calc(var(--u) * 5.4);
-  color: var(--ink-dim);
-  transition: color 160ms ease, scale var(--snap-ms) var(--snap);
+  color: var(--ink);
+  opacity: .7;
+  will-change: opacity;
+  transition: opacity 160ms ease, scale var(--snap-ms) var(--snap);
 }
 .tile .label {
   max-width: 100%;
   font-size: calc(var(--u) * 2.15);
   font-weight: 600;
-  color: var(--ink-dim);
+  color: var(--ink);
+  opacity: .7;
+  will-change: opacity;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: color 160ms ease;
+  transition: opacity 160ms ease;
 }
-.tile.focus .icon { color: var(--ink); scale: 1.1; }
-.tile.focus .label { color: var(--ink); }
+.tile.focus :is(.icon, .label), .tile:is(.on, .warn) .icon { opacity: 1; }
+.tile.focus .icon { scale: 1.1; }
 .tile.on .icon { color: rgb(var(--lamp)); }
 .tile.warn .icon { color: var(--warn); }
 .tile.warn.focus .label { color: var(--warn); }
+/* The focus's light over the tile's fill, under what the tile shows. */
+.tile::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: rgb(255 255 255 / .09);
+  opacity: 0;
+  will-change: opacity;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+.tile.focus::after { opacity: 1; }
 
 /* Resume: the way back, big and lit. */
 .tile.primary {
@@ -371,7 +395,7 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
   gap: calc(var(--u) * 2.2);
   background: linear-gradient(135deg, rgb(var(--lamp) / .26), rgb(var(--lamp) / .08));
 }
-.tile.primary.focus { background: linear-gradient(135deg, rgb(var(--lamp) / .38), rgb(var(--lamp) / .14)); }
+.tile.primary::after { background: linear-gradient(135deg, rgb(var(--lamp) / .16), rgb(var(--lamp) / .065)); }
 .tile.primary .glyph {
   width: calc(var(--u) * 7.6);
   height: calc(var(--u) * 7.6);
@@ -380,9 +404,9 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
   box-shadow: 0 calc(var(--u) * .6) calc(var(--u) * 2.2) rgb(var(--lamp) / .45);
   transition: scale var(--snap-ms) var(--snap);
 }
-.tile.primary .icon { width: calc(var(--u) * 3.6); height: calc(var(--u) * 3.6); margin-left: calc(var(--u) * .4); color: #2b1605; scale: 1; }
+.tile.primary .icon { width: calc(var(--u) * 3.6); height: calc(var(--u) * 3.6); margin-left: calc(var(--u) * .4); color: #2b1605; opacity: 1; scale: 1; }
 .tile.primary.focus .glyph { scale: 1.08; }
-.tile.primary .label { font-size: calc(var(--u) * 3.2); font-weight: 650; color: var(--ink); }
+.tile.primary .label { font-size: calc(var(--u) * 3.2); font-weight: 650; opacity: 1; }
 
 /* Close game: Cross held fills a ring around the icon, and the game closes once it is full; let go early, it drains
    (hold.js, plate.css .hold). Its track shows while the tile has the focus, and Force close fills in the warning
@@ -508,7 +532,7 @@ body.rehearsing, body.rehearsing * { transition: none !important; }
       border-radius 0s linear var(--fade-ms);
   }
   #island[data-mode] :is(#news, #dock), #dock .ring, #dock .ring.instant { transition: none; }
-  #island[data-mode='open'] :is(#top, .tile, #hint) { transition: background 160ms ease; }
+  #island[data-mode='open'] :is(#top, .tile, #hint) { transition: none; }
   #island[data-mode='gone'] :is(#news, #dock), #island:not([data-mode='open']) :is(#top, .tile, #hint, .ring) {
     transition: opacity 0s linear var(--fade-ms), scale 0s linear var(--fade-ms), translate 0s linear var(--fade-ms);
   }
