@@ -40,7 +40,9 @@ ui/
   library.js       the cover row, the focused game and its menu
   lift.js          a game's menu lifting its cover over the blurred screen, with one plate beside it that grows out
                    of the card's edge and holds the menu and Change art as its two faces
-  veil.js          the game menu's veil: what was behind it, drawn once small, blurred and dimmed, and scaled up
+  veil.js          the game menu's veil: what was behind it, drawn once small, blurred and dimmed, and scaled up,
+                   from art decoded and scaled off the page's thread; and once the menu rests, the hero and its shade
+                   under it held still as one opaque copy, which the veil fades out over as the menu closes
   art.js           Change art, in a game's menu
   add.js           Add a game, a face of Settings' plate: the programs Lamplit passed over, browsing the drives,
                    naming the game
