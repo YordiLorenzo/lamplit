@@ -272,8 +272,10 @@ open dock and as `pad` to the home screen while Lamplit is in front, whose actio
 too (`ui/hold.js`). Home draws a veil in the game's colours over the whole of the open dock's window,
 which covers the screen; behind the veil the home window comes forward under a veil of its own (`dock/mod.rs` home).
 Its first frames in front redraw the whole screen (65 to 80 ms on TOASTER), so the home page waits for its hero to
-decode and two frames to pass, then says so (`dock_home_drawn`): the dock's window goes, and the home page lifts its
-veil as it settles in (`ui/main.js` arrive). Without word from the home page, the dock folds 450 ms in all the same.
+decode and two frames to pass, then says so (`dock_home_drawn`): the dock's window goes. Windows composes the screen
+anew then, and frames come late for a moment, so the home page waits under its veil for 50 ms of frames on time (up to
+200 ms, `ui/steady.js`) before it lifts the veil and settles in (`ui/main.js` arrive). Without word from the home page,
+the dock folds 450 ms in all the same.
 Back to game is the reverse: the home page eases out under the same veil, then asks Rust to bring the game forward (`launch_resume`), and drops the veil once its window has lost the
 foreground (`ui/launch.js` backToGame).
 

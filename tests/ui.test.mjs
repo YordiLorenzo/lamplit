@@ -2392,6 +2392,42 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
   await close(page);
 }
 
+// 35b. Back from a game, the dock's window goes once the home screen has drawn, and Windows composes the screen anew:
+// frames come late for a moment. The screen settles in only once they come on time again, under the veil, rather than
+// starting on a late one.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.keyboard.press('ArrowRight');
+  await running(page, 'pc:1');
+  const frames = page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const seen = [];
+        const start = performance.now();
+        const step = () => {
+          const told = window.__calls.some(([cmd]) => cmd === 'dock_home_drawn');
+          seen.push({ at: performance.now(), told, arrived: document.body.classList.contains('arrived'), late: false });
+          // One late frame, as soon as the dock is told to go.
+          if (told && !seen.some((f) => f.late)) {
+            seen.at(-1).late = true;
+            const end = performance.now() + 40;
+            while (performance.now() < end);
+          }
+          if (performance.now() - start < 900) requestAnimationFrame(step);
+          else resolve(seen);
+        };
+        requestAnimationFrame(step);
+      })
+  );
+  await emit(page, 'summoned', 'pc:1');
+  const seen = await frames;
+  const late = seen.findIndex((f) => f.late);
+  const settled = seen.findIndex((f) => f.arrived);
+  const after = settled > late + 1 ? seen[settled].at - seen[late + 1].at : 0;
+  check('back from a game, the screen settles in once frames come on time after the dock goes, not on a late one', late >= 0 && settled > late + 2 && after >= 45, `late at frame ${late}, settled at ${settled}, ${Math.round(after)} ms after`);
+  await close(page);
+}
+
 // 32. Holding PS while the screensaver shows only ends it, as any first press does: Rust sends `summoned` rather than
 // a press, and the game menu open underneath stays open. A summon after the grace does what a summon does.
 {
