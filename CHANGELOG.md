@@ -62,7 +62,9 @@ Every release of Lamplit, newest first. The format follows
 
 - The home screen asks less of the graphics card, so its menus keep up at 120 Hz on a card running at its middle
   speed. The background holds still for the half second a panel takes to open or close, a pause too short to see,
-  and the game menu's blurred background is drawn once as the menu opens rather than on every frame.
+  and the game menu's blurred background is drawn once as the menu opens rather than on every frame. The game menu
+  opens without a stutter, its art for the blurred background made small away from the screen's own work, and on a
+  4K TV it closes smoothly also once the graphics card has slowed to its lowest speed while the menu was open.
 - The clock is now a status capsule, top right: the controllers' and the headset's batteries, the volume, a moon
   while quiet mode is on, and the time, as the dock shows them. Settings grows down out of it, and the capsule stays
   as Settings' header. Settings is only as tall as what it holds, each section has an icon, and opening a section

@@ -11,7 +11,7 @@ import { liftLayout } from './logic.js';
 import { morph, rest, turn } from './morph.js';
 import { SPRINGS } from './springs.js';
 import { els, state } from './state.js';
-import { paintVeil } from './veil.js';
+import { paintVeil, releaseStage } from './veil.js';
 
 /** The cover rises on the lift spring (style.css --lift), 1% past its place and back, and lowers on the close one. */
 const CLOSE = SPRINGS.close;
@@ -107,6 +107,7 @@ export function lower(away = false) {
 
 function land() {
   els.lift.classList.remove('shown', 'away');
+  releaseStage();
   rest(els.sheet);
   state.lifted = null;
   els.track.querySelector('.cover.lifted')?.classList.remove('lifted');

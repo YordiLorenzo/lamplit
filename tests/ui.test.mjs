@@ -1699,7 +1699,10 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   check(`${at}: the menu lifts the focused cover over a blurred, dimmed screen`, l.on && l.veil.opacity === '1' && l.veil.drawn && l.coverHidden, JSON.stringify(l));
   check(`${at}: the lifted cover is larger than in the row, and higher`, l.card.h > rest.cover.h * 1.4 && l.card.y + l.card.h / 2 < rest.cover.y + rest.cover.h / 2 - l.h * 0.1, JSON.stringify([rest.cover, l.card]));
   check(`${at}: the menu opens beside the cover, inside the screen`, l.menuOn && l.menu.x >= l.card.x + l.card.w && l.menu.x + l.menu.w <= l.w * 0.95 + 1 && l.menu.y >= 0 && l.menu.y + l.menu.h <= l.h, JSON.stringify([l.card, l.menu]));
-  check(`${at}: the art behind keeps drifting while the menu is up, so the GPU stays at speed`, l.drift === 'running', l.drift);
+  // Once the menu rests, the art behind holds still as one opaque copy under the veil (veil.js, 54).
+  await until(page, () => document.getElementById('stage').dataset.stage === 'staged');
+  l = await lifted();
+  check(`${at}: once the menu rests, the art behind holds still under the veil`, l.drift === 'paused', l.drift);
   await page.screenshot({ path: path.join(shots, `menu-${vp.width}x${vp.height}.png`) });
   await page.keyboard.press('Escape');
   await until(page, () => !document.getElementById('lift').classList.contains('shown'));
@@ -4018,17 +4021,15 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await close(page);
 }
 {
-  // The veil keeps only the images of the screen it last drew (veil.js images).
+  // The veil keeps only the images of the screen it last drew (veil.js bitmaps).
   const page = await open({ games: [game(1), game(2)] });
   await page.evaluate(() => {
     window.__images = [];
-    const Real = window.Image;
-    window.Image = class extends Real {
-      constructor(...a) {
-        super(...a);
-        // Only the veil's: the accent is read from the same hero elsewhere (library.js sampleAccent).
-        if (new Error().stack.includes('/veil.js')) window.__images.push(this);
-      }
+    const real = window.fetch;
+    window.fetch = function (...a) {
+      // Only the veil's: the accent is read from the same hero elsewhere (library.js sampleAccent).
+      if (new Error().stack.includes('/veil.js')) window.__images.push({ src: String(a[0]) });
+      return real.apply(this, a);
     };
   });
   /** Opens and closes the game menu once its veil is drawn; returns the images loaded meanwhile, by address. */
@@ -4052,6 +4053,143 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     "the veil loads a screen's images once, and lets go of those the screen no longer shows",
     first.length > 0 && !again.some((u) => first.includes(u)) && first.every((u) => after.includes(u)),
     JSON.stringify({ first, again, after })
+  );
+  await close(page);
+}
+
+// 54. The game menu's two stutters on TOASTER. Opening it, the veil draws its art scaled down off the page's thread,
+// and only once the press's frame has gone out, so that frame has only the lift's own work. Once it has come to rest,
+// the hero and its shade under the veil are held still as one opaque copy, which the veil fades out over as the menu
+// closes; the live stage comes back, unchanged, as the card lands.
+{
+  // A hero as large as Steam's (3840 wide), drawn in a page and saved.
+  const maker = await browser.newPage();
+  const big = await maker.evaluate(() => {
+    const c = Object.assign(document.createElement('canvas'), { width: 3840, height: 1240 });
+    const ctx = c.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 3840, 1240);
+    g.addColorStop(0, '#3a6ea5');
+    g.addColorStop(1, '#c0503a');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 3840, 1240);
+    for (let x = 0; x < 3840; x += 64) {
+      ctx.fillStyle = `hsl(${x % 360} 60% 50%)`;
+      ctx.fillRect(x, 400 + (x % 300), 32, 200);
+    }
+    return c.toDataURL('image/jpeg', 0.9).split(',')[1];
+  });
+  await maker.close();
+  const dir = mkdtempSync(path.join(tmpdir(), 'lamplit-big-'));
+  process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
+  const hero = path.join(dir, 'hero.jpg');
+  writeFileSync(hero, Buffer.from(big, 'base64'));
+  const games = [1, 2, 3].map((i) => game(i, { art: { ...art[0], hero } }));
+  const page = await open({ games });
+  await until(page, () => document.querySelector('.hero.on')?.style.backgroundImage.includes('hero.jpg'));
+  await settled(page);
+  await page.evaluate(() => {
+    window.__drawn = [];
+    const draw = CanvasRenderingContext2D.prototype.drawImage;
+    CanvasRenderingContext2D.prototype.drawImage = function (source, ...rest) {
+      if (new Error().stack.includes('/veil.js')) window.__drawn.push({ kind: source.constructor.name, width: source.width, at: performance.now() });
+      return draw.call(this, source, ...rest);
+    };
+  });
+  /** Opens the menu; what the veil drew within the press's own task, and in all. */
+  const openMenu = () =>
+    page.evaluate(async () => {
+      window.__drawn = [];
+      window.__emit('pad', 'menu');
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+      return window.__drawn.length;
+    });
+  let inPress = await openMenu();
+  await until(page, () => document.querySelector('#lift .veil').classList.contains('drawn'));
+  const drawn = await page.evaluate(() => window.__drawn.filter((d) => d.kind !== 'HTMLCanvasElement'));
+  check(
+    "opening the menu, the veil draws its art scaled down off the page's thread, never at the art's full size",
+    inPress === 0 && drawn.length > 0 && drawn.every((d) => d.kind === 'ImageBitmap' && d.width <= Math.ceil((1920 * 1.25) / 8 / 16) * 32),
+    JSON.stringify({ inPress, drawn: drawn.map((d) => `${d.kind} ${d.width}`) })
+  );
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  // Again, its art already decoded: still nothing drawn in the press's task.
+  inPress = await openMenu();
+  check('... and draws nothing in the press\'s own frame, also with its art at hand', inPress === 0, String(inPress));
+  await until(page, () => document.querySelector('#lift .veil').classList.contains('drawn'));
+  // Once it has come to rest, the stage under the veil is one opaque copy, and the drift holds.
+  await until(page, () => document.getElementById('stage').dataset.stage === 'staged');
+  await page.waitForTimeout(100);
+  const staged = await page.evaluate(() => {
+    const copy = document.getElementById('stageCopy');
+    const d = copy.getContext('2d').getImageData(0, 0, copy.width, copy.height).data;
+    let alpha = 255;
+    for (let i = 3; i < d.length; i += 4 * 97) alpha = Math.min(alpha, d[i]);
+    const vis = (el) => getComputedStyle(el).visibility;
+    return {
+      stage: document.getElementById('stage').dataset.stage,
+      copy: vis(copy),
+      size: [copy.width, copy.height].join('x'),
+      alpha,
+      live: [...document.querySelectorAll('.hero, .shade')].map(vis).join(' '),
+      drift: [...document.querySelectorAll('.hero')].map((h) => getComputedStyle(h).animationPlayState).join(' '),
+    };
+  });
+  check(
+    'once the menu has come to rest, the hero and its shade under the veil are one opaque copy at full size, and the drift holds',
+    staged.copy === 'visible' && staged.size === '1920x1080' && staged.alpha === 255 && !staged.live.includes('visible') && staged.drift === 'paused paused',
+    JSON.stringify(staged)
+  );
+  // The copy shows what the live stage shows: compared with the veil and the menu out of the way.
+  await page.evaluate(() => (document.getElementById('lift').style.display = 'none'));
+  const shot = (name) => page.screenshot({ path: path.join(shots, name), clip: { x: 0, y: 0, width: 1920, height: 1080 } });
+  const copyShot = await shot('stage-copy.png');
+  await page.evaluate(() => (document.getElementById('stage').dataset.stage = 'held'));
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const liveShot = await shot('stage-live.png');
+  const diff = await page.evaluate(
+    async ([a, b]) => {
+      const load = (b64) => createImageBitmap(new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type: 'image/png' }));
+      const [x, y] = await Promise.all([load(a), load(b)]);
+      const c = new OffscreenCanvas(x.width, x.height).getContext('2d');
+      c.drawImage(x, 0, 0);
+      const p = c.getImageData(0, 0, x.width, x.height).data;
+      c.drawImage(y, 0, 0);
+      const q = c.getImageData(0, 0, x.width, x.height).data;
+      let sum = 0;
+      let worst = 0;
+      for (let i = 0; i < p.length; i += 4 * 7) {
+        for (let k = 0; k < 3; k++) {
+          const e = Math.abs(p[i + k] - q[i + k]);
+          sum += e;
+          worst = Math.max(worst, e);
+        }
+      }
+      return { mean: sum / ((p.length / (4 * 7)) * 3), worst };
+    },
+    [copyShot.toString('base64'), liveShot.toString('base64')]
+  );
+  check('... which looks as the live stage does', diff.mean < 2, JSON.stringify(diff));
+  await page.evaluate(() => (document.getElementById('stage').dataset.stage = 'staged'));
+  await page.evaluate(() => (document.getElementById('lift').style.display = ''));
+  // Closing, the veil fades out over the copy; as the card lands the live stage is back, and drifts on.
+  const closing = await page.evaluate(async () => {
+    window.__emit('pad', 'back');
+    await new Promise((r) => setTimeout(r, 120));
+    return document.getElementById('stage').dataset.stage;
+  });
+  await settled(page);
+  await until(page, () => !document.body.classList.contains('morphing'));
+  const after = await page.evaluate(() => ({
+    stage: document.getElementById('stage').dataset.stage ?? null,
+    copy: [document.getElementById('stageCopy').width, getComputedStyle(document.getElementById('stageCopy')).visibility].join(' '),
+    live: getComputedStyle(document.querySelector('.hero.on')).visibility + ' ' + getComputedStyle(document.querySelector('.shade')).visibility,
+    drift: getComputedStyle(document.querySelector('.hero.on')).animationPlayState,
+  }));
+  check(
+    'closing, the veil fades out over the copy, and as the card lands the live stage is back and drifts on',
+    closing === 'staged' && after.stage === null && after.copy === '0 hidden' && after.live === 'visible visible' && after.drift === 'running',
+    JSON.stringify({ closing, after })
   );
   await close(page);
 }

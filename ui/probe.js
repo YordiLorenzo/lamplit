@@ -432,7 +432,8 @@ async function home() {
     }
   }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true });
   // A toast, and the screensaver woken (by a key it keeps to itself), start interactions of their own.
-  watch('#status, #saver', (m) => {
+  // The stage held and copied under the game menu's veil (veil.js) is no change anyone sees.
+  watch('#status, #saver, #stage[data-stage]', (m) => {
     const on = flipped(m, 'on');
     const id = /** @type {Element} */ (m.target).id;
     if (on === null) return null;

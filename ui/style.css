@@ -49,7 +49,8 @@ body.pointer { cursor: default; }
 .hero {
   position: absolute;
   inset: -5%;
-  background: center 30% / cover no-repeat;
+  /* Opaque, the colour of the page under it, so the page's own background isn't drawn under it on every frame. */
+  background: var(--bg) center 30% / cover no-repeat;
   opacity: 0;
   transition: opacity 700ms ease;
   animation: drift 40s ease-in-out infinite alternate;
@@ -66,11 +67,16 @@ body.pointer { cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .hero { animation: none; }
 }
-/* Nobody is using Lamplit (input.js): the drift holds where it is. Under a panel and a game's menu it keeps going:
-   held still, the GPU drops to its idle clocks within 2 s, and what closes then stutters on screen while they come
-   back (about 12 W more while one is open, the same as the home row). It holds only while a plate morphs (morph.js),
-   a pause too short to see, which spares those frames drawing the whole screen. */
-body.still .hero, body.morphing .hero { animation-play-state: paused; }
+/* Nobody is using Lamplit (input.js): the drift holds where it is. Under a panel it keeps going: held still, the GPU
+   drops to its idle clocks within 2 s, and what closes then stutters on screen while they come back (about 12 W more
+   while one is open, the same as the home row). It holds while a plate morphs (morph.js), a pause too short to see,
+   which spares those frames drawing the whole screen, and under the game menu once it rests, where the stage is a
+   copy of itself (veil.js) whose frames are cheap enough at the idle clocks. */
+body.still .hero, body.morphing .hero, #stage[data-stage] .hero { animation-play-state: paused; }
+/* Under the game menu's veil, once the menu has come to rest: the hero and its shade as one opaque copy (veil.js). */
+#stageCopy { position: absolute; inset: 0; width: 100%; height: 100%; visibility: hidden; }
+#stage[data-stage='staged'] #stageCopy { visibility: visible; }
+#stage[data-stage='staged'] :is(.hero, .shade) { visibility: hidden; }
 
 .shade {
   position: absolute;
