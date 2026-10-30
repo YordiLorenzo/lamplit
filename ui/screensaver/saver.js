@@ -45,6 +45,16 @@ const START_SCALE = 0.6;
 const MIN_SCALE = 0.34;
 /** This many refreshes of the screen missed within about half a second step the scale down (adapt). */
 const MISSES = 4;
+
+/**
+ * The refreshes missed lately, after a frame that came `gap` ms after the one before on a screen that refreshes every
+ * `refresh` ms: those missed before fade over about half a second, and the gap adds the refreshes it skipped, at most
+ * one fewer than MISSES. So frames that keep coming late step the scale down however slow they are, while one hitch
+ * alone never does. Counting 1 per late frame, a frame every 200 ms settled at 3 and never did.
+ * @param {number} missed @param {number} gap @param {number} refresh
+ */
+export const missedAfter = (missed, gap, refresh) =>
+  missed * Math.exp(-gap / 500) + Math.min(MISSES - 1, Math.max(0, Math.round(gap / refresh) - 1));
 /** The canvas itself stops at about 1440p: the grain is all it adds above that. */
 const MAX_PIXELS = 2560 * 1440;
 /** After an hour nobody is watching: the art fades to black over FADE_OUT_S and stops drawing. */
@@ -483,7 +493,7 @@ export class Saver {
     if (!this.renderer || this.paused || !this.frameMs || gap <= 0 || gap > 1000) return;
     // A refresh is the shortest gap seen, 60 Hz at most: frames may all come late from the first.
     this.refresh = Math.min(this.refresh, gap);
-    this.missed = this.missed * Math.exp(-gap / 500) + (gap > this.refresh * 1.5 ? 1 : 0);
+    this.missed = missedAfter(this.missed, gap, this.refresh);
     if (this.missed >= MISSES && this.scale > MIN_SCALE) {
       this.scale = Math.max(MIN_SCALE, this.scale * 0.85);
       this.missed = 0;
