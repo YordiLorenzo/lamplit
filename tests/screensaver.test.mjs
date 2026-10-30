@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { LAMPLIT, forMood, fromOklch, gradient, medianCut, paletteOf, scenePalette, toOklch } from '../ui/screensaver/palette.js';
 import { DRIFT, SCENES, driftCycle, fragmentSource, nextOrder, particleSources, scenesFor, showsMark } from '../ui/screensaver/scenes.js';
+import { missedAfter } from '../ui/screensaver/saver.js';
 
 /** RGBA bytes of an image made of `parts`: [[r, g, b, a?], pixel count] each. */
 function image(...parts) {
@@ -209,5 +210,34 @@ describe("Drift's timing", () => {
     const into = { a: 9, b: 9, mix: 9, cycle: 9 };
     assert.equal(driftCycle(length + DRIFT.hold + DRIFT.change / 2, 3, into), into);
     assert.deepEqual(into, { a: 1, b: 2, mix: 0.5, cycle: 1 });
+  });
+});
+
+describe('refreshes missed, which step the scale down at four (saver.js adapt)', () => {
+  /** The count after frames `gaps` ms apart on a screen refreshing every `refresh` ms, and the most it reached. */
+  const count = (gaps, refresh) => {
+    let missed = 0;
+    let most = 0;
+    for (const gap of gaps) {
+      missed = missedAfter(missed, gap, refresh);
+      most = Math.max(most, missed);
+    }
+    return most;
+  };
+  test('frames that come 200 ms apart step it down, at 60 Hz and at 120 Hz', () => {
+    for (const refresh of [1000 / 60, 1000 / 120]) assert.ok(count(Array(3).fill(200), refresh) >= 4, String(refresh));
+  });
+  test('so do frames that miss one refresh in two', () => {
+    assert.ok(count(Array(10).fill(1000 / 60 * 2), 1000 / 60) >= 4);
+    assert.ok(count(Array(10).fill(1000 / 120 * 2), 1000 / 120) >= 4);
+  });
+  test('one hitch of 50 ms among frames on time does not, at 60 Hz or at 120 Hz', () => {
+    for (const refresh of [1000 / 60, 1000 / 120]) {
+      const gaps = [...Array(10).fill(refresh), 50, ...Array(30).fill(refresh)];
+      assert.ok(count(gaps, refresh) < 4, String(refresh));
+    }
+  });
+  test('frames on time miss nothing', () => {
+    assert.equal(count(Array(60).fill(1000 / 120), 1000 / 120), 0);
   });
 });
