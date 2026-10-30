@@ -1450,19 +1450,31 @@ const saverView = (page) =>
     };
   });
 /** Waits for the screensaver to show (it fades in once its first frame is drawn). */
-const saverOn = (page) => until(page, () => document.querySelector('#saver.on'));
+const saverOn = (page) =>
+  // As long as a runner drawing in software takes to compile a scene and fade it in.
+  page.waitForFunction(() => document.querySelector('#saver.on'), null, { timeout: 30000 }).catch(() => {});
+/**
+ * From now on the page's clock (open with `clock`) moves only as the test moves it, with runFor and fastForward,
+ * whatever pace the runner keeps: a key and the pad press Steam mirrors from it come at one time, as they do.
+ */
+const holdClock = async (page) => page.clock.pauseAt(new Date((await page.evaluate(() => Date.now())) + 50));
+/** On a held clock: lets the page's frames run until the screensaver shows (it fades in once they've come on time). */
+async function saverShows(page) {
+  for (let i = 0; i < 600 && !(await page.evaluate(() => Boolean(document.querySelector('#saver.on')))); i++) await page.clock.runFor(50);
+}
 
 // 28. The screensaver: after five minutes without input it covers the screen, and the first press only ends it. The
 // key, the pad's own press of the same button (Steam mirrors one as the other), a held direction's repeats and a click
 // do nothing else. It stays away while a game runs or another window is in front.
 {
   const page = await open({ games: [game(1), game(2), game(3), game(4)], clock: true });
+  await holdClock(page);
   await page.clock.fastForward('04:50');
   await page.waitForTimeout(200);
   let v = await saverView(page);
   check('no screensaver before five minutes without input', !v.on, JSON.stringify(v));
   await page.clock.fastForward('00:15');
-  await saverOn(page);
+  await saverShows(page);
   v = await saverView(page);
   check('the screensaver shows after five minutes without input', v.on && ['webgl', 'css'].includes(v.mode), JSON.stringify(v));
   await page.keyboard.press('ArrowRight');
@@ -1475,14 +1487,14 @@ const saverOn = (page) => until(page, () => document.querySelector('#saver.on'))
   check('the next press moves again', v.focus === 1, `focus ${v.focus}`);
 
   await page.clock.fastForward('05:05');
-  await saverOn(page);
+  await saverShows(page);
   await emit(page, 'pad', 'ok');
   v = await saverView(page);
   check('✕ ends the screensaver without starting the game', !v.on && !v.starting && !v.calls.includes('launch_start'), JSON.stringify(v));
 
   await page.clock.runFor(600);
   await page.clock.fastForward('05:05');
-  await saverOn(page);
+  await saverShows(page);
   // Rust repeats a held direction after 380 ms, then every 110 ms, then faster.
   await emit(page, 'pad', 'left');
   for (const gap of [380, 110, 110, 70]) {
@@ -1496,7 +1508,7 @@ const saverOn = (page) => until(page, () => document.querySelector('#saver.on'))
   // still moves nothing.
   await page.clock.runFor(600);
   await page.clock.fastForward('05:05');
-  await saverOn(page);
+  await saverShows(page);
   await page.keyboard.press('ArrowLeft');
   await emit(page, 'pad', 'left');
   for (const gap of [380, 110, 110, 70]) {
@@ -1514,7 +1526,7 @@ const saverOn = (page) => until(page, () => document.querySelector('#saver.on'))
   await page.mouse.move(x, y);
   await page.clock.runFor(600);
   await page.clock.fastForward('05:05');
-  await saverOn(page);
+  await saverShows(page);
   await page.mouse.move(x + 3, y + 2);
   v = await saverView(page);
   check('a twitch of the pointer leaves the screensaver on', v.on, JSON.stringify(v));
@@ -1530,9 +1542,10 @@ const saverOn = (page) => until(page, () => document.querySelector('#saver.on'))
   check('no screensaver while a game runs', !v.on, JSON.stringify(v));
   await emit(page, 'play', play('ended', 'pc:2'));
   await page.clock.fastForward('05:05');
-  await saverOn(page);
+  await saverShows(page);
   await running(page, 'pc:2');
-  await until(page, () => !document.querySelector('#saver.on'));
+  // It ends on its next frame.
+  await page.clock.runFor(100);
   v = await saverView(page);
   check('a game that starts ends the screensaver', !v.on, JSON.stringify(v));
 
@@ -1603,10 +1616,11 @@ const saverOn = (page) => until(page, () => document.querySelector('#saver.on'))
   await down('Screensaver');
   await page.keyboard.press('Enter');
   await down('Show it now');
+  await holdClock(page);
   await page.keyboard.press('Enter');
-  // The pad's own press of the ✕ that Steam mirrored as Enter.
+  // The pad's own press of the ✕ that Steam mirrored as Enter, at the same time.
   await emit(page, 'pad', 'ok');
-  await saverOn(page);
+  await saverShows(page);
   s = await saverView(page);
   check("Show it now shows the screensaver, and the ✕ that asked doesn't end it", s.on && SCENES.some((x) => x.id === s.scene), JSON.stringify(s));
   await page.clock.runFor(600);
@@ -2139,8 +2153,13 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
     // A show that ends frees its buffers a second later, but keeps the art's textures: the next one uploads none.
     await page.goto(`${pageOrigin}/ui/screensaver/preview.html?scene=drift&hud=0`);
     await page.waitForFunction(() => window.preview?.saver.art.heroes.length > 1, null, { timeout: 30000 });
-    await page.waitForTimeout(500);
+    // Drift has drawn with the hero images, uploading them.
+    await page.waitForFunction(() => window.preview.saver.renderer.images.size >= 2, null, { timeout: 30000 }).catch(() => {});
     const again = await page.evaluate(async () => {
+      /** @param {() => boolean} ok */
+      const until = async (ok) => {
+        for (let i = 0; i < 300 && !ok(); i++) await new Promise((resolve) => setTimeout(resolve, 50));
+      };
       const { saver } = window.preview;
       const scene = saver.current.scene;
       let uploads = 0;
@@ -2152,15 +2171,16 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
       };
       const art = saver.renderer.images.size;
       saver.stop();
-      await new Promise((resolve) => setTimeout(resolve, 1300));
+      await until(() => saver.renderer.targets.every((t) => !t));
       const freed = saver.renderer.targets.every((t) => !t);
       saver.start(scene);
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      return { scene: saver.current.scene.id, art, freed, uploads };
+      // Its first frame drawn, with the hero images.
+      await until(() => saver.drawn);
+      return { scene: saver.current.scene.id, art, freed, drawn: saver.drawn, uploads };
     });
     check(
       'a show that ends frees its buffers, and the next one uploads no art again',
-      again.scene === 'drift' && again.art >= 2 && again.freed && again.uploads === 0,
+      again.scene === 'drift' && again.art >= 2 && again.freed && again.drawn && again.uploads === 0,
       JSON.stringify(again)
     );
     // The frame Lamplit draws ahead (Saver.prime) waits while the last show fades out, though its scene is compiled.
@@ -2176,7 +2196,8 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
       saver.opening = saver.current.scene;
       saver.prime();
       const whileFading = draws;
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      // Once the fade-out has ended.
+      for (let i = 0; i < 300 && getComputedStyle(saver.root).visibility !== 'hidden'; i++) await new Promise((resolve) => setTimeout(resolve, 50));
       saver.prime();
       return { whileFading, once: draws, freed: saver.renderer.targets.every((t) => !t), canvas: saver.canvas.width };
     });
@@ -2185,45 +2206,61 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
       fading.whileFading === 0 && fading.once > 0 && fading.freed && fading.canvas === 1,
       JSON.stringify(fading)
     );
+    // The frames' times in the two checks below are the test's own: requestAnimationFrame and performance.now follow
+    // the times it steps through, so a runner drawing in software, whose frames come late anyway, sees the same.
+    await page.evaluate(() => {
+      window.__frames = () => {
+        const real = { raf: window.requestAnimationFrame, now: performance.now };
+        let t = real.now.call(performance);
+        /** @type {FrameRequestCallback[]} */
+        let due = [];
+        window.requestAnimationFrame = (callback) => due.push(callback);
+        performance.now = () => t;
+        return {
+          get t() {
+            return t;
+          },
+          /** The next frame, `gap` ms after the one before. @param {number} gap */
+          step(gap) {
+            t += gap;
+            const now = due;
+            due = [];
+            for (const callback of now) callback(t);
+          },
+          end() {
+            window.requestAnimationFrame = real.raf;
+            performance.now = real.now;
+          },
+        };
+      };
+    });
     // The fade-in waits for the frames to come on time for 450 ms (a GPU coming up from its idle clocks takes up to
     // 265 ms a frame at first), 750 ms at most from the first frame drawn. Meanwhile the screensaver is drawn but too
-    // faint to see, so the GPU does the work it will do once it shows, and the fade starts from there. Here the page
-    // holds each frame 40 ms for a while from the start: not at all, for 100 ms, and for 1.5 s.
-    const fadeIn = await page.evaluate(async () => {
+    // faint to see, so the GPU does the work it will do once it shows, and the fade starts from there. Here the frames
+    // come 40 ms apart for a while from the start, then at 60 Hz: not at all, for 100 ms, and for 1.5 s.
+    const fadeIn = await page.evaluate(() => {
       const { saver } = window.preview;
       const look = () => {
         const style = getComputedStyle(saver.root);
         return `${style.visibility} ${Number(style.opacity).toFixed(3)}`;
       };
-      const fadesInAfter = async (/** @type {number} */ lateFor) => {
-        const until = performance.now() + lateFor;
-        const hold = () => {
-          const t = performance.now();
-          if (t >= until) return;
-          while (performance.now() - t < 40);
-          requestAnimationFrame(hold);
-        };
-        if (lateFor) requestAnimationFrame(hold);
-        const start = performance.now();
+      const fadesInAfter = (/** @type {number} */ lateFor) => {
+        const frames = window.__frames();
+        const start = frames.t;
         saver.start(saver.current.scene);
         /** How the screensaver looks while it waits, and as the fade starts. */
         const seen = { waiting: '', fading: '' };
-        const peek = setInterval(() => saver.root.classList.contains('waiting') && (seen.waiting = look()), 50);
-        await new Promise((resolve) =>
-          new MutationObserver((_, watch) => {
-            if (!saver.root.classList.contains('on')) return;
-            seen.fading = look();
-            watch.disconnect();
-            resolve(null);
-          }).observe(saver.root, { attributes: true })
-        );
-        clearInterval(peek);
-        const at = Math.round(performance.now() - start);
+        for (let i = 0; i < 300 && !saver.root.classList.contains('on'); i++) {
+          frames.step(frames.t - start < lateFor ? 40 : 1000 / 60);
+          if (saver.root.classList.contains('waiting')) seen.waiting = look();
+        }
+        seen.fading = look();
+        const at = Math.round(frames.t - start);
         saver.stop();
-        await new Promise((resolve) => setTimeout(resolve, Math.max(0, until - performance.now()) + 1300));
+        frames.end();
         return { at, ...seen };
       };
-      return { onTime: await fadesInAfter(0), late100: await fadesInAfter(100), late1500: await fadesInAfter(1500) };
+      return { onTime: fadesInAfter(0), late100: fadesInAfter(100), late1500: fadesInAfter(1500) };
     });
     const faint = (/** @type {{ waiting: string, fading: string }} */ f) => f.waiting === 'visible 0.004' && f.fading === 'visible 0.004';
     check(
@@ -2237,34 +2274,24 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
       JSON.stringify(fadeIn)
     );
     // A GPU still at a low power state draws the scenes in time for 30 frames a second while the screen misses
-    // refreshes at its own rate, which the fade-in and the mark's drift show. Here the page holds each frame 25 ms, so
-    // the screen misses every other refresh: within about as long as a show waits to fade in, the scale steps down
-    // twice, while frames on time keep it, and the next show starts at the full scale again. Counting only frames late
-    // for 30 frames a second, as it did before, took one step at most.
-    const adapts = await page.evaluate(async () => {
+    // refreshes at its own rate, which the fade-in and the mark's drift show. Here the frames come at 60 Hz for half a
+    // second, which keeps the scale, then 33 ms apart, missing every other refresh: within 900 ms, about as long as a
+    // show waits to fade in, the scale steps down twice at least, and the next show starts at the full scale again.
+    // Counting only frames late for 30 frames a second, as it did before, took no step.
+    const adapts = await page.evaluate(() => {
       const { saver } = window.preview;
-      const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const frames = window.__frames();
       saver.start(saver.current.scene);
-      await wait(500);
+      for (let i = 0; i < 30; i++) frames.step(1000 / 60);
       const onTime = saver.scale;
-      const until = performance.now() + 1000;
-      const hold = () => {
-        const t = performance.now();
-        if (t >= until) return;
-        while (performance.now() - t < 25);
-        requestAnimationFrame(hold);
-      };
-      requestAnimationFrame(hold);
-      await wait(900);
+      for (let i = 0; i < 27; i++) frames.step(1000 / 30);
       const missing = saver.scale;
-      await wait(200);
       const width = saver.renderer.targets[0]?.width;
       saver.stop();
-      await wait(1300);
       saver.start(saver.current.scene);
-      await wait(100);
       const next = saver.scale;
       saver.stop();
+      frames.end();
       return { onTime, missing, width, next };
     });
     check(
@@ -2545,7 +2572,7 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
 // screensaver gets its colours ready, and as the hand settles; that neither calls it off nor ends it. A real move,
 // once the hand has settled, still ends it.
 {
-  const page = await open({ games: [game(1), game(2)] });
+  const page = await open({ games: [game(1), game(2)], clock: true });
   // The art takes a moment to load, as it can on a TV PC, so the moves below come while the show gets ready.
   await page.route(`${assetOrigin}/**`, async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 400));
@@ -2564,18 +2591,26 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   });
   await page.mouse.move(row.x, row.y);
   await page.waitForTimeout(100);
+  // From the click on, the page's clock moves as the test says rather than with the runner, whose frames may come slow
+  // (drawn in software): the moves after the click come while the hand settles (SETTLE_MS, screensaver/index.js),
+  // however long the runner takes to make them, and the screensaver's frames come on time once it shows.
+  await holdClock(page);
   await page.mouse.click(row.x, row.y);
   for (const [dx, dy] of [[1, 0], [2, 1], [3, 1], [2, 3]]) {
     await page.mouse.move(row.x + dx, row.y + dy);
     await page.waitForTimeout(60);
   }
-  await saverOn(page);
+  // The show starts once its colours are in, and fades in once its frames have come on time for 450 ms: 700 ms after
+  // the click, still within the hand's second to settle.
+  await page.waitForFunction(() => window.__logs.some((l) => l.includes('screensaver on')), null, { polling: 100, timeout: 20000 }).catch(() => {});
+  await page.clock.runFor(700);
   let v = await saverView(page);
   check('Show it now starts though the pointer moves a pixel or two while it gets ready', v.on, JSON.stringify(v));
   await page.mouse.move(row.x + 14, row.y + 9);
   v = await saverView(page);
   check('the hand settling on the mouse right after the click leaves it on', v.on, JSON.stringify(v));
-  await page.waitForTimeout(1100);
+  // Over a second after the click: the hand has settled where it last moved to.
+  await page.clock.runFor(500);
   await page.mouse.move(row.x + 16, row.y + 11);
   v = await saverView(page);
   check('a pixel or two once settled leaves it on', v.on, JSON.stringify(v));
@@ -2680,14 +2715,28 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   /** The art files the screensaver reads (the home screen's own images load as images, not with fetch). */
   const read = [];
   page.on('request', (r) => r.resourceType() === 'fetch' && r.url().startsWith(assetOrigin) && read.push(decodeURIComponent(r.url())));
-  const files = [game(1), game(2)].flatMap((g) => [g.art.hero, g.art.portrait]).filter(Boolean);
+  let reading = 0;
+  const asset = (r) => r.resourceType() === 'fetch' && r.url().startsWith(assetOrigin);
+  page.on('request', (r) => asset(r) && reading++);
+  for (const done of ['requestfinished', 'requestfailed']) page.on(done, (r) => asset(r) && reading--);
+  // The home screen reads the focused game's hero for its accent (library.js): that done, every read is the
+  // screensaver's.
+  await page.waitForFunction(() => document.documentElement.style.getPropertyValue('--plate-light') !== '', null, { timeout: 30000 }).catch(() => {});
+  for (let i = 0; i < 300 && reading > 0; i++) await page.waitForTimeout(100);
+  read.length = 0;
+  const games = [game(1), game(2)];
+  const files = games.flatMap((g) => [g.art.hero, g.art.portrait]).filter(Boolean);
+  // What the warm-up reads: each art file the colours come from once, then each game's cover and hero image for the
+  // show (saver.js makeArt), whatever has been read before.
+  const reads = new Set(games.map((g) => g.art.hero || g.art.portrait)).size + games.filter((g) => g.art.portrait).length + Math.min(4, games.filter((g) => g.art.hero).length);
   await page.clock.fastForward('00:03');
-  for (let i = 0; i < 50 && !files.every((f) => read.some((u) => u.endsWith(f))); i++) await page.waitForTimeout(100);
+  // Until it has read them all, however long a runner takes.
+  for (let i = 0; i < 300 && !(read.length >= reads && reading === 0); i++) await page.waitForTimeout(100);
   let shown = await saverView(page);
   check(
     "two seconds without input, the next show's art and colours are read ahead, before it shows",
-    !shown.on && files.every((f) => read.some((u) => u.endsWith(f))),
-    JSON.stringify({ files, read: read.map((u) => u.split('/').slice(-2).join('/')) })
+    !shown.on && read.length === reads && files.every((f) => read.some((u) => u.endsWith(f))),
+    JSON.stringify({ files, reads, read: read.map((u) => u.split('/').slice(-2).join('/')) })
   );
   const before = read.length;
   await page.clock.fastForward('05:05');
