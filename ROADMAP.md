@@ -4,21 +4,16 @@ What comes next for Lamplit, and what stays out. Plans can change; to suggest so
 
 ## Done
 
+0.3.0 (2026-10-30) brought the in-game dock, a screensaver, a game's menu, Change art, Add a game by hand, and
+Battle.net, the Amazon Games app and itch.io.
+
 0.2.0 (2026-10-26) brought other controllers, a power menu, Find a game, favourites and hidden games, and play time.
+
 [CHANGELOG.md](CHANGELOG.md) has every change.
 
 ## Next
 
-- **An in-game dock.** Holding PS brings up a small dock along the bottom of the screen, over the game, instead of
-  the whole home screen. It grows like an island from the edge and holds what you reach for mid-game: volume and
-  sound output, the headset, controller battery, quiet mode, back to the home screen, and closing a game that
-  hangs.
-- **A screensaver** when nobody touches the controller, so a still home screen can't mark an OLED TV: generative
-  gradient art in 2D and 3D, coloured from your own games' art, always moving, and gone at the first button press.
-- **A game's menu** lifts its cover forward, blurs the rest of the screen, and opens beside the cover.
-- Change a game's art when Steam's match is wrong.
-- Add a game by hand.
-- Battle.net, the Amazon Games app and itch.io.
+Nothing new is planned yet. To suggest something, open an issue.
 
 ## Not planned
 
