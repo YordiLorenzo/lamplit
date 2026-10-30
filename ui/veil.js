@@ -200,15 +200,18 @@ export async function paintVeil(canvas) {
 }
 
 let stageTimer = 0;
+/** Stage copies asked for: a release, or a newer copy, drops one still being made. */
+let stages = 0;
 
 /**
  * Under the veil, once the menu has come to rest: the hero's drift holds, and the hero and its shade are drawn as they
  * show into one opaque copy at the screen's full resolution, which takes their place (style.css body.staged). Asked
- * for by paint `asked`, and dropped when the menu closed, or opened again, meanwhile.
+ * for by paint `asked`, and dropped when the menu closed, opened again, or the stage was released meanwhile.
  * @param {number} asked
  */
 async function holdStage(asked) {
-  const open = () => asked === paints && els.lift.classList.contains('on');
+  const mine = ++stages;
+  const open = () => mine === stages && asked === paints && els.lift.classList.contains('on');
   if (!open()) return;
   els.stage.dataset.stage = 'held';
   const heroes = heroesNow();
@@ -216,7 +219,11 @@ async function holdStage(asked) {
   const [vw, vh, k] = [innerWidth, innerHeight, devicePixelRatio];
   const urls = /** @type {string[]} */ (heroes.map((h) => h.url).filter((url) => !!url));
   const loaded = new Map(await Promise.all(urls.map(async (url) => /** @type {[string, ImageBitmap | null]} */ ([url, await bitmap(url, 0)]))));
-  if (!open()) return releaseStage();
+  if (!open()) {
+    // Not released yet (the menu closed, or a new paint came): the drift goes on.
+    if (mine === stages) releaseStage();
+    return;
+  }
   const copy = els.stageCopy;
   copy.width = Math.round(vw * k);
   copy.height = Math.round(vh * k);
@@ -235,6 +242,7 @@ async function holdStage(asked) {
 
 /** The live stage again, the drift going on from where it held, as the card lands (lift.js land). */
 export function releaseStage() {
+  stages++;
   clearTimeout(stageTimer);
   delete els.stage.dataset.stage;
   els.stageCopy.width = els.stageCopy.height = 0;
@@ -244,6 +252,17 @@ export function releaseStage() {
 
 // A copy made for another size of screen would show wrong as the menu closes.
 addEventListener('resize', () => els.stage.dataset.stage && releaseStage());
+
+/**
+ * The hero or its colour changed under the open menu (Change art): the copy, which shows the old ones, goes, and a
+ * new one is made once the change has played (a hero fades in over 700 ms).
+ */
+export function stageChanged() {
+  if (!els.lift.classList.contains('on')) return;
+  releaseStage();
+  const asked = paints;
+  stageTimer = setTimeout(() => holdStage(asked), STAGE_AFTER_MS);
+}
 
 /**
  * The shade over the hero (style.css .shade): dark from the left and from the bottom, and the game's colour low on

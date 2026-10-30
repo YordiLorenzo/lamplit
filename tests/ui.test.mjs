@@ -4266,6 +4266,76 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await close(page);
 }
 
+// 55. The stage copy under the game menu (54) never shows what isn't there. New art saved through Change art drops
+// the copy, which shows the old art, and a new one is made once the new hero has faded in; and a display change while
+// a copy is being made drops that copy for good, rather than hiding the live stage over an empty one.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await until(page, () => !!document.querySelector('.hero.on')?.style.backgroundImage.includes('hero'));
+  await settled(page);
+  const staged = () => page.evaluate(() => document.getElementById('stage').dataset.stage ?? null);
+  await emit(page, 'pad', 'menu');
+  await until(page, () => document.getElementById('stage').dataset.stage === 'staged');
+  // Change art saves other art for the game: its hero is now what was its cover.
+  await emit(page, 'art', like(ipc('art'), { id: 'pc:1', art: { ...art[0], hero: art[0].portrait } }));
+  await until(page, () => document.querySelector('.hero.on')?.style.backgroundImage.includes('portrait'));
+  const dropped = await staged();
+  await until(page, () => document.getElementById('stage').dataset.stage === 'staged');
+  const again = await page.evaluate(() => ({ stage: document.getElementById('stage').dataset.stage, width: document.getElementById('stageCopy').width }));
+  // The new copy shows the new hero: compared with the live stage, the menu out of the way.
+  await page.evaluate(() => (document.getElementById('lift').style.display = 'none'));
+  const copyShot = await page.screenshot();
+  await page.evaluate(() => (document.getElementById('stage').dataset.stage = 'held'));
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const liveShot = await page.screenshot();
+  const diff = await page.evaluate(
+    async ([a, b]) => {
+      const load = (b64) => createImageBitmap(new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type: 'image/png' }));
+      const [x, y] = await Promise.all([load(a), load(b)]);
+      const c = new OffscreenCanvas(x.width, x.height).getContext('2d');
+      c.drawImage(x, 0, 0);
+      const p = c.getImageData(0, 0, x.width, x.height).data;
+      c.drawImage(y, 0, 0);
+      const q = c.getImageData(0, 0, x.width, x.height).data;
+      let sum = 0;
+      for (let i = 0; i < p.length; i += 4 * 7) for (let k = 0; k < 3; k++) sum += Math.abs(p[i + k] - q[i + k]);
+      return sum / ((p.length / (4 * 7)) * 3);
+    },
+    [copyShot.toString('base64'), liveShot.toString('base64')]
+  );
+  check(
+    'new art saved under the menu drops the stage copy, and the next copy shows the new hero',
+    dropped === null && again.stage === 'staged' && again.width > 0 && diff < 2,
+    JSON.stringify({ dropped, again, diff })
+  );
+  await page.evaluate(() => {
+    document.getElementById('stage').dataset.stage = 'staged';
+    document.getElementById('lift').style.display = '';
+  });
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  await until(page, () => !document.getElementById('lift').classList.contains('shown'));
+  // Open again; the display changes just as the copy has been drawn, before it shows.
+  await page.evaluate(() => {
+    const copy = document.getElementById('stageCopy');
+    new MutationObserver((list, seen) => {
+      if (!copy.width) return;
+      seen.disconnect();
+      window.dispatchEvent(new Event('resize'));
+    }).observe(copy, { attributes: true, attributeFilter: ['width', 'height'] });
+  });
+  await emit(page, 'pad', 'menu');
+  await until(page, () => document.querySelector('#lift .veil').classList.contains('drawn'));
+  await page.waitForTimeout(2200);
+  const resized = await page.evaluate(() => ({
+    stage: document.getElementById('stage').dataset.stage ?? null,
+    copy: document.getElementById('stageCopy').width,
+    live: getComputedStyle(document.querySelector('.hero.on')).visibility,
+  }));
+  check('a display change as the copy is drawn drops it, and the live stage stays', resized.stage === null && resized.copy === 0 && resized.live === 'visible', JSON.stringify(resized));
+  await close(page);
+}
+
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));
 check('every command Rust registers is called by a test', untested.length === 0, untested.join(', '));
