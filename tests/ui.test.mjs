@@ -523,7 +523,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   // A controller's news refreshes the rows while the headset is still answering.
   const racedFrom = await page.evaluate(() => window.__calls.length);
   await page.keyboard.press('ArrowRight');
-  await page.waitForTimeout(50);
+  await until(page, (n) => window.__calls.slice(n).some((c) => c[0] === 'headset_set'), racedFrom);
   await emit(page, 'accessories', null);
   await idle(page);
   v = await view();
@@ -750,7 +750,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   s = await state(page);
   const atOnce = s.lastCall?.[0] === 'library_rescan';
-  await page.waitForTimeout(1000);
+  await until(page, () => window.__calls.at(-1)?.[0] === 'library_rescan');
   s = await state(page);
   check('coming forward looks for new installs, once the way in has played', !atOnce && s.lastCall?.[0] === 'library_rescan', `${atOnce} ${JSON.stringify(s.lastCall)}`);
   await close(page);
@@ -1080,7 +1080,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.down('Enter');
   // A held key repeats: the repeat starts no new hold, and the hold goes on.
   await page.keyboard.down('Enter');
-  await page.waitForTimeout(1100);
+  await until(page, () => window.__calls.some((c) => c[0] === 'power_restart'));
   await page.keyboard.up('Enter');
   await idle(page);
   v = await view();
@@ -1095,7 +1095,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await press('ArrowDown', 'down');
   await press('ArrowDown', 'down');
   await emit(page, 'pad', 'ok');
-  await page.waitForTimeout(1100);
+  await until(page, () => window.__calls.some((c) => c[0] === 'power_shut_down'));
   await emit(page, 'pad', 'ok-up');
   await idle(page);
   v = await view();
@@ -1693,6 +1693,11 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
     });
   const rest = await lifted();
   await page.keyboard.press('i');
+  // The veil is drawn a frame or two after the press (veil.js): the lift has settled once it has come in.
+  await until(page, () => {
+    const veil = document.querySelector('#lift .veil');
+    return veil.classList.contains('drawn') && getComputedStyle(veil).opacity === '1' && document.getElementById('details').classList.contains('on');
+  });
   await settled(page);
   let l = await lifted();
   const at = `${vp.width}x${vp.height}`;
@@ -1963,7 +1968,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   s = await state(page);
   check('✕ pressed on Remove removes nothing', s.lastCall?.[0] !== 'library_remove_game' && s.hint.includes('Hold to remove'), `${JSON.stringify(s.lastCall)} ${s.hint}`);
   await page.keyboard.down('Enter');
-  await page.waitForTimeout(1100);
+  await until(page, () => window.__calls.some((c) => c[0] === 'library_remove_game'));
   await page.keyboard.up('Enter');
   await idle(page);
   s = await state(page);
@@ -2291,16 +2296,16 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
       overlay: document.getElementById('overlay').classList.contains('on'),
     }));
   await emit(page, 'play', play('up', 'pc:1'));
-  await page.waitForTimeout(150);
+  await until(page, () => Number(getComputedStyle(document.getElementById('curtain')).opacity) > 0.2);
   let v = await look();
   check('the game\'s window up: the starting screen fades to black first', v.overlay && Number(v.curtain) > 0.2, JSON.stringify(v));
-  await page.waitForTimeout(400);
+  await until(page, () => getComputedStyle(document.getElementById('curtain')).opacity === '1');
   v = await look();
   check('under the black the launch goes on until the window has the screen', v.overlay && v.curtain === '1', JSON.stringify(v));
   await running(page, 'pc:1');
   v = await look();
   check('once it has, the starting screen ends under the black', !v.overlay && v.curtain === '1', JSON.stringify(v));
-  await page.waitForTimeout(1500);
+  await until(page, () => getComputedStyle(document.getElementById('curtain')).opacity === '0');
   v = await look();
   check('then the black lifts, the home screen ready behind the game', v.curtain === '0', JSON.stringify(v));
   // News of another game, while one starts, doesn't fade the screen.
@@ -2314,7 +2319,8 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
   check('another game running leaves the starting screen as it is', v.overlay && v.curtain === '0', JSON.stringify(v));
   // The window of the game being started goes during the fade, and no other is up yet: no news that it runs.
   await emit(page, 'play', play('up', 'pc:2'));
-  await page.waitForTimeout(2500);
+  await until(page, () => !document.body.classList.contains('curtain'));
+  await until(page, () => getComputedStyle(document.getElementById('curtain')).opacity === '0');
   v = await look();
   s = await state(page);
   check('a window gone during the fade: the black lifts on the starting screen', v.overlay && v.curtain === '0' && s.overlayTitle === 'Starting Game 002…', JSON.stringify(v) + s.overlayTitle);
@@ -2384,7 +2390,7 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
     }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   });
   await emit(page, 'summoned', 'pc:1');
-  await page.waitForTimeout(800);
+  await until(page, () => window.__arrival.includes('arrived') && window.__arrival.at(-1) === 'none' && window.__logs.some((l) => l.startsWith('info home: arrive')));
   let s = await state(page);
   let seen = await page.evaluate(() => window.__arrival.splice(0));
   const logged = await page.evaluate(() => window.__logs.filter((l) => l.startsWith('info home: arrive')));
@@ -2739,8 +2745,8 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   const page = await open({ games, screen: viewport, scale }, viewport);
   await page.keyboard.press('f');
   await page.click('#findStore');
+  await until(page, () => document.getElementById('findStores').classList.contains('on'));
   await settled(page);
-  await page.waitForTimeout(100);
   const f = await page.evaluate(() => {
     const box = (el) => el.getBoundingClientRect();
     const inside = (el) => {
@@ -3114,15 +3120,17 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     // On screen a frame or two before the button goes down, as an action's row is.
     for (let i = 0; i < 2; i++) await new Promise((r) => requestAnimationFrame(r));
     let acted = 0;
-    const letGo = hold(el, () => acted++, 300);
-    await wait(150);
-    const filling = parseFloat(getComputedStyle(el.querySelector('.fill')).strokeDashoffset);
+    const fill = () => parseFloat(getComputedStyle(el.querySelector('.fill')).strokeDashoffset);
+    // Let go once the ring has started to fill, well before the second it takes, however slowly the frames come.
+    const letGo = hold(el, () => acted++, 1000);
+    let filling = fill();
+    for (const end = performance.now() + 700; !(filling < 95) && performance.now() < end; filling = fill()) await wait(10);
     letGo();
-    await wait(400);
+    await wait(1200);
     const early = acted;
     const after = el.classList.contains('holding');
     hold(el, () => acted++, 300);
-    await wait(450);
+    for (const end = performance.now() + 3000; acted < 1 && performance.now() < end; ) await wait(20);
     el.remove();
     return { filling, early, after, full: acted, holding: el.classList.contains('holding') };
   });
@@ -3308,8 +3316,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   m = await menu();
   check('... Cross let go before the ring is full closes nothing', filling && !m.holding && !m.calls.slice(before).some((c) => c.includes('dock_close_game')), JSON.stringify(m.calls.slice(before)));
   await emit(page, 'pad', 'ok');
-  await page.waitForTimeout(1000);
-  await until(page, () => window.__calls.some((c) => c[0] === 'launch_resume'));
+  await until(page, () => window.__calls.some((c) => c[0] === 'dock_close_game') && window.__calls.some((c) => c[0] === 'launch_resume'));
   m = await menu();
   const asked = m.calls.slice(before).filter((c) => c.includes('dock_close_game'));
   check('... held, it asks the game Lamplit read to close, and gives it the screen to answer', JSON.stringify(asked) === JSON.stringify([JSON.stringify(['dock_close_game', { force: false, id: 'pc:1', session: 7 }])]), JSON.stringify(m.calls.slice(before)));
@@ -3330,6 +3337,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   const page = await open({ games: [game(1, { manual: true })] });
   await page.evaluate(() => (window.__settings = { library_remove_game: () => [] }));
   await emit(page, 'pad', 'menu');
+  await until(page, () => document.getElementById('details').classList.contains('on'));
   await settled(page);
   const at = await page.evaluate(() => {
     const r = [...document.querySelectorAll('#dChoices .row')].at(-1).getBoundingClientRect();
@@ -3343,7 +3351,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await page.waitForTimeout(900);
   const early = await removes();
   await page.mouse.down();
-  await page.waitForTimeout(1100);
+  await until(page, () => window.__calls.some((c) => c[0] === 'library_remove_game'));
   await page.mouse.up();
   await idle(page);
   check('with the mouse, Remove is held from button down to button up', early === 0 && (await removes()) === 1, `${early}`);
@@ -3554,8 +3562,9 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   check('with no search, the field grows out of its glass at its left end', near(m.findField?.box, glass), JSON.stringify({ m, glass }));
   await page.keyboard.type('po');
   await page.keyboard.press('Enter');
+  // Find has closed, and the search's pill is back above the row.
+  await until(page, () => !!document.querySelector('#filters .pill.query') && getComputedStyle(document.getElementById('filters')).opacity === '1');
   await settled(page);
-  await page.waitForTimeout(500);
   const pill = await boxOf('#filters .pill.query');
   await page.keyboard.press('f');
   m = await morphs(['findField', 'findPlate'], 'first');
@@ -3567,8 +3576,8 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   const plate = m.findPlate.own;
   const field = m.findField.own;
   check('the keyboard stands on the field, from its left end up', plate[0] === field[0] && plate[1] + plate[3] <= field[1], JSON.stringify({ plate, field }));
+  await until(page, () => getComputedStyle(document.getElementById('info')).opacity === '0');
   await settled(page);
-  await page.waitForTimeout(500);
   const open1 = await page.evaluate(() => {
     const covers = [...document.querySelectorAll('#track .cover')].map((c) => c.getBoundingClientRect().top);
     const bottoms = ['findPlate', 'findLine', 'findStores'].map((id) => document.getElementById(id).getBoundingClientRect().bottom);
@@ -3624,8 +3633,10 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     near(m.findField?.box, pill) && near(m.findPlate?.box, pill) && spring(m.findField, 'close') && spring(m.findPlate, 'close'),
     JSON.stringify({ pill, m })
   );
-  await settled(page);
-  await page.waitForTimeout(500);
+  await until(
+    page,
+    () => ['info', 'filters'].every((id) => getComputedStyle(document.getElementById(id)).opacity === '1') && getComputedStyle(document.getElementById('findLine')).opacity === '0'
+  );
   const closed = await page.evaluate(() => ({
     info: getComputedStyle(document.getElementById('info')).opacity,
     filters: getComputedStyle(document.getElementById('filters')).opacity,
@@ -3846,7 +3857,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   // Held to the end on the game now in focus: that game goes, and only it.
   await removeRow();
   await emit(page, 'pad', 'ok');
-  await page.waitForTimeout(1100);
+  await until(page, () => window.__calls.some((c) => c[0] === 'library_remove_game'));
   await emit(page, 'pad', 'ok-up');
   await idle(page);
   check('... and a hold held to the end removes the game it began on', JSON.stringify(await removes()) === JSON.stringify(['pc:2']), JSON.stringify(await removes()));
@@ -3897,6 +3908,10 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   const after = await page.evaluate(async () => {
     const { grow, morph, rest } = await import('./morph.js');
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    /** Until `what` has run, or 3 s have gone: what a replaced morph was to run would have run before it. */
+    const ranOnce = async (what) => {
+      for (const end = performance.now() + 3000; !ran.includes(what) && performance.now() < end; ) await wait(20);
+    };
     const plate = document.createElement('div');
     plate.style.cssText = 'position: fixed; left: 100px; top: 100px; width: 400px; height: 200px';
     document.body.append(plate);
@@ -3905,18 +3920,23 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     grow(plate, box, { done: () => ran.push('opened') });
     await wait(60);
     grow(plate, box, { back: true, done: () => ran.push('went back') });
-    await wait(600);
+    await ranOnce('went back');
     grow(plate, box, { done: () => ran.push('opened again') });
     await wait(60);
     rest(plate);
     morph(plate, { name: 'test', from: null, to: { box }, hold: true, done: () => ran.push('held') });
-    await wait(600);
+    await ranOnce('held');
     plate.remove();
     return ran;
   });
   check('a morph another replaces, or rest, never runs what was to run once it ended', JSON.stringify(after) === '["went back","held"]', JSON.stringify(after));
-  /** The ring, Find and its list once everything has had time to end. */
-  const ended = async () => {
+  /**
+   * The ring, Find and its list once everything has had time to end: once `ready` holds and nothing moves, and then a
+   * while for what a cancelled morph was to run.
+   */
+  const ended = async (ready) => {
+    await until(page, ready);
+    await settled(page);
     await page.waitForTimeout(700);
     return page.evaluate(() => {
       const ring = document.querySelector('#find .ring');
@@ -3932,18 +3952,24 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await page.keyboard.press('f');
   await page.waitForTimeout(80);
   await page.keyboard.press('Escape');
-  let e = await ended();
+  let e = await ended(() => !document.getElementById('find').classList.contains('on'));
   check('Find closed while it still opens leaves no focus ring behind', !e.ring && !e.ringSeen && !e.find, JSON.stringify(e));
   // The store list closed while it grows: the ring is on the chip, the list gone.
+  /** Whether the ring is on the store chip. */
+  const ringOnChip = () => {
+    const ring = document.querySelector('#find .ring');
+    const [r, c] = [ring, document.querySelector('#findStore')].map((el) => el.getBoundingClientRect());
+    return ring.classList.contains('on') && Math.abs(r.left - c.left) <= 2 && Math.abs(r.top - c.top) <= 2 && Math.abs(r.width - c.width) <= 2;
+  };
   await page.keyboard.press('f');
+  await until(page, () => document.querySelector('#find .ring').classList.contains('on'));
   await settled(page);
-  await page.waitForTimeout(500);
   for (let i = 0; i < 6 && (await page.evaluate(() => document.querySelector('#find .focus')?.dataset.id)) !== 'store'; i++) await page.keyboard.press('ArrowDown');
-  await page.waitForTimeout(400);
+  await until(page, ringOnChip);
   await page.keyboard.press('Enter');
   await page.waitForTimeout(80);
   await page.keyboard.press('Escape');
-  e = await ended();
+  e = await ended(ringOnChip);
   const onChip = await page.evaluate(() => {
     const [r, c] = ['#find .ring', '#findStore'].map((sel) => document.querySelector(sel).getBoundingClientRect());
     return Math.abs(r.left - c.left) <= 2 && Math.abs(r.top - c.top) <= 2 && Math.abs(r.width - c.width) <= 2;
@@ -3955,7 +3981,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await emit(page, 'summoned', null);
   // The list's opening stops with Find, and what it was to do once it ended with it.
   const growing = await page.evaluate(() => document.getElementById('findStores').getAnimations().filter((a) => !('transitionProperty' in a)).length);
-  e = await ended();
+  e = await ended(() => !document.getElementById('find').classList.contains('on'));
   check('Find closed while its store list still grows stops the list and leaves no focus ring behind', growing === 0 && !e.ring && !e.ringSeen && !e.find && !e.list, JSON.stringify({ ...e, growing }));
   await close(page);
 }
@@ -3981,6 +4007,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     await wait(t0 + tap + 80);
     const between = state();
     await wait(t0 + 250 + tap + 150);
+    for (const end = performance.now() + 3000; state() !== 'running' && performance.now() < end; ) await wait(performance.now() + 20);
     return { before, opening, between, after: state(), tap };
   }, SPRINGS.tap.ms);
   check(
@@ -4134,8 +4161,13 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   check('... and draws nothing in the press\'s own frame, also with its art at hand', inPress === 0, String(inPress));
   await until(page, () => document.querySelector('#lift .veil').classList.contains('drawn'));
   // Once it has come to rest, the stage under the veil is one opaque copy, and the drift holds.
-  await until(page, () => document.getElementById('stage').dataset.stage === 'staged');
-  await page.waitForTimeout(100);
+  await until(
+    page,
+    () =>
+      document.getElementById('stage').dataset.stage === 'staged' &&
+      getComputedStyle(document.getElementById('stageCopy')).visibility === 'visible' &&
+      [...document.querySelectorAll('.hero')].every((h) => getComputedStyle(h).animationPlayState === 'paused')
+  );
   const staged = await page.evaluate(() => {
     const copy = document.getElementById('stageCopy');
     const d = copy.getContext('2d').getImageData(0, 0, copy.width, copy.height).data;
@@ -4195,7 +4227,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     return document.getElementById('stage').dataset.stage;
   });
   await settled(page);
-  await until(page, () => !document.body.classList.contains('morphing'));
+  await until(page, () => !document.body.classList.contains('morphing') && document.getElementById('stage').dataset.stage === undefined);
   const after = await page.evaluate(() => ({
     stage: document.getElementById('stage').dataset.stage ?? null,
     copy: [document.getElementById('stageCopy').width, getComputedStyle(document.getElementById('stageCopy')).visibility].join(' '),
