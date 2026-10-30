@@ -221,7 +221,7 @@ mod tests {
         assert!(window::is_minimized(lamplit));
         assert!(give_way(true, false, 1, lamplit.0 as isize, game.0 as isize));
         assert!(!window::is_minimized(lamplit), "the desktop would show when the game closes");
-        assert_eq!(next(game), Some(lamplit));
+        assert_eq!(next(game).0, Some(lamplit), "{:?}", next(game));
         destroy(lamplit);
         destroy(game);
     }
@@ -237,7 +237,11 @@ mod tests {
         assert!(window::is_topmost(lamplit), "the next game's starting screen would go behind the cancelled game");
         // The launch goes on: Lamplit goes right behind its game's window.
         assert!(give_way(true, true, 1, id(lamplit), id(game)));
-        assert!(!window::is_topmost(lamplit) && next(game) == Some(lamplit), "{:?}", next(game));
+        let (behind, passed) = next(game);
+        assert!(
+            !window::is_topmost(lamplit) && behind == Some(lamplit),
+            "{behind:?} behind it, after {passed:?}; Lamplit is {lamplit:?}"
+        );
         destroy(lamplit);
         destroy(game);
     }

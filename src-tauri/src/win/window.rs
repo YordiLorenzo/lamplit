@@ -239,8 +239,9 @@ pub fn full_screen_app_in_front() -> bool {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use std::io::Write;
     use windows::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DestroyWindow, GW_HWNDNEXT, WINDOW_EX_STYLE, WS_POPUP,
+        CreateWindowExW, DestroyWindow, GW_HWNDNEXT, GetClassNameW, WINDOW_EX_STYLE, WS_POPUP,
     };
     use windows::core::w;
 
@@ -257,10 +258,35 @@ pub mod tests {
         .unwrap()
     }
 
-    /// The window right behind `window` in the z-order.
-    pub fn next(window: HWND) -> Option<HWND> {
-        // SAFETY: only reads the z-order.
-        unsafe { GetWindow(window, GW_HWNDNEXT) }.ok()
+    /// The window right behind `window` in the z-order, passing over this thread's windows that aren't the tests'
+    /// (STATIC), such as the IME windows Windows makes with a thread's first window and keeps right above their owner:
+    /// on Windows CI (2026-10-30) a window of no test's came between a window and the one placed behind it. Another
+    /// thread's window isn't passed over: one between would be a window misplaced. Also what was passed over, by class
+    /// and owner, for the failure message, and on stderr, which the test harness doesn't capture, for the CI log.
+    pub fn next(window: HWND) -> (Option<HWND>, Vec<String>) {
+        let mut passed = Vec::new();
+        let mut at = window;
+        loop {
+            // SAFETY: only reads the z-order.
+            let Ok(behind) = (unsafe { GetWindow(at, GW_HWNDNEXT) }) else { return (None, passed) };
+            let mut class = [0u16; 64];
+            // SAFETY: reads the class name into the buffer, at most its length.
+            let len = unsafe { GetClassNameW(behind, &mut class) }.max(0) as usize;
+            let class = String::from_utf16_lossy(&class[..len]);
+            // SAFETY: only reads which thread made the window.
+            let ours = unsafe { GetWindowThreadProcessId(behind, None) == GetCurrentThreadId() };
+            if !ours || class.eq_ignore_ascii_case("STATIC") {
+                if !passed.is_empty() {
+                    let _ =
+                        writeln!(std::io::stderr(), "z-order: passed over {passed:?} to reach {behind:?} ({class})");
+                }
+                return (Some(behind), passed);
+            }
+            // SAFETY: only reads the window's owner; it fails for a window without one.
+            let owner = unsafe { GetWindow(behind, GW_OWNER) }.ok();
+            passed.push(format!("{class} {behind:?}, owner {owner:?}"));
+            at = behind;
+        }
     }
 
     /// Closes a window `window(..)` made on this thread.
@@ -279,9 +305,11 @@ pub mod tests {
         set_topmost(lamplit, true);
         assert!(is_topmost(lamplit));
         assert!(place_behind(lamplit, other));
-        // SAFETY: reads the window after `other` in the z-order.
-        let next = unsafe { GetWindow(other, GW_HWNDNEXT) };
-        assert!(!is_topmost(lamplit) && next == Ok(lamplit), "{next:?}");
+        let (behind, passed) = next(other);
+        assert!(
+            !is_topmost(lamplit) && behind == Some(lamplit),
+            "{behind:?} behind it, after {passed:?}; Lamplit is {lamplit:?}"
+        );
         for w in [lamplit, game, other] {
             // SAFETY: each window is this thread's, made above.
             unsafe { DestroyWindow(w) }.unwrap();
