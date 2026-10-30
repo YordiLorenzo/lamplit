@@ -22,8 +22,8 @@ while you play. When the game closes, Lamplit is back on screen.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/launch.jpg" alt="The starting screen: Lamplit asks to sign in to the store app a game needs, with buttons to open it, try anyway or cancel"><br><sub>Starting a game: each store app it needs, and what it needs from you.</sub></td>
-    <td width="50%"><img src="docs/images/settings.jpg" alt="The Settings panel: Sound, Headset, Controllers, Overlay and pop-ups, Stores, System and Power, each with a one-line summary"><br><sub>Settings: each section with a one-line summary.</sub></td>
+    <td width="50%"><img src="docs/images/launch.jpg" alt="The starting screen: Lamplit checks that Steam and the EA app are signed in and up to date, then starts Titanfall 2"><br><sub>Starting a game: each store app it needs, and what it needs from you.</sub></td>
+    <td width="50%"><img src="docs/images/settings.jpg" alt="The Settings panel under the batteries, volume and time: Sound, Headset, Controllers, Overlay and pop-ups, Stores, Screensaver, System, Add a game and Power, each with a one-line summary"><br><sub>Settings: each section with a one-line summary.</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/images/sound.jpg" alt="The Sound section: output and microphone devices, volume, mute and the sound-follows switch"><br><sub>Sound: output, microphone and volume, from the sofa.</sub></td>
@@ -31,7 +31,11 @@ while you play. When the game closes, Lamplit is back on screen.
   </tr>
   <tr>
     <td width="50%"><img src="docs/images/find.jpg" alt="Find a game: an on-screen keyboard with rdr typed, store and sort choices, and the row narrowed to Red Dead Redemption 2"><br><sub>Find a game: "rdr" finds Red Dead Redemption 2.</sub></td>
-    <td width="50%"><img src="docs/images/details.jpg" alt="A game's menu: its cover lifted over the blurred home screen, and beside it the store, last played, play time and folder, with Play, Add to favourites, Change art and Hide this game"><br><sub>A game's menu: its cover lifted, its details and choices beside it.</sub></td>
+    <td width="50%"><img src="docs/images/details.jpg" alt="A game's menu: its cover lifted over the blurred home screen, and beside it the store, last played, play time and folder, with Play, Favourite, Change art and Hide this game"><br><sub>A game's menu: its cover lifted, its details and choices beside it.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/dock.jpg" alt="The in-game dock over Cyberpunk 2077: the game's cover and play time, the volume, batteries and time, and Resume, TV, Quiet, Stats, Home and Close game"><br><sub>The in-game dock: hold PS over a game.</sub></td>
+    <td width="50%"><img src="docs/images/screensaver.jpg" alt="The screensaver's Gallery scene: Far Cry 6, EA SPORTS FC 26, Red Dead Redemption 2 and Titanfall 2 covers in a dark room, reflected on a glossy floor"><br><sub>The screensaver: your covers in a dark gallery.</sub></td>
   </tr>
 </table>
 
