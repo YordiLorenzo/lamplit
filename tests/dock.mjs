@@ -82,32 +82,34 @@ const closes = async (page, from) => (await since(page, from)).filter((c) => c.s
 /** A close as the page sends it: for the game `g` the dock shows, in its session. */
 const closing = (force, g) => `dock_close_game ${JSON.stringify({ force, id: g.id, session: g.session })}`;
 
-/** Cross held on the focused tile for `ms`, then let go. */
-async function hold(page, ms) {
+/** Cross held on the focused tile until its ring is full (or the hold is let go), then let go. */
+async function hold(page) {
   await emit(page, 'dock-pad', 'ok');
-  await page.waitForTimeout(ms);
+  await until(page, () => !document.querySelector('.holding'));
   await emit(page, 'dock-pad', known('dock_release', 'ok-up'));
   await idle(page);
 }
 
 /** Where the focus ring is, and where the focused tile is, both inside the dock, in whole pixels. */
 const ringOn = (page) =>
-  page.evaluate(
-    () =>
-      new Promise((resolve) =>
-        // After the ring's own frame of layout, and its spring.
-        setTimeout(() => {
-          const ring = document.querySelector('#dock .ring');
-          const tile = document.querySelector('.tile.focus');
-          // Where each is on the screen.
-          const box = (el) => {
-            const b = el.getBoundingClientRect();
-            return [b.x, b.y, b.width, b.height].map(Math.round).join();
-          };
-          resolve({ ring: box(ring), tile: tile ? box(tile) : null, on: ring.classList.contains('on') });
-        }, 450)
-      )
-  );
+  page.evaluate(async () => {
+    const ring = document.querySelector('#dock .ring');
+    // Where each is on the screen.
+    const box = (el) => {
+      const b = el.getBoundingClientRect();
+      return [b.x, b.y, b.width, b.height].map(Math.round).join();
+    };
+    const now = () => {
+      const tile = document.querySelector('.tile.focus');
+      return { ring: box(ring), tile: tile ? box(tile) : null, on: ring.classList.contains('on') };
+    };
+    // Once it has sprung there, however slowly the frames come; after 3 s, wherever it is.
+    for (const end = performance.now() + 3000; performance.now() < end; await new Promise((r) => setTimeout(r, 20))) {
+      const at = now();
+      if (at.on && at.ring === at.tile) break;
+    }
+    return now();
+  });
 
 /**
  * @param {object} t
@@ -124,6 +126,8 @@ export async function dockTests({ open, close, check, shots }) {
     await answers(page, { game: playing, sound, accessories: ipc('accessories'), quiet: ipc('quiet'), overlays: ipc('overlays'), ...data });
     await emit(page, 'dock', opened);
     await idle(page);
+    // The spring starts once the dock's first frames come on time (dock/main.js open).
+    await until(page, () => document.getElementById('island').dataset.mode === 'open');
     await settled(page);
     return page;
   };
@@ -191,7 +195,7 @@ export async function dockTests({ open, close, check, shots }) {
     await idle(page);
     v = await view(page);
     check('Cross on another output moves the check to it at once, and the list stays a moment to show it', JSON.stringify(v.outputs) === '["TV","PRO X 2 headsetIn use"]' && JSON.stringify(await marks()) === '["|","focus current picked|check"]', `${JSON.stringify(v.outputs)} ${JSON.stringify(await marks())}`);
-    await page.waitForTimeout(800);
+    await until(page, () => document.getElementById('outputs').hidden);
     v = await view(page);
     check('then that output is the default, and the list closes', (await since(page, from)).includes(`sound_set_default {"id":"${headsetOut.id}"}`) && v.outputs === null && v.values.output === 'Headset', `${await since(page, from)} ${v.values.output}`);
     check('the island keeps its width while the list shows', island === (await page.evaluate(() => document.getElementById('island').offsetWidth)), String(island));
@@ -268,7 +272,7 @@ export async function dockTests({ open, close, check, shots }) {
     await page.waitForTimeout(HELD_MS);
     check('moving on lets go too', (await closes(page, from)).length === 0, JSON.stringify(await closes(page, from)));
     await emit(page, 'dock-pad', 'right');
-    await hold(page, HELD_MS);
+    await hold(page);
     check('held until the ring is full, the game is asked to close', JSON.stringify(await closes(page, from)) === JSON.stringify([closing(false, game)]), JSON.stringify(await closes(page, from)));
     await page.evaluate((g) => (window.__settings.game = g), hung);
     await emit(page, 'dock', closed);
@@ -279,7 +283,7 @@ export async function dockTests({ open, close, check, shots }) {
     check('a game that isn\'t responding offers Force close, and says so under its name', v.values.close === 'Force close|warn' && v.session === 'Not responding|warn' && v.hint.includes('Hold to force close'), `${v.values.close} ${v.session}`);
     from = v.calls.length;
     await page.screenshot({ path: path.join(shots, 'dock-force-close.png'), omitBackground: true });
-    await hold(page, HELD_MS);
+    await hold(page);
     check('held, it ends the game', (await closes(page, from)).includes(closing(true, hung)), JSON.stringify(await closes(page, from)));
     // Rust refuses (a game run as administrator): the dock says so.
     await page.evaluate((error) => {
@@ -287,7 +291,7 @@ export async function dockTests({ open, close, check, shots }) {
         throw error;
       };
     }, like(ipc('error'), { message: "Windows didn't let Lamplit end Half-Life." }));
-    await hold(page, HELD_MS);
+    await hold(page);
     v = await view(page);
     check('a refused close says so under the tiles', v.message.includes("didn't let Lamplit end"), v.message);
     // Once the game has gone, its tile goes, and the focus with it.
@@ -320,7 +324,7 @@ export async function dockTests({ open, close, check, shots }) {
     await emit(page, 'dock', opened);
     await emit(page, 'dock', status);
     // The island springs open once the dock's first frames have come on time (dock/main.js open).
-    await page.waitForTimeout(100);
+    await until(page, () => document.getElementById('island').dataset.mode === 'open');
     v = await view(page);
     check('news waits while the dock is open', v.mode === 'open', v.mode);
     await close(page);
@@ -358,7 +362,7 @@ export async function dockTests({ open, close, check, shots }) {
     await page.waitForTimeout(HELD_MS);
     check('a tap of Enter closes nothing', (await closes(page, from)).length === 0, JSON.stringify(await closes(page, from)));
     await page.keyboard.down('Enter');
-    await page.waitForTimeout(HELD_MS);
+    await until(page, () => !document.querySelector('.holding'));
     await page.keyboard.up('Enter');
     await idle(page);
     check('Enter held closes the game', (await closes(page, from)).length === 1, JSON.stringify(await closes(page, from)));
@@ -371,7 +375,7 @@ export async function dockTests({ open, close, check, shots }) {
     await page.waitForTimeout(HELD_MS);
     check('a click on Close game closes nothing', (await closes(page, from)).length === 0, JSON.stringify(await closes(page, from)));
     await page.mouse.down();
-    await page.waitForTimeout(HELD_MS);
+    await until(page, () => !document.querySelector('.holding'));
     await page.mouse.up();
     await idle(page);
     check('the mouse button held on Close game closes the game', (await closes(page, from)).length === 1, JSON.stringify(await closes(page, from)));
@@ -401,7 +405,7 @@ export async function dockTests({ open, close, check, shots }) {
     v = await view(page);
     check('the open dock offers Force close once the game stops responding', v.values.close === 'Force close|warn', v.values.close);
     const from = v.calls.length;
-    await hold(page, HELD_MS);
+    await hold(page);
     check('held, it then ends the game', (await closes(page, from)).includes(closing(true, hung)), JSON.stringify(await closes(page, from)));
     await emit(page, 'dock', closed);
     const reads = async () => (await view(page)).calls.filter(([cmd]) => cmd === 'dock_state').length;
@@ -430,7 +434,7 @@ export async function dockTests({ open, close, check, shots }) {
     await emit(page, 'dock', opened);
     for (let i = 0; i < 5; i++) await emit(page, 'dock-pad', 'right');
     const from = (await view(page)).calls.length;
-    await hold(page, HELD_MS);
+    await hold(page);
     const sent = await closes(page, from);
     check('a close held before Rust answers names the game and session the dock showed', JSON.stringify(sent) === JSON.stringify([closing(false, game)]), JSON.stringify(sent));
     const v = await view(page);
@@ -462,7 +466,7 @@ export async function dockTests({ open, close, check, shots }) {
     check('a reading that names a new session of the game lets go of the hold', v.values.close === 'Close game' && (await closes(page, from)).length === 0, `${v.values.close} ${await closes(page, from)}`);
     // Held again, on the new session: that is the session the close names.
     from = v.calls.length;
-    await hold(page, HELD_MS);
+    await hold(page);
     check('a hold sends the session it began on', JSON.stringify(await closes(page, from)) === JSON.stringify([closing(false, restarted)]), JSON.stringify(await closes(page, from)));
     await close(page);
   }
@@ -515,7 +519,8 @@ export async function dockTests({ open, close, check, shots }) {
     check('an answer that turns Close game into Force close lets go of the hold', v.values.close === 'Force close|warn' && (await closes(page, from)).length === 0, `${v.values.close} ${await closes(page, from)}`);
     // Another game with the same offer: the next reading names it while Cross is held.
     await later(like(hung, { id: 'steam:90', name: 'Third game' }));
-    await page.waitForTimeout(2200);
+    // The open dock's next reading of the game, which Rust answers when the test says so.
+    await until(page, () => window.__answers.length > 0);
     from = (await view(page)).calls.length;
     await emit(page, 'dock-pad', 'ok');
     await answer();
@@ -565,7 +570,7 @@ export async function dockTests({ open, close, check, shots }) {
     let from = (await view(page)).calls.length;
     await emit(page, 'dock', closed);
     await emit(page, 'dock', opened);
-    await page.waitForTimeout(1000);
+    await until(page, () => document.getElementById('island').classList.contains('glass'));
     const island = await page.evaluate(() => {
       const b = document.getElementById('island').getBoundingClientRect();
       return JSON.stringify({ x: b.x, y: b.y, width: b.width, height: b.height, radius: parseFloat(getComputedStyle(document.getElementById('island')).borderTopLeftRadius) });
@@ -576,7 +581,7 @@ export async function dockTests({ open, close, check, shots }) {
     await emit(page, 'dock-pad', 'right');
     await emit(page, 'dock-pad', 'ok');
     const during = await glass();
-    await page.waitForTimeout(1100);
+    await until(page, () => document.getElementById('island').classList.contains('glass'));
     check('the list of outputs grows the island: its own glass is back first, and the real glass comes again once it rests', !during && (await glass()) && (await asks(from)).join() === 'none,island', `${during} ${await glass()} ${await asks(from)}`);
     from = (await view(page)).calls.length;
     await emit(page, 'dock', closed);
@@ -590,7 +595,7 @@ export async function dockTests({ open, close, check, shots }) {
     const squeezed = (await since(page, from)).find((c) => c.startsWith('dock_glass_fold'));
     const to = squeezed ? JSON.parse(squeezed.slice('dock_glass_fold '.length)).fold.to : {};
     const same = Object.entries(JSON.parse(pill)).every(([k, v]) => Math.abs(to[k] - v) < 0.01);
-    await page.waitForTimeout(600);
+    await until(page, () => document.getElementById('island').classList.contains('rested'));
     check('folding, the island is squeezed on the real glass, which Rust squeezes into the same pill, and is on its own glass once out of sight', folding && !(await glass()) && same && (await asks(from)).length === 0, `${folding} ${await glass()} ${JSON.stringify(to)} ${pill}`);
     await close(page);
   }
@@ -600,7 +605,8 @@ export async function dockTests({ open, close, check, shots }) {
   // the fold's frames.
   {
     const page = await openDock();
-    await page.waitForTimeout(800);
+    await until(page, () => window.__calls.some(([cmd]) => cmd === 'dock_glass'));
+    await idle(page);
     const frames = page.evaluate(
       () =>
         new Promise((resolve) => {
@@ -624,7 +630,7 @@ export async function dockTests({ open, close, check, shots }) {
     const clips = new Set(seen.map((f) => f.split('|')[1]));
     const moves = await page.evaluate(() => getComputedStyle(document.getElementById('island')).transitionProperty);
     check('folding keeps the island its size, frame by frame, and squeezes it with a clip, a drop and a fade', sizes.size === 1 && sizes.has(before) && clips.size > 5 && seen.some((f) => f.endsWith('gone')) && moves === 'clip-path, opacity, translate', `${[...sizes]} ${clips.size} ${moves} ${seen.at(-1)}`);
-    await page.waitForTimeout(300);
+    await until(page, () => document.getElementById('island').classList.contains('rested') && window.__logs.some((l) => l.includes('dock: fold')));
     const rested = await page.evaluate(() => {
       const island = document.getElementById('island');
       return { pill: island.style.width === '' && island.classList.contains('rested'), logs: window.__logs.filter((l) => l.includes('dock: fold')) };
@@ -638,7 +644,8 @@ export async function dockTests({ open, close, check, shots }) {
   // next opening, out of sight.
   {
     const page = await openDock();
-    await page.waitForTimeout(800);
+    await until(page, () => window.__calls.some(([cmd]) => cmd === 'dock_glass'));
+    await idle(page);
     const frames = page.evaluate(
       () =>
         new Promise((resolve) => {
@@ -648,7 +655,9 @@ export async function dockTests({ open, close, check, shots }) {
           const start = performance.now();
           const step = () => {
             seen.push({ face: opacity(face), parts: Math.min(...parts.map(opacity)), ring: opacity(document.querySelector('#dock .ring')) });
-            if (performance.now() - start < 250) requestAnimationFrame(step);
+            // On until the face and what it shows have gone, however slowly the frames come (3 s at most).
+            const gone = seen.at(-1).face === 0 && seen.at(-1).parts === 0;
+            if (performance.now() - start < 250 || (!gone && performance.now() - start < 3000)) requestAnimationFrame(step);
             else resolve(seen);
           };
           requestAnimationFrame(step);
@@ -671,11 +680,11 @@ export async function dockTests({ open, close, check, shots }) {
     await page.evaluate(() => (window.__settings.dock_glass = ({ island }) => island !== null));
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await emit(page, 'dock', closed);
-    await page.waitForTimeout(700);
-    /** The island frame by frame for `ms`: how much shows, its shape, and how much of its tiles. */
-    const frames = (ms) =>
+    await until(page, () => document.getElementById('island').classList.contains('rested'));
+    /** The island frame by frame for `ms`, or `opening` until it shows in full: how much shows, its shape, and how much of its tiles. */
+    const frames = (ms, opening = false) =>
       page.evaluate(
-        (ms) =>
+        ([ms, opening]) =>
           new Promise((resolve) => {
             const [island, dock, tile] = [document.getElementById('island'), document.getElementById('dock'), document.querySelector('.tile')];
             const seen = [];
@@ -687,20 +696,22 @@ export async function dockTests({ open, close, check, shots }) {
               // the screen as inset(0 round its radius).
               const clip = s.clipPath === 'none' && s.overflow === 'hidden' ? `inset(0px round ${s.borderTopLeftRadius})` : s.clipPath;
               seen.push({ shows: Number(s.opacity), shape: `${clip}|${s.scale}|${s.translate}|${s.borderRadius}`, tiles });
-              if (performance.now() - start < ms) requestAnimationFrame(step);
+              // Opening, on until it shows in full, however slowly the frames come (3 s at most).
+              const shown = !opening || seen.at(-1).shows === 1;
+              if (performance.now() - start < ms || (!shown && performance.now() - start < 3000)) requestAnimationFrame(step);
               else resolve(seen);
             };
             requestAnimationFrame(step);
           }),
-        ms
+        [ms, opening]
       );
     const fades = (seen) => seen.filter((f) => f.shows > 0.02 && f.shows < 0.98).length;
-    const opening = frames(400);
+    const opening = frames(400, true);
     await emit(page, 'dock', opened);
     let seen = (await opening).filter((f) => f.shows > 0);
     const open = seen.at(-1);
     check('reduced motion: the dock fades open in place, in its open shape and with its tiles from the first frame', fades(seen) >= 2 && open.shows === 1 && seen.every((f) => f.shape === open.shape && f.tiles === 1), JSON.stringify(seen.map((f) => `${f.shows.toFixed(2)} ${f.tiles.toFixed(2)} ${f.shape}`)));
-    await page.waitForTimeout(800);
+    await until(page, () => document.getElementById('island').classList.contains('glass'));
     const glass = () => page.evaluate(() => document.getElementById('island').classList.contains('glass'));
     const onGlass = await glass();
     const shape = await page.evaluate(() => {
@@ -715,9 +726,9 @@ export async function dockTests({ open, close, check, shots }) {
     const fold = asked ? JSON.parse(asked.slice('dock_glass_fold '.length)).fold : {};
     const inPlace = fold.ms === 1 && fold.after === 0 && fold.fade === 150 && fold.drop === 0 && Object.entries(shape).every(([k, v]) => Math.abs(fold.to[k] - v) < 0.01);
     check('reduced motion: folding, it fades where it is, keeping its shape and tiles, and the real glass fades there too', onGlass && fades(seen) >= 2 && seen.every((f) => f.shape === open.shape && f.tiles === 1) && inPlace, `${onGlass} ${JSON.stringify(fold)} ${JSON.stringify(seen.map((f) => `${f.shows.toFixed(2)} ${f.tiles.toFixed(2)} ${f.shape}`))}`);
-    await page.waitForTimeout(600);
+    await until(page, () => document.getElementById('island').classList.contains('rested'));
     await emit(page, 'dock', opened);
-    await page.waitForTimeout(1000);
+    await until(page, () => document.getElementById('island').classList.contains('glass'));
     for (let i = 0; i < 4; i++) await emit(page, 'dock-pad', 'right');
     from = (await view(page)).calls.length;
     const home = page.evaluate(
@@ -746,7 +757,7 @@ export async function dockTests({ open, close, check, shots }) {
   {
     const page = await openDock();
     await emit(page, 'dock', closed);
-    await page.waitForTimeout(700);
+    await until(page, () => document.getElementById('island').classList.contains('rested'));
     const opening = page.evaluate(
       () =>
         new Promise((resolve) => {
@@ -757,7 +768,8 @@ export async function dockTests({ open, close, check, shots }) {
           const step = () => {
             const resume = document.querySelector('.tile.primary');
             seen.push([shows(dock) * shows(ring), shows(dock) * shows(resume)]);
-            if (performance.now() - start < 700) requestAnimationFrame(step);
+            // On until the ring shows in full, however slowly the frames come (3 s at most).
+            if (performance.now() - start < 700 || (seen.at(-1)[0] !== 1 && performance.now() - start < 3000)) requestAnimationFrame(step);
             else resolve(seen);
           };
           requestAnimationFrame(step);
@@ -776,7 +788,9 @@ export async function dockTests({ open, close, check, shots }) {
           const start = performance.now();
           const step = () => {
             xs.push(parseFloat(getComputedStyle(ring).translate));
-            if (performance.now() - start < 600) requestAnimationFrame(step);
+            // On until the ring has come to rest, however slowly the frames come (3 s at most).
+            const moving = ring.getAnimations().length > 0;
+            if (performance.now() - start < 600 || (moving && performance.now() - start < 3000)) requestAnimationFrame(step);
             else resolve(xs);
           };
           requestAnimationFrame(step);
@@ -809,7 +823,9 @@ export async function dockTests({ open, close, check, shots }) {
           const start = performance.now();
           const step = () => {
             if (!outputs.hidden) seen.push({ clip: getComputedStyle(outputs).clipPath, rows: Number(getComputedStyle(list).opacity), ring: at(ring), list: at(outputs) });
-            if (performance.now() - start < 700) requestAnimationFrame(step);
+            // On until the list has opened, however slowly the frames come (3 s at most).
+            const open = seen.length > 0 && outputs.getAnimations().length === 0 && seen.at(-1).rows === 1;
+            if (performance.now() - start < 700 || (!open && performance.now() - start < 3000)) requestAnimationFrame(step);
             else resolve(seen);
           };
           requestAnimationFrame(step);
@@ -888,11 +904,12 @@ export async function dockTests({ open, close, check, shots }) {
     const points = (curve) => JSON.stringify(curve.slice('linear('.length, -1).split(', ').map((stop) => Number(stop.split(' ')[0])));
     const on = (timed, name) => timed.ms === SPRINGS[name].ms && points(timed.curve) === JSON.stringify(SPRINGS[name].points);
     await emit(page, 'dock', closed);
-    await page.waitForTimeout(700);
+    await until(page, () => document.getElementById('island').classList.contains('rested'));
     await emit(page, 'dock', opened);
-    await page.waitForTimeout(100);
+    await until(page, () => document.getElementById('island').dataset.mode === 'open');
     const opening = await timing('#island', 'clip-path');
-    await page.waitForTimeout(1000);
+    // At rest on its real glass, which then folds with it (dock/main.js takeGlass); the ring steps on its spring by then.
+    await until(page, () => document.getElementById('island').classList.contains('glass'));
     const step = await timing('#dock .ring', 'translate');
     const from = (await view(page)).calls.length;
     await emit(page, 'dock', closed);
@@ -912,7 +929,8 @@ export async function dockTests({ open, close, check, shots }) {
   // still squeezes it from its full shape (D18).
   {
     const page = await openDock();
-    await page.waitForTimeout(900);
+    // At rest, once it has asked for its real glass (dock/main.js takeGlass).
+    await until(page, () => document.getElementById('island').classList.contains('still'));
     const rest = await page.evaluate(() => {
       const s = getComputedStyle(document.getElementById('island'));
       return { clip: s.clipPath, radius: parseFloat(s.borderTopLeftRadius), overflow: s.overflow };

@@ -78,6 +78,9 @@ export async function probeTests({ open, close, check, games }) {
     await until(page, () => window.__logs.some((l) => l.startsWith('info probe: home arrive ')));
     const lines = await probeLines(page);
     const runs = lines.map((l) => l.match(LINE)).filter(Boolean);
+    // What the page drew of its own before the first press is no interaction of the test's: on a slow machine the
+    // logo can load after the probe has come on, an update-logo run (probe.js watch).
+    while (runs[0]?.[2].startsWith('update-')) runs.shift();
     check(
       'each interaction logs one line with its frames, named from the press and the screen',
       JSON.stringify(runs.map((m) => m[2])) === JSON.stringify(['row-step', 'row-step', 'lift-open', 'lift-close', 'find-open', 'find-type', 'arrive']) &&
