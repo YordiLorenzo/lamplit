@@ -269,24 +269,40 @@ pub mod tests {
         loop {
             // SAFETY: only reads the z-order.
             let Ok(behind) = (unsafe { GetWindow(at, GW_HWNDNEXT) }) else { return (None, passed) };
-            let mut class = [0u16; 64];
-            // SAFETY: reads the class name into the buffer, at most its length.
-            let len = unsafe { GetClassNameW(behind, &mut class) }.max(0) as usize;
-            let class = String::from_utf16_lossy(&class[..len]);
+            let class = class(behind);
             // SAFETY: only reads which thread made the window.
             let ours = unsafe { GetWindowThreadProcessId(behind, None) == GetCurrentThreadId() };
             if !ours || class.eq_ignore_ascii_case("STATIC") {
                 if !passed.is_empty() {
                     let _ =
-                        writeln!(std::io::stderr(), "z-order: passed over {passed:?} to reach {behind:?} ({class})");
+                        writeln!(std::io::stderr(), "z-order: passed over {passed:?} to reach {}", describe(behind));
                 }
                 return (Some(behind), passed);
             }
-            // SAFETY: only reads the window's owner; it fails for a window without one.
-            let owner = unsafe { GetWindow(behind, GW_OWNER) }.ok();
-            passed.push(format!("{class} {behind:?}, owner {owner:?}"));
+            passed.push(describe(behind));
             at = behind;
         }
+    }
+
+    /// The window's class name.
+    fn class(window: HWND) -> String {
+        let mut class = [0u16; 64];
+        // SAFETY: reads the class name into the buffer, at most its length.
+        let len = unsafe { GetClassNameW(window, &mut class) }.max(0) as usize;
+        String::from_utf16_lossy(&class[..len])
+    }
+
+    /// A window as a failure message names it: its handle, class, thread (this test's or another) and owner.
+    pub fn describe(window: HWND) -> String {
+        // SAFETY: only reads which thread made the window, and its owner; the latter fails for a window without one.
+        let (thread, owner) = unsafe { (GetWindowThreadProcessId(window, None), GetWindow(window, GW_OWNER).ok()) };
+        // SAFETY: takes nothing and returns a value.
+        let mine = thread == unsafe { GetCurrentThreadId() };
+        format!(
+            "{window:?} {}, thread {thread}{}, owner {owner:?}",
+            class(window),
+            if mine { " (this test's)" } else { "" }
+        )
     }
 
     /// Closes a window `window(..)` made on this thread.
@@ -308,7 +324,8 @@ pub mod tests {
         let (behind, passed) = next(other);
         assert!(
             !is_topmost(lamplit) && behind == Some(lamplit),
-            "{behind:?} behind it, after {passed:?}; Lamplit is {lamplit:?}"
+            "{} behind it, after {passed:?}; Lamplit is {lamplit:?}",
+            behind.map_or("nothing".into(), describe)
         );
         for w in [lamplit, game, other] {
             // SAFETY: each window is this thread's, made above.
