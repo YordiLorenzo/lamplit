@@ -14,8 +14,8 @@ body:
       label: Lamplit version
       description: >-
         Windows Settings > Apps > Installed apps shows it under Lamplit. The log also has it at each start, in a line
-        such as "Lamplit 0.2.0 starting".
-      placeholder: 0.2.0
+        such as "Lamplit 0.3.0 starting".
+      placeholder: 0.3.0
     validations:
       required: true
 
