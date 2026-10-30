@@ -319,6 +319,88 @@ h4 {
   font-size: .875rem;
 }
 
+/* The screensaver's seven scenes take turns, 6 s each, crossfading and drifting slowly closer as the screensaver
+   does. Each slide fades in over the one before it, which then fades out underneath; --at starts each one's turn
+   1.5 s (its fade) before its 6 s, so the first is already in at load. With reduced motion only the first shows. */
+.saver-stage {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #120e1c;
+  box-shadow: 0 0 0 1px rgb(253 245 229 / .08), 0 28px 64px -28px rgb(0 0 0 / .9);
+}
+
+.saver-slide { position: absolute; inset: 0; }
+.saver-slide + .saver-slide { opacity: 0; }
+
+.saver-slide img {
+  height: 100%;
+  object-fit: cover;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.saver-name {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgb(7 6 11 / .62);
+  color: var(--text);
+  font: 600 .8125rem/1.5 var(--font-body);
+  backdrop-filter: blur(6px);
+}
+
+.saver-pips { display: none; }
+
+.saver-slide:nth-child(1), .saver-pips i:nth-child(1) { --at: -1.5s; }
+.saver-slide:nth-child(2), .saver-pips i:nth-child(2) { --at: 4.5s; }
+.saver-slide:nth-child(3), .saver-pips i:nth-child(3) { --at: 10.5s; }
+.saver-slide:nth-child(4), .saver-pips i:nth-child(4) { --at: 16.5s; }
+.saver-slide:nth-child(5), .saver-pips i:nth-child(5) { --at: 22.5s; }
+.saver-slide:nth-child(6), .saver-pips i:nth-child(6) { --at: 28.5s; }
+.saver-slide:nth-child(7), .saver-pips i:nth-child(7) { --at: 34.5s; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .saver-slide { opacity: 0; animation: saver-turn 42s linear var(--at) infinite; }
+  .saver-slide img { animation: saver-drift 42s linear var(--at) infinite; }
+  .saver-name { animation: saver-name 42s linear var(--at) infinite; }
+
+  .saver-pips { display: flex; gap: 8px; margin-top: 14px; }
+  .saver-pips i {
+    width: 18px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgb(253 245 229 / .18);
+    animation: saver-pip 42s linear var(--at) infinite;
+  }
+}
+
+/* Of 42 s: the 1.5 s fade is 3.57%, fade and 6 s turn 17.86%. */
+@keyframes saver-turn {
+  0%, 21.43%, 100% { opacity: 0; }
+  3.57%, 17.86% { opacity: 1; }
+}
+
+@keyframes saver-drift {
+  0% { transform: scale(1); }
+  21.43% { transform: scale(1.05); }
+  21.44%, 100% { transform: scale(1); }
+}
+
+/* A name shows once its slide is in and leaves before the next starts, so two never overlap. */
+@keyframes saver-name {
+  0%, 3.57%, 14.29%, 100% { opacity: 0; }
+  5%, 12.86% { opacity: 1; }
+}
+
+@keyframes saver-pip {
+  0%, 21.43%, 100% { background: rgb(253 245 229 / .18); }
+  3.57%, 17.86% { background: var(--amber); }
+}
+
 /* The hero screenshot sits in a thin TV bezel, lit from below by the lamp glow. */
 .shot-hero {
   max-width: var(--content);
