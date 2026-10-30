@@ -528,14 +528,6 @@ main { padding-bottom: var(--section); }
 .dots li { padding-left: 22px; }
 .dots li::before { top: .6em; width: 6px; height: 6px; background: var(--violet); box-shadow: none; }
 
-.note {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-  color: var(--text-muted);
-  font-size: .9375rem;
-}
-
 /* Install steps */
 
 .steps {
