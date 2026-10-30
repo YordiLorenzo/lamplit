@@ -929,7 +929,8 @@ export async function dockTests({ open, close, check, shots }) {
   // still squeezes it from its full shape (D18).
   {
     const page = await openDock();
-    await page.waitForTimeout(900);
+    // At rest, once it has asked for its real glass (dock/main.js takeGlass).
+    await until(page, () => document.getElementById('island').classList.contains('still'));
     const rest = await page.evaluate(() => {
       const s = getComputedStyle(document.getElementById('island'));
       return { clip: s.clipPath, radius: parseFloat(s.borderTopLeftRadius), overflow: s.overflow };

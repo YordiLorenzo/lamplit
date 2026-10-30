@@ -2478,16 +2478,17 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
       new Promise((resolve) => {
         const seen = [];
         const start = performance.now();
-        const step = () => {
+        const step = (due) => {
           const told = window.__calls.some(([cmd]) => cmd === 'dock_home_drawn');
-          seen.push({ at: performance.now(), told, arrived: document.body.classList.contains('arrived'), late: false });
+          seen.push({ due, ran: performance.now(), told, arrived: document.body.classList.contains('arrived'), late: false });
           // One late frame, as soon as the dock is told to go.
           if (told && !seen.some((f) => f.late)) {
             seen.at(-1).late = true;
             const end = performance.now() + 40;
             while (performance.now() < end);
           }
-          if (performance.now() - start < 900) requestAnimationFrame(step);
+          // On until the screen has settled in, however slowly the frames come (3 s at most).
+          if (performance.now() - start < 900 || (!seen.at(-1).arrived && performance.now() - start < 3000)) requestAnimationFrame(step);
           else resolve(seen);
         };
         requestAnimationFrame(step);
@@ -2497,7 +2498,10 @@ await probeTests({ open, close, check, games: [game(1), game(2), game(3)] });
   const seen = await frames;
   const late = seen.findIndex((f) => f.late);
   const settled = seen.findIndex((f) => f.arrived);
-  const after = settled > late + 1 ? seen[settled].at - seen[late + 1].at : 0;
+  // The time from the frame after the late one to the settling, as steady.js counts it: each gap by when its frame
+  // was due or by when it ran, the longer (on a slow machine frames that came due on time can run bunched together).
+  let after = 0;
+  for (let i = late + 2; i <= settled; i++) after += Math.max(seen[i].due - seen[i - 1].due, seen[i].ran - seen[i - 1].ran);
   check('back from a game, the screen settles in once frames come on time after the dock goes, not on a late one', late >= 0 && settled > late + 2 && after >= 45, `late at frame ${late}, settled at ${settled}, ${Math.round(after)} ms after`);
   await close(page);
 }
