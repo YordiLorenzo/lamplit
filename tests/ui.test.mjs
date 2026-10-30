@@ -1709,12 +1709,14 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   l = await lifted();
   check(`${at}: Back lowers the cover into the row, which shows it again`, !l.shown && l.visibility === 'hidden' && !l.coverHidden && l.drift === 'running', JSON.stringify(l));
   if (vp.width === 1920) {
-    // Back while the card still rises: it turns round from where it is, rather than jumping.
+    // Back while the card still rises: it turns round from where it is, rather than jumping. Sampled once the card
+    // has risen some way, and again once it has started down, whatever pace the frames keep.
+    const start = await page.evaluate(() => document.getElementById('card').getBoundingClientRect().height);
     await page.keyboard.press('i');
-    await page.waitForTimeout(150);
+    await until(page, (from) => document.getElementById('card').getBoundingClientRect().height > from * 1.15, start);
     const rising = (await lifted()).card;
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(80);
+    await until(page, (from) => document.getElementById('card').getBoundingClientRect().height < from - 1, rising.h);
     const lowering = (await lifted()).card;
     check('Back during the lift lowers the card from where it was', lowering.h < rising.h && lowering.h > rest.cover.h * 1.02, JSON.stringify({ rising, lowering, cover: rest.cover }));
     await until(page, () => !document.getElementById('lift').classList.contains('shown'));
@@ -2522,16 +2524,21 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
     window.__seen = [];
     const veil = () => (document.body.classList.contains('leaving') ? 'veiled' : 'bare');
     Object.assign((window.__settings ??= {}), { launch_resume: () => void window.__seen.push(`resume ${veil()}`) });
+    // Only the veil's own changes, from what it last was: the body's other classes come and go at their own pace.
+    let last = veil();
     new MutationObserver(() => {
-      if (window.__seen.filter((s) => !s.startsWith('resume')).at(-1) !== veil()) window.__seen.push(veil());
+      if (veil() === last) return;
+      last = veil();
+      window.__seen.push(last);
     }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   });
   const seen = () => page.evaluate(() => window.__seen.splice(0));
+  const resumed = () => until(page, () => window.__seen.some((s) => s.startsWith('resume')));
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(80);
+  await until(page, () => window.__seen.length);
   let s = await seen();
   check('back to the game: the home screen goes under the veil before the game gets the screen', JSON.stringify(s) === '["veiled"]', JSON.stringify(s));
-  await page.waitForTimeout(250);
+  await resumed();
   await page.evaluate(() => window.dispatchEvent(new Event('blur')));
   s = await seen();
   check('... then the game gets the screen, and the veil goes once it has it', JSON.stringify(s) === '["resume veiled","bare"]', JSON.stringify(s));
@@ -2541,10 +2548,10 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await page.waitForTimeout(700);
   await seen();
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(30);
+  await resumed();
   s = await seen();
   check('with reduced motion the game gets the screen at once, veiled', JSON.stringify(s) === '["veiled","resume veiled"]', JSON.stringify(s));
-  await page.waitForTimeout(2200);
+  await until(page, () => window.__seen.includes('bare'));
   s = await seen();
   check("a game that doesn't take the screen leaves the home screen as it was", JSON.stringify(s) === '["bare"]', JSON.stringify(s));
   await close(page);

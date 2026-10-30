@@ -142,6 +142,9 @@ fn give_way(current: bool, held: bool, generation: u64, lamplit: isize, to: isiz
     if behind {
         window::unminimize(lamplit);
         window::force_foreground(to);
+        // Coming to the front lifts `to` above the windows that were over it, which would then lie between it and
+        // Lamplit and show when it closes: Lamplit goes right behind it again.
+        window::place_behind(lamplit, to);
     } else if held {
         keep_on_top(generation, || current);
     }
@@ -187,7 +190,7 @@ pub fn summon(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::win::window::tests::{ONE_AT_A_TIME, destroy, next, window as hidden};
+    use crate::win::window::tests::{ONE_AT_A_TIME, describe, destroy, next, window as hidden};
 
     #[test]
     fn a_launch_that_has_stopped_doesnt_hold_the_screen() {
@@ -240,7 +243,8 @@ mod tests {
         let (behind, passed) = next(game);
         assert!(
             !window::is_topmost(lamplit) && behind == Some(lamplit),
-            "{behind:?} behind it, after {passed:?}; Lamplit is {lamplit:?}"
+            "{} behind it, after {passed:?}; Lamplit is {lamplit:?}",
+            behind.map_or("nothing".into(), describe)
         );
         destroy(lamplit);
         destroy(game);
