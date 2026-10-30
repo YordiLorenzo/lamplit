@@ -9,6 +9,7 @@ import { backToGame } from './launch.js';
 import { face, lift, lower, settle, showSheet } from './lift.js';
 import { accentOf, detailChoices, folderParts, lightOf, metaParts, narrowed, playTimeText, playedText, rowOf, storeWarning, words } from './logic.js';
 import { reduced } from './morph.js';
+import { stageChanged } from './veil.js';
 import { sfx } from './sounds.js';
 import { byId, els, focused, icon, state, storeName, withStoreLogo } from './state.js';
 
@@ -49,7 +50,9 @@ async function sampleAccent(url) {
  */
 function applyAccent(look) {
   const root = document.documentElement.style;
-  root.setProperty('--accent', (look?.rgb ?? [140, 170, 255]).join(' '));
+  const accent = (look?.rgb ?? [140, 170, 255]).join(' ');
+  if (root.getPropertyValue('--accent') !== accent) stageChanged();
+  root.setProperty('--accent', accent);
   root.setProperty('--plate-light', String(look?.light ?? 0));
 }
 
@@ -75,6 +78,7 @@ function setHero(g) {
     next.classList.add('on');
     current.classList.remove('on');
     state.heroLayer = 1 - state.heroLayer;
+    stageChanged();
   };
   if (!url) {
     applyAccent(state.accents.get(g.id));
