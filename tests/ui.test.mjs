@@ -103,6 +103,12 @@ const pageErrors = [];
 const called = new Set();
 
 const open = (opts, viewport) => openPage(browser, uiDir, opts, viewport);
+/**
+ * From now on the page's clock (open with `clock`) moves only as the test moves it, with runFor and fastForward,
+ * whatever pace the runner keeps: a key and the pad press Steam mirrors from it come at one time, as they do, and a
+ * hold let go early is let go before its ring is full.
+ */
+const holdClock = async (page) => page.clock.pauseAt(new Date((await page.evaluate(() => Date.now())) + 50));
 
 /** Closes a page, keeping its errors and the commands it called for the checks at the end. */
 async function close(page) {
@@ -1039,7 +1045,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
 // naming a running game that will close. Let go early, nothing happens; a held key's repeat, a mirrored Enter and a
 // click on the cover don't finish a hold.
 {
-  const page = await open({ games: [game(1), game(2, { name: 'Racer' })], running: 'pc:2' });
+  const page = await open({ games: [game(1), game(2, { name: 'Racer' })], running: 'pc:2', clock: true });
   await page.evaluate(() => (window.__settings = {}));
   const view = () =>
     page.evaluate(() => ({
@@ -1068,15 +1074,17 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('ArrowDown');
   v = await view();
   check('... and the hint says to hold', v.hint.includes('Hold to restart'), v.hint);
+  await holdClock(page);
   await page.keyboard.down('Enter');
-  await page.waitForTimeout(300);
+  await page.clock.runFor(300);
   v = await view();
   const early = v.calls.length;
   check('holding Enter on Restart fills its ring, and sends nothing yet', v.holding && !v.calls.includes('power_restart'), JSON.stringify(v));
   await page.keyboard.up('Enter');
-  await page.waitForTimeout(900);
+  await page.clock.runFor(900);
   v = await view();
   check('... let go early, nothing happens', !v.holding && !v.calls.slice(early).includes('power_restart') && v.open, JSON.stringify(v.calls.slice(early)));
+  await page.clock.resume();
   await page.keyboard.down('Enter');
   // A held key repeats: the repeat starts no new hold, and the hold goes on.
   await page.keyboard.down('Enter');
@@ -1109,19 +1117,21 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await powerSection();
   await press('ArrowDown', 'down');
   const fresh = (await view()).calls.length;
+  await holdClock(page);
   await emit(page, 'pad', 'ok');
-  await page.waitForTimeout(300);
+  await page.clock.runFor(300);
   await emit(page, 'pad', 'ok-up');
-  await page.waitForTimeout(900);
+  await page.clock.runFor(900);
   v = await view();
   check("Cross let go before the ring is full doesn't restart", !v.calls.slice(fresh).includes('power_restart') && !v.holding, JSON.stringify(v.calls.slice(fresh)));
   // Moving off the row lets go too.
   await emit(page, 'pad', 'ok');
-  await page.waitForTimeout(200);
+  await page.clock.runFor(200);
   await emit(page, 'pad', 'up');
-  await page.waitForTimeout(1000);
+  await page.clock.runFor(1000);
   v = await view();
   check('moving off a held row lets go', !v.calls.slice(fresh).includes('power_restart') && v.focus === 'Sleep', JSON.stringify(v.calls.slice(fresh)));
+  await page.clock.resume();
   // The focused cover still shows beside Settings: a click on it mustn't start or finish anything.
   await page.click('#track .cover.focus');
   await idle(page);
@@ -1453,11 +1463,6 @@ const saverView = (page) =>
 const saverOn = (page) =>
   // As long as a runner drawing in software takes to compile a scene and fade it in.
   page.waitForFunction(() => document.querySelector('#saver.on'), null, { timeout: 30000 }).catch(() => {});
-/**
- * From now on the page's clock (open with `clock`) moves only as the test moves it, with runFor and fastForward,
- * whatever pace the runner keeps: a key and the pad press Steam mirrors from it come at one time, as they do.
- */
-const holdClock = async (page) => page.clock.pauseAt(new Date((await page.evaluate(() => Date.now())) + 50));
 /** On a held clock: lets the page's frames run until the screensaver shows (it fades in once they've come on time). */
 async function saverShows(page) {
   for (let i = 0; i < 600 && !(await page.evaluate(() => Boolean(document.querySelector('#saver.on')))); i++) await page.clock.runFor(50);
