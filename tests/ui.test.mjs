@@ -3705,13 +3705,22 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     open1.info === '0' && open1.drift.every((d) => d === 'running') && open1.over <= 0 && !open1.blurred,
     JSON.stringify(open1)
   );
-  const ringOn = async (sel) => near(await boxOf('#find .ring'), await boxOf(sel));
+  /** Whether the ring comes to rest on `sel`'s box, however slowly the frames come. */
+  const ringOn = async (sel) => {
+    await until(
+      page,
+      (s) => {
+        const [a, b] = [document.querySelector('#find .ring'), document.querySelector(s)].map((el) => el.getBoundingClientRect());
+        return ['left', 'top', 'width', 'height'].every((k) => Math.abs(a[k] - b[k]) <= 2);
+      },
+      sel
+    );
+    return near(await boxOf('#find .ring'), await boxOf(sel));
+  };
   const onKey = await ringOn('#findKeys .key.focus');
   for (let i = 0; i < 6 && (await page.evaluate(() => document.querySelector('#find .focus')?.dataset.id)) !== 'store'; i++) await page.keyboard.press('ArrowDown');
-  await page.waitForTimeout(450);
   const onChip = await ringOn('#findStore');
   await page.keyboard.press('ArrowRight');
-  await page.waitForTimeout(450);
   const onSort = await ringOn('#findSort');
   check('one focus ring moves across the keys and the chips', onKey && onChip && onSort, JSON.stringify({ onKey, onChip, onSort }));
   await page.keyboard.press('ArrowLeft');
