@@ -1,0 +1,14 @@
+{
+  "id": "steam:70",
+  "name": "Half-Life",
+  "art": {
+    "portrait": "C:\\Users\\player\\AppData\\Local\\lamplit\\art\\70\\portrait.jpg",
+    "hero": "C:\\Users\\player\\AppData\\Local\\lamplit\\art\\70\\hero.jpg",
+    "logo": null
+  },
+  "started": 1761560000,
+  "session": 4200000,
+  "responding": false,
+  "closable": true,
+  "force_close": true
+}

@@ -2,25 +2,36 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  MIRROR_MS,
+  PAD_KEEPS_MS,
   STORE_ORDER,
   batteryText,
   buttonFace,
   byName,
   byPlayed,
+  counts,
   detailChoices,
+  metaParts,
   focusIndex,
+  folderParts,
+  lightOf,
+  liftLayout,
   matcher,
+  nameAfter,
   narrowed,
   nearest,
+  nothingSeen,
   padBatteryText,
   playTimeText,
   playedText,
+  quietMode,
   readable,
   rowKey,
   rowOf,
   sectionRows,
   sectionSummary,
   stepAutoOff,
+  stepSaverMinutes,
   storeChoices,
   storeWarning,
   typed,
@@ -135,11 +146,93 @@ describe('favourites and hidden games in the row', () => {
 
 describe('detailChoices', () => {
   const labels = (g, running = null) => detailChoices(g, running).map((c) => c.label);
-  test('Play first, then the favourite and hide choices', () => {
-    assert.deepEqual(labels(game('a', 'A')), ['Play', 'Add to favourites', 'Hide this game']);
-    assert.deepEqual(labels(game('a', 'A', { favourite: true })), ['Play', 'Remove from favourites', 'Hide this game']);
+  test('Play first, then favourites, art and hiding, each with its icon', () => {
+    assert.deepEqual(labels(game('a', 'A')), ['Play', 'Favourite', 'Change art', 'Hide this game']);
+    assert.deepEqual(detailChoices(game('a', 'A'), null).map((c) => c.icon), ['i-play', 'i-star', 'i-photo', 'i-eye-off']);
+  });
+  test('Favourite is one row that switches: its star is filled while the game is one', () => {
+    assert.deepEqual(labels(game('a', 'A', { favourite: true })), ['Play', 'Favourite', 'Change art', 'Hide this game']);
+    assert.equal(detailChoices(game('a', 'A', { favourite: true }), null)[1].icon, 'i-star-on');
   });
   test('the running game goes back to the game', () => assert.equal(labels(game('a', 'A'), 'a')[0], 'Back to game'));
+  test('a game added by hand can be removed: held, and it says the files stay', () => {
+    const added = game('manual:x', 'X', { manual: true });
+    assert.deepEqual(detailChoices(added, null).at(-1), {
+      kind: 'remove',
+      label: 'Remove from Lamplit',
+      icon: 'i-remove',
+      hold: 'Hold to remove',
+      note: 'Lamplit forgets it. The files stay.',
+    });
+  });
+  test('the running game can be closed, held, when Lamplit knows its programs; hiding is one press', () => {
+    const g = game('a', 'Racer');
+    const closer = { id: 'a', closable: true, force_close: false };
+    assert.deepEqual(detailChoices(g, 'a', closer).at(-1), { kind: 'close', label: 'Close game', icon: 'i-close-game', hold: 'Hold to close game', note: 'Closes Racer' });
+    assert.equal(detailChoices(g, 'a', { ...closer, force_close: true }).at(-1).label, 'Force close');
+    // Not running, another game's reading, or programs Lamplit can't tell: no Close game.
+    for (const [running, c] of [[null, closer], ['a', { ...closer, id: 'b' }], ['a', { ...closer, closable: false }], ['a', null]]) {
+      assert.ok(!detailChoices(g, running, c).some((x) => x.kind === 'close'), JSON.stringify([running, c]));
+    }
+    assert.equal(detailChoices(g, null).find((x) => x.kind === 'hide').hold, undefined);
+  });
+});
+
+describe('metaParts', () => {
+  const now = 1_800_000_000;
+  test('the line under a game menu\'s name: store, last played, hours', () => {
+    assert.deepEqual(metaParts(game('a', 'A', { last_played: now - 86400, play_minutes: 1860 }), 'Steam', now), ['Steam', 'Played yesterday', '31 h']);
+  });
+  test('a game Lamplit never saw run, outside any store', () => {
+    assert.deepEqual(metaParts(game('a', 'A', { last_played: 0, play_minutes: 0 }), null, now), ['Not from a store', 'Not played yet']);
+  });
+});
+
+describe('lightOf', () => {
+  test("a picture's brightness, from black to white, which the plates over it take their fill from", () => {
+    const px = (...colours) => new Uint8ClampedArray(colours.flatMap((c) => [...c, 255]));
+    assert.equal(lightOf(px([0, 0, 0])), 0);
+    assert.equal(lightOf(px([255, 255, 255])), 1);
+    assert.equal(lightOf(px([0, 0, 0], [255, 255, 255])), 0.5);
+    // Green looks brighter than red, and red than blue.
+    assert.ok(lightOf(px([0, 255, 0])) > lightOf(px([255, 0, 0])) && lightOf(px([255, 0, 0])) > lightOf(px([0, 0, 255])));
+  });
+});
+
+describe('folderParts', () => {
+  test('the path to a folder, and its own name, which the game menu shows on a line of its own', () => {
+    assert.deepEqual(folderParts('C:\\Program Files\\WindowsApps\\Tomb_1.0'), ['C:\\Program Files\\WindowsApps\\', 'Tomb_1.0']);
+    assert.deepEqual(folderParts('D:\\Games\\Racer\\'), ['D:\\Games\\', 'Racer']);
+    assert.deepEqual(folderParts('Racer'), ['', 'Racer']);
+  });
+});
+
+describe('the lifted game menu', () => {
+  const screen = { width: 1920, height: 1080 };
+  // The focused cover in the row, at 1080p: in the first slot, grown by 1.14.
+  const cover = { x: 96, y: 1080 * 0.88 - 369.36, width: 246.24, height: 369.36 };
+  test('the cover grows over its column and rises to the middle; the menu opens beside it', () => {
+    const { card, menu, side } = liftLayout(cover, screen, 650);
+    assert.equal(side, 1);
+    assert.ok(Math.abs(card.width / card.height - cover.width / cover.height) < 1e-9, 'keeps the cover\'s shape');
+    assert.ok(card.height > cover.height * 1.5, `${card.height}`);
+    assert.ok(card.y + card.height / 2 < cover.y + cover.height / 2 - 100, 'rises');
+    assert.ok(card.x >= 96 && menu.x >= card.x + card.width && menu.x + menu.width <= 1920 - 96, JSON.stringify({ card, menu }));
+    assert.equal(menu.width, 650);
+  });
+  test('near the right edge, the menu opens on the left', () => {
+    const { card, menu, side } = liftLayout({ ...cover, x: 1600 }, screen, 650);
+    assert.equal(side, -1);
+    assert.ok(card.x + card.width <= 1920 - 96, 'the card stays inside the safe area');
+    assert.ok(menu.x >= 96 && menu.x + menu.width <= card.x, JSON.stringify({ card, menu }));
+  });
+  test('with room on neither side for the whole menu, it takes the roomier side, narrowed', () => {
+    const narrow = { width: 1000, height: 1080 };
+    const { card, menu, side } = liftLayout({ ...cover, x: 300 }, narrow, 650);
+    assert.equal(side, 1);
+    assert.equal(menu.width, menu.room);
+    assert.ok(menu.x + menu.width <= 1000 - 50 + 1e-9 && menu.x >= card.x + card.width, JSON.stringify({ card, menu }));
+  });
 });
 
 describe('finding a game', () => {
@@ -243,6 +336,30 @@ describe('finding a game', () => {
     assert.equal(typed(long, 'b'), long);
     assert.equal(typed(long, 'space'), long);
     assert.equal(typed(long, 'delete').length, 29);
+    assert.equal(typed(long, 'b', 40), `${long}b`);
+  });
+
+  describe('typing a name', () => {
+    /** Types `keys` from an empty name, as the names keyboard does. */
+    const type = (keys, max = 40) => keys.reduce((n, k) => nameAfter(n, k, max), { text: '', caps: true });
+    const letters = (word) => [...word];
+    test('each word starts with a capital', () => {
+      assert.deepEqual(type([...letters('far'), 'space', ...letters('cry'), 'space', '6']), { text: 'Far Cry 6', caps: true });
+    });
+    test('Shift turns a capital off, or on for the next letter', () => {
+      const name = type([...letters('call'), 'space', 'shift', ...letters('of'), 'space', ...letters('duty')]);
+      assert.equal(name.text, 'Call of Duty');
+      assert.equal(type([...letters('half'), '-', 'shift', ...letters('life')]).text, 'Half-Life');
+    });
+    test('delete and clear, and the capital they leave', () => {
+      assert.deepEqual(type([...letters('ab'), 'space', 'delete']), { text: 'Ab', caps: false });
+      assert.deepEqual(type([...letters('ab'), 'space', 'c', 'delete']), { text: 'Ab ', caps: true });
+      assert.deepEqual(type([...letters('ab'), 'clear']), { text: '', caps: true });
+    });
+    test('signs and digits leave the capital as it was, and the name stops at its length', () => {
+      assert.deepEqual(type(['shift', ':', 'x']), { text: ':x', caps: false });
+      assert.equal(type(letters('abcdef'), 4).text, 'Abcd');
+    });
   });
 
   describe('moving in rows', () => {
@@ -456,6 +573,20 @@ describe('Overlay and pop-ups', () => {
     const stats = sectionRows('popups', settingsState({ overlays: overlays(true, null), quiet: quiet('off', false) }))[0];
     assert.deepEqual([stats.kind, stats.value], ['stats', 'Unknown']);
   });
+  test("the quiet row follows the player's switch, and says when Windows stays quiet on its own", () => {
+    const row = (state, active) => {
+      const r = sectionRows('popups', settingsState({ quiet: quiet(state, active) })).find((r) => r.kind === 'quiet');
+      return [r.value, r.tone];
+    };
+    assert.deepEqual(row('on', true), ['On', 'good']);
+    assert.deepEqual(row('partly', true), ['On · some pop-ups still show', 'warn']);
+    assert.deepEqual(row('off', false), ['Off', '']);
+    assert.deepEqual(row('on', false), ['Off · Windows is quiet on its own', '']);
+    assert.deepEqual(row('partly', false), ['Off · some pop-ups are off in Windows', '']);
+    // Only switching off over a quiet Windows has something to explain.
+    assert.equal(quietMode(quiet('off', false)).note, '');
+    assert.match(quietMode(quiet('on', false)).note, /already quiet/);
+  });
   test('every quiet state Rust sends is named, in the row and the summary', () => {
     for (const state of values.quiet_state) {
       const shown = settingsState({ quiet: quiet(state, state !== 'off') });
@@ -474,7 +605,10 @@ describe('Stores', () => {
     store('ea', 'EA app', false, 'signed-out'),
     store('ubisoft', 'Ubisoft Connect', false, 'signed-out'),
     store('rockstar', 'Rockstar Games Launcher', false, 'signed-out'),
+    store('battlenet', 'Battle.net', false, 'signed-out'),
     store('gog', 'GOG Galaxy', false, 'unknown'),
+    store('amazon', 'Amazon Games', false, 'unknown'),
+    store('itch', 'itch.io', false, 'unknown'),
     store('xbox', 'Xbox app', true, 'unknown'),
   ];
   /** Rust's list, with these stores as given. */
@@ -535,30 +669,26 @@ describe('Hidden games', () => {
 
 describe('Power', () => {
   const library = [game('cp', 'Cyberpunk 2077')];
-  /** The rows with ✕ pressed once on `confirm`, while `running` runs. */
-  const rows = (confirm, running = null) =>
-    sectionRows('power', settingsState({ all: library, running, settings: { section: 'power', focus: null, idx: 0, rows: [], confirm } }));
+  /** The rows while `running` runs. */
+  const rows = (running = null) => sectionRows('power', settingsState({ all: library, running, settings: { section: 'power', focus: null, idx: 0, rows: [] } }));
   test('Power is the last section, always there', () => {
     assert.equal(visibleSections(settingsState()).at(-1).key, 'power');
-    assert.deepEqual(rows(null).map((r) => [r.kind, r.id, r.label, r.value]), [
-      ['power', 'sleep', 'Sleep', ''],
-      ['power', 'restart', 'Restart', ''],
-      ['power', 'shutdown', 'Shut down', ''],
+    assert.deepEqual(rows().map((r) => [r.kind, r.id, r.label, r.icon]), [
+      ['power', 'sleep', 'Sleep', 'i-sleep'],
+      ['power', 'restart', 'Restart', 'i-restart'],
+      ['power', 'shutdown', 'Shut down', 'i-power'],
     ]);
   });
-  test('✕ once asks to confirm, on that row only', () => {
-    const asked = rows('shutdown');
-    assert.deepEqual(asked.filter((r) => r.value).map((r) => [r.id, r.value, r.tone]), [['shutdown', 'Press again to confirm', 'warn']]);
-    assert.equal(asked.length, 3);
+  test('restart and shut down are held, and say what they do before the press; sleep is one press', () => {
+    assert.deepEqual(rows().map((r) => [r.id, r.hold ?? null, r.note ?? null]), [
+      ['sleep', null, null],
+      ['restart', 'Hold to restart', 'Restarts the PC'],
+      ['shutdown', 'Hold to shut down', 'Turns the PC off'],
+    ]);
   });
-  test('restart and shut down name the running game that will close', () => {
-    for (const id of ['restart', 'shutdown']) {
-      const asked = rows(id, 'cp');
-      const at = asked.findIndex((r) => r.id === id);
-      assert.deepEqual(asked[at + 1], { label: 'Cyberpunk 2077 is running and will close', value: '' }, id);
-    }
+  test('restart and shut down name the running game that will close, before the press', () => {
+    assert.deepEqual(rows('cp').map((r) => r.note ?? null), [null, 'Cyberpunk 2077 is running and will close', 'Cyberpunk 2077 is running and will close']);
   });
-  test('sleep leaves the running game open, so it names none', () => assert.equal(rows('sleep', 'cp').length, 3));
 });
 
 describe('focus in Settings', () => {
@@ -586,4 +716,44 @@ describe('focus in Settings', () => {
     assert.equal(focusIndex(rows, 'padoff:gone'), 1);
   });
   test('nothing to focus', () => assert.equal(focusIndex([{ heading: 'x' }, { label: 'y' }], null), -1));
+});
+
+describe('Settings > Screensaver', () => {
+  const saver = (changes) => settingsState({ prefs: prefs(changes) });
+  const shown = (state) => sectionRows('screensaver', state).filter((r) => r.kind).map((r) => [r.kind, r.value]);
+  test('the delay as Rust holds it, and Show it now', () => {
+    assert.deepEqual(shown(saver({})), [['saverafter', '5 min'], ['savernow', '']]);
+    assert.deepEqual(shown(saver({ screensaver_minutes: 0 })), [['saverafter', 'Off'], ['savernow', '']]);
+  });
+  test("Rust's defaults until the prefs are in", () => {
+    assert.deepEqual(shown(settingsState()), shown(saver({})));
+  });
+  test('the summary names the delay, or Off', () => {
+    assert.deepEqual(sectionSummary('screensaver', saver({ screensaver_minutes: 10 })), ['After 10 min']);
+    assert.deepEqual(sectionSummary('screensaver', saver({ screensaver_minutes: 0 })), ['Off']);
+  });
+  test('← and → step through the delays and stop at either end', () => {
+    assert.equal(stepSaverMinutes(5, 1), 10);
+    assert.equal(stepSaverMinutes(5, -1), 2);
+    assert.equal(stepSaverMinutes(2, -1), 0);
+    assert.equal(stepSaverMinutes(0, -1), 0);
+    assert.equal(stepSaverMinutes(20, 1), 20);
+    // A delay written by hand into prefs.json steps to the nearest listed one on the side pressed.
+    assert.equal(stepSaverMinutes(7, 1), 10);
+    assert.equal(stepSaverMinutes(7, -1), 5);
+  });
+});
+
+test('a press Steam mirrors as a key counts once, in either order', () => {
+  const seen = nothingSeen();
+  // Key first, then the pad's own press: one press.
+  assert.equal(counts(seen, 'ok', 'key', 10_000), true);
+  assert.equal(counts(seen, 'ok', 'pad', 10_000 + MIRROR_MS - 1), false);
+  // A second real press right after counts.
+  assert.equal(counts(seen, 'ok', 'pad', 10_000 + MIRROR_MS + 50), true);
+  // Pad first: keys are the mirror for a while, then count again.
+  assert.equal(counts(seen, 'left', 'key', 10_400), false);
+  assert.equal(counts(seen, 'left', 'key', 10_350 + PAD_KEEPS_MS + 1), true);
+  // The mouse always counts.
+  assert.equal(counts(seen, 'ok', 'mouse', 10_351), true);
 });

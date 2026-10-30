@@ -14,8 +14,8 @@ Steam already keeps on your PC (its library cache) is used without going online.
 
 | Host | What it receives |
 | --- | --- |
-| `store.steampowered.com` (store search) | The name of each game that isn't from Steam and has no art yet, and the country of your Windows region. A game outside any store is named after its folder. A name that matched nothing is asked about again after 7 days. |
-| `api.steampowered.com` (`IStoreBrowseService/GetItems`) | The Steam app ids whose art is missing, and the country of your Windows region. |
+| `store.steampowered.com` (store search) | The name of each game that isn't from Steam and has no art yet, and the country of your Windows region. A game outside any store is named after its folder. A name that matched nothing is asked about again after 7 days. In **Change art**, the game's name, or the words you type instead. |
+| `api.steampowered.com` (`IStoreBrowseService/GetItems`) | The Steam app ids whose art is missing, or that Change art found, and the country of your Windows region. |
 | `shared.steamstatic.com` | Requests for the art files themselves. |
 
 Every request carries the user agent `lamplit/<version>`. Nothing else leaves the PC: no accounts, no telemetry, no
@@ -100,15 +100,32 @@ NVIDIA's overlay notifications aren't covered; switch those off in NVIDIA's over
 These don't change any setting, but you may notice them:
 
 - It starts the store apps a game needs: Steam with `-silent` (plus `-cef-enable-debugging` when the DevTools port
-  setting is on), the others as they start by default.
+  setting is on), the others as they start by default. A Battle.net game starts through Battle.net:
+  `Battle.net.exe --exec="launch <code>"`, or `--game=<id>` to open Battle.net on the game's page. An itch.io game
+  that the itch app runs in its sandbox (a Windows account of its own, with less access than yours) starts through
+  the app's launcher, `itch-setup --run-game <id>`, which keeps it in the sandbox; Lamplit never starts such a game
+  from its exe. So does a game that asks the itch app for an itch.io API key, which only the app hands out.
 - It closes Steam's Big Picture mode whenever it opens, and minimises Steam's main window when Lamplit takes the
   screen back after a Steam game.
 - It keeps the PC and the screen awake while a game is starting or Steam is updating it, and lets them sleep again
   once the game runs.
-- When you switch NVIDIA's performance stats from Settings, it presses the overlay's own shortcut (Alt+R, or the one
-  you set in NVIDIA's overlay).
+- While a game starts, its own window stays above the other windows, the taskbar included. Once the game's window
+  covers the screen, Lamplit puts that window in front and its own right behind it. **Show it** on the starting
+  screen brings forward a window that opened during the start.
+- When you switch NVIDIA's performance stats from Settings or the in-game dock, it presses the overlay's own shortcut
+  (Alt+R, or the one you set in NVIDIA's overlay).
+- The in-game dock is a window of Lamplit's own that Windows shows above the game. While it is open it is the window
+  in front; Lamplit gives the focus back to the game when it closes. **Close game** posts `WM_CLOSE` to the game's
+  windows, as their close button does. **Force close** ends the game's processes (`TerminateProcess`), the ones that
+  are certainly the game's: those running from its folder, and by one of its exe names only a process whose path
+  Windows doesn't tell. For a game outside any store, whose folder may hold other programs, only its exe and the
+  processes that came from it as far as Windows tells. It is offered only when the game isn't responding or didn't
+  close when asked, and Windows refuses it for a game run as administrator. When Lamplit knows none of the game's
+  processes for certain, the dock has no Close game.
 - To know when a game runs, it reads the list of running processes and the folder each runs from. It doesn't inject
-  code into games or read their memory.
+  code into games or read their memory. For a game outside any store, it keeps the game's processes open while it
+  watches them, with the right to read their basic facts only, so Windows doesn't give their ids to other programs
+  meanwhile.
 - **Settings > Power** asks Windows to sleep, restart or shut down (`SetSuspendState`, `InitiateShutdownW`). For
   that, Lamplit enables the shutdown privilege, which a standard account holds but has switched off, in its own
   process only. It doesn't force apps to close, and it doesn't sign out another account that is signed in.

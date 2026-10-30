@@ -46,6 +46,8 @@ Good to know:
   prefs, art and logs.
 - The page in `ui/` is built into the exe. After you change it, run the build again (cargo notices the change).
 - In a debug build, Ctrl+Shift+I opens the WebView's developer tools, and the log also goes to the console.
+- A debug build also takes keys for the in-game dock, to try it without a controller: Ctrl+Alt+Shift+D does what
+  holding PS does, and Ctrl+Alt+Shift+N shows news in the folded dock.
 - `scripts/restart.ps1` swaps a new build in for the installed one and restarts it through its logon task.
 
 ## Cross-building from macOS or Linux
@@ -88,7 +90,9 @@ The payloads Rust sends the page are tested against the JSON in `tests/ipc/`, wh
 you change a payload, change its fixture, and both sides' tests tell you what else has to follow.
 
 To test discovery and launching of games outside any store, `tests/fixture-game` is a stand-in game (a window that
-stays open until closed) and `tests/fixtures.ps1` places copies of it. From the repository's root:
+stays open until closed) and `tests/fixtures.ps1` places copies of it. Named `LamplitFull.exe`, the stand-in starts
+as many games do (a small splash, a moment with no window, then a window over the whole screen for 25 seconds), for
+testing how Lamplit hands the screen over to a game. From the repository's root:
 
 ```powershell
 cargo build --release --manifest-path tests\fixture-game\Cargo.toml
@@ -107,14 +111,20 @@ npm --prefix tests test
 npm --prefix tests run typecheck
 ```
 
-- `logic.test.mjs` tests the pure functions in `ui/logic.js`.
+- `logic.test.mjs` tests the pure functions in `ui/logic.js`, and `dock-logic.test.mjs` those in `ui/dock/logic.js`.
+- `screensaver.test.mjs` tests the screensaver's palettes (`ui/screensaver/palette.js`) and its list of scenes.
 - `contract.test.mjs` checks that the page and the Rust core agree on every command, argument and event.
 - `ui.test.mjs` drives the page in Chromium at 1920 x 1080 and other sizes. `page.mjs` serves the page the way
   Tauri serves it on Windows, under the same content security policy, with a fake Tauri that refuses any call Rust
   would refuse. It writes screenshots to `tests/shots/`. `PERF=1` adds timing checks, which depend on the machine.
+  It also runs `dock.mjs`, which drives the in-game dock's page (`ui/dock.html`) in a window the size Rust gives it.
 
 The art checks use small generated images. For realistic covers in the screenshots, copy `%LOCALAPPDATA%\lamplit\art`
 from a Windows PC that has run Lamplit to `tests/art` (it is ignored by git).
+
+The screensaver's scenes also run in a normal browser. Serve the repository's folder (`python3 -m http.server 8123`)
+and open `http://localhost:8123/ui/screensaver/preview.html`: its corner lists the keys, and an image dropped on it
+colours the scenes. `?cap=0` in the address draws as fast as the GPU can, so the frame rate shows what a scene costs.
 
 `node tests/screenshots.mjs [art folder]` takes the README's screenshots in `docs/images/`. It needs the art of the
 games it shows, laid out like `%LOCALAPPDATA%\lamplit\art`; the list of games is at the top of the script.
@@ -153,14 +163,15 @@ games it shows, laid out like `%LOCALAPPDATA%\lamplit\art`; the list of games is
 1. Write `src-tauri/src/stores/<store>.rs` with:
    - `exe()`: where the store app is installed, from the registry entry its installer writes;
    - `games()`: the installed games, each a `Game` with an id of the form `<store>:<its id>`, its install folder,
-     and how to launch it (a link the store handles, or an exe);
+     and how to launch it (a link the store handles, an exe, or the store app's exe with arguments);
    - `remembered()`, if the store keeps a saved sign-in Lamplit can detect.
 2. Add a variant to `Store` in `stores/mod.rs`, fill in each of its `match`es (`key`, `name`, `games`, `exe`,
    `window` and the account check in `status`), and put it in `ALL`. A folder that two stores claim goes to the
    store that comes first in `ALL`.
 3. If the store's launcher also has to run for games bought elsewhere, teach `requirements` in `stores/mod.rs` to
    spot them by a file in their folder.
-4. Add the store's key to `StoreKey` in `ui/api.js`.
+4. Add the store's key to `StoreKey` in `ui/api.js` and to `STORE_ORDER` in `ui/logic.js`, and its logo to
+   `ui/index.html` as a `store-<key>` symbol.
 5. Test the parsing with small samples of the store's real files, written into a temporary folder the way
    `stores/loose.rs` does.
 6. Add the store to the tables in `README.md`, and to `docs/security-and-privacy.md` if Lamplit now reads or changes

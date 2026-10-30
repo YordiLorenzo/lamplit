@@ -1,6 +1,7 @@
 // What Rust tells the page without being asked. Each event has one name (see `Event::name`) and one payload shape.
 
 use crate::devices::pad;
+use crate::dock;
 use crate::library::{Art, Game};
 use crate::stores::{self, Store};
 use crate::system::setup;
@@ -14,7 +15,8 @@ pub enum Event<'a> {
     Games(&'a [Game]),
     /// Art for one game came in.
     Art { id: &'a str, art: &'a Art },
-    /// A controller press for the page while Lamplit is in front: "up", "ok", "back" and so on.
+    /// A controller press for the page while Lamplit is in front: "up", "ok", "back" and so on, or Cross let go
+    /// ("ok-up").
     Pad(&'a str),
     /// Another kind of controller than before was used, so the hints show its buttons.
     PadKind(pad::Kind),
@@ -32,14 +34,20 @@ pub enum Event<'a> {
     Notice(String),
     /// Setup started from Settings has ended: whether it is still needed.
     Setup(setup::Status),
+    /// A controller press for the dock while the dock is in front: "left", "ok", "back" and so on, or Cross let go.
+    DockPad(&'a str),
+    /// The dock opens over the game, folds away, or shows news for a moment.
+    Dock(dock::Show),
 }
 
-/// What became of a launched game. `starting`: it closed within `session::STUB_RUN` (20 s) of starting (a launcher
-/// handing over to the game, or a crash at start), and Lamplit waits for it to come back.
+/// What became of a launched game. `up`: its window is up, and gets the screen once the starting screen has faded to
+/// black; `running` follows once it has it. `starting`: it closed within `session::STUB_RUN` (20 s) of starting (a
+/// launcher handing over to the game, or a crash at start), and Lamplit waits for it to come back.
 #[derive(Clone, Serialize)]
 #[cfg_attr(test, derive(strum::EnumCount))]
 #[serde(tag = "state", rename_all = "lowercase")]
 pub enum Play<'a> {
+    Up { id: &'a str },
     Running { id: &'a str },
     Starting { id: &'a str },
     Ended { id: &'a str },
@@ -85,6 +93,8 @@ impl Event<'_> {
             Event::Accessories => "accessories",
             Event::Notice(_) => "notice",
             Event::Setup(_) => "setup",
+            Event::DockPad(_) => "dock-pad",
+            Event::Dock(_) => "dock",
         }
     }
 }
@@ -113,6 +123,7 @@ mod tests {
         assert_eq!(payload(&Event::Art { id: "steam:70", art: &art }), ipc_fixture!("art"));
         let id = "steam:70";
         let plays = [
+            Play::Up { id },
             Play::Running { id },
             Play::Starting { id },
             Play::Ended { id },
@@ -130,6 +141,7 @@ mod tests {
         assert_eq!(payload(&Event::Pad("ok")), json!("ok"));
         assert_eq!(payload(&Event::PadKind(pad::Kind::Xbox)), ipc_fixture!("pad-kind"));
         assert_eq!(payload(&Event::Summoned(None)), Value::Null);
+        assert_eq!(payload(&Event::DockPad("left")), json!("left"));
     }
 
     #[test]

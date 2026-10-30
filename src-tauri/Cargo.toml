@@ -1,6 +1,6 @@
 [package]
 name = "lamplit"
-version = "0.2.0"
+version = "0.3.0"
 description = "A console-style full-screen game home screen for Windows PCs on a TV"
 license = "PolyForm-Noncommercial-1.0.0"
 repository = "https://github.com/YordiLorenzo/lamplit"
@@ -19,14 +19,17 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["protocol-asset", "custom-protocol"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# itch.io games' launch manifests (.itch.toml). The version Tauri already builds for its config, so nothing new.
+toml = "1"
 thiserror = "2"
 # A mutex that never poisons: one panicking thread must not take every later command down with it.
 parking_lot = "0.13"
 log = "0.4"
 # The app's log. Its fern re-export also logs the supervisor and --setup, which run without Tauri.
 tauri-plugin-log = "2"
-# Local timestamps in the log lines (the version and features tauri-plugin-log already builds).
-time = { version = "0.3", features = ["formatting", "local-offset", "macros"] }
+# Local timestamps in the log lines, and the itch app's play times (the version and features tauri-plugin-log already
+# builds).
+time = { version = "0.3", features = ["formatting", "local-offset", "macros", "parsing"] }
 hidapi = { version = "2.6", default-features = false, features = ["windows-native"] }
 winreg = "0.56"
 sysinfo = "0.39"
@@ -36,13 +39,19 @@ tungstenite = { version = "0.30", default-features = false, features = ["handsha
 # windows and windows-core stay on the version Tauri uses: one copy to build, and Tauri's HWND is the same type.
 # windows-core is named because the `interface` macro (IPolicyConfig in win/audio.rs) expands to it.
 windows-core = "0.62"
+# The vectors Windows.UI.Composition takes (the dock's glass, win/glass.rs): the version windows 0.62 uses.
+windows-numerics = "0.3"
 windows = { version = "0.62", features = [
   "Devices_Power",
+  "Foundation_Numerics",
   "Gaming_Input",
   "System_Power",
+  "UI_Composition",
+  "UI_Composition_Desktop",
   "Win32_Foundation",
   "Win32_Devices_Bluetooth",
   "Win32_Globalization",
+  "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
   "Win32_System_IO",
   "Win32_UI_WindowsAndMessaging",
@@ -58,6 +67,8 @@ windows = { version = "0.62", features = [
   "Win32_System_Com_StructuredStorage",
   "Win32_System_Variant",
   "Win32_System_TaskScheduler",
+  "Win32_System_WinRT",
+  "Win32_System_WinRT_Composition",
   "Win32_System_Ole",
   "Win32_Media_Audio",
   "Win32_Media_Audio_Endpoints",
@@ -74,6 +85,8 @@ windows = { version = "0.62", features = [
 ] }
 
 [dev-dependencies]
+# Tauri's mock runtime, for the test that closing the home window ends the app while the dock's window exists.
+tauri = { version = "2", features = ["test"] }
 # Each enum the page branches on lists its variants for the tests that pin them to tests/ipc/values.json, so a new
 # variant fails those tests until the page knows it.
 strum = { version = "0.28", features = ["derive"] }

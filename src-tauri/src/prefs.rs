@@ -22,11 +22,23 @@ pub struct Prefs {
     /// Art Steam's library cache doesn't have comes from Steam's store, which then learns the names of the games
     /// outside Steam (art.rs).
     pub online_art: bool,
+    /// Minutes without input before the page shows its screensaver, 0 for never (ui/screensaver). Prefs written while
+    /// the screensaver still had a 2D and 3D choice also hold a `screensaver_style`, which serde passes over.
+    pub screensaver_minutes: u32,
+    /// Holding PS over a game opens the dock (dock/) rather than the home screen.
+    pub dock: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
-        Prefs { sound_follows: true, touchpad_mouse: false, steam_devtools: false, online_art: true }
+        Prefs {
+            sound_follows: true,
+            touchpad_mouse: false,
+            steam_devtools: false,
+            online_art: true,
+            screensaver_minutes: 5,
+            dock: true,
+        }
     }
 }
 
@@ -54,8 +66,26 @@ pub fn change(app: &AppHandle, change: impl FnOnce(&mut Prefs)) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::Prefs;
+
     #[test]
     fn the_defaults_reach_the_page_as_in_the_fixture() {
-        assert_eq!(serde_json::to_value(super::Prefs::default()).unwrap(), ipc_fixture!("prefs"));
+        assert_eq!(serde_json::to_value(Prefs::default()).unwrap(), ipc_fixture!("prefs"));
+    }
+
+    #[test]
+    fn prefs_from_before_the_screensaver_get_its_defaults() {
+        let old = r#"{ "sound_follows": false, "touchpad_mouse": true, "steam_devtools": false, "online_art": true }"#;
+        let prefs: Prefs = serde_json::from_str(old).unwrap();
+        assert!(!prefs.sound_follows && prefs.touchpad_mouse);
+        assert_eq!(prefs.screensaver_minutes, 5);
+    }
+
+    #[test]
+    fn prefs_with_the_old_screensaver_style_still_load() {
+        let old = r#"{ "online_art": false, "screensaver_minutes": 10, "screensaver_style": "3d", "dock": false }"#;
+        let prefs: Prefs = serde_json::from_str(old).unwrap();
+        assert!(!prefs.online_art && !prefs.dock);
+        assert_eq!(prefs.screensaver_minutes, 10);
     }
 }

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lamplit screensaver preview</title>
+  <link rel="stylesheet" href="screensaver.css">
+  <link rel="stylesheet" href="preview.css">
+</head>
+<body>
+  <div id="saver"></div>
+  <div id="hud" hidden>
+    <div id="now"></div>
+    <div id="keys">
+      <span><b>&larr;</b><b>&rarr;</b> scene</span>
+      <span><b>&uarr;</b><b>&darr;</b> colours</span>
+      <span><b>1</b>-<b>7</b> pick a scene</span>
+      <span><b>B</b> hand over to the next</span>
+      <span><b>T</b> how it comes in</span>
+      <span><b>Space</b> pause</span>
+      <span><b>S</b> speed</span>
+      <span><b>F</b> full screen</span>
+      <span><b>H</b> hide this</span>
+    </div>
+    <div id="drop">Drop an image here to colour the scenes from it, and show it in Gallery and Drift.</div>
+  </div>
+  <!-- Browsers don't load modules from file://, so this shows until preview.js runs. -->
+  <div id="served">
+    <p>Open this page through a local web server, from the repository's folder:</p>
+    <pre>python3 -m http.server 8123</pre>
+    <p>then go to <code>http://localhost:8123/ui/screensaver/preview.html</code></p>
+  </div>
+  <script type="module" src="preview.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "dock",
+  "description": "The in-game dock's window: besides Lamplit's own commands, its page only listens to events and writes to the log.",
+  "windows": ["dock"],
+  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "log:default"]
+}

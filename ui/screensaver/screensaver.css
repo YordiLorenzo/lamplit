@@ -1,0 +1,90 @@
+/* The screensaver (screensaver/saver.js): over everything, fading in slowly over the home screen and out quickly at
+   the first press. While it fades out it still takes the pointer, so the click that woke it lands on nothing. */
+
+.saver {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: hidden;
+  background: #000;
+  cursor: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 400ms ease, visibility 0s linear 400ms;
+}
+/* Waiting for its frames to come on time (saver.js shown): drawn, so the GPU comes up to speed on the work it does
+   once the screensaver shows, but too faint to see. Chromium leaves out a layer at opacity 0. The fade starts here. */
+.saver.waiting {
+  opacity: 0.004;
+  visibility: visible;
+  transition: none;
+}
+.saver.on {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 2800ms ease;
+}
+
+.saver canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.saver[data-mode="css"] canvas { display: none; }
+
+/* Without WebGL2: soft blobs of the palette's colours on its deep tone, each on its own slow path. */
+.saver-css {
+  display: none;
+  position: absolute;
+  inset: 0;
+  background: var(--c0, #0b0d24);
+  transition: opacity 1s linear, background-color 6s ease;
+}
+.saver[data-mode="css"] .saver-css { display: block; }
+.saver-css i {
+  position: absolute;
+  width: 90vmax;
+  height: 90vmax;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, currentColor, transparent);
+  opacity: .55;
+  transition: color 6s ease;
+  animation: saver-roam 47s ease-in-out infinite alternate;
+}
+.saver-css i:nth-child(1) { color: var(--c1, #6c8cff); left: -30vmax; top: -40vmax; }
+.saver-css i:nth-child(2) { color: var(--c2, #e98c3a); right: -35vmax; top: -10vmax; animation-duration: 61s; animation-delay: -20s; }
+.saver-css i:nth-child(3) { color: var(--c3, #ad7ce9); left: -10vmax; bottom: -50vmax; animation-duration: 53s; animation-delay: -35s; }
+.saver-css i:nth-child(4) { color: var(--c4, #ffcd9d); right: -20vmax; bottom: -45vmax; width: 60vmax; height: 60vmax; opacity: .3; animation-duration: 71s; animation-delay: -9s; }
+
+@keyframes saver-roam {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  33%  { transform: translate3d(18vw, 10vh, 0) scale(1.15); }
+  66%  { transform: translate3d(-8vw, 22vh, 0) scale(.9); }
+  100% { transform: translate3d(12vw, -12vh, 0) scale(1.08); }
+}
+
+/* The game's logo, or its name, drifting faintly; saver.js moves it and sets its opacity on every frame. */
+.saver-mark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+  mix-blend-mode: soft-light;
+}
+.saver-mark img {
+  display: block;
+  max-width: 26vw;
+  max-height: 13vh;
+  object-fit: contain;
+}
+.saver-mark img[hidden] { display: none; }
+.saver-mark span {
+  font-size: 5vh;
+  font-weight: 300;
+  letter-spacing: .12em;
+  color: #fff;
+  white-space: nowrap;
+}

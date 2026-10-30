@@ -2,11 +2,17 @@
 // The Settings screen: a list of sections with a one-line summary each, and the rows of the open section. What the
 // rows say comes from logic.js; this file draws them and acts on them.
 
+import { openAdd } from './add.js';
+import { morph, turn } from './morph.js';
 import * as api from './api.js';
 import { showHints, toast } from './hints.js';
-import { setGames, showInfo } from './library.js';
-import { SECTIONS, focusIndex, rowKey, sectionRows, sectionSummary, stepAutoOff, visibleSections } from './logic.js';
+import { hold, letGo } from './hold.js';
+import { glyph, labelled, setGames, showInfo } from './library.js';
+import { SAVER_DEFAULT, SECTIONS, focusIndex, quietMode, rowKey, sectionRows, sectionSummary, stepAutoOff, stepSaverMinutes, visibleSections } from './logic.js';
+import { showScreensaver, warmScreensaver } from './screensaver/index.js';
 import { sfx } from './sounds.js';
+import { SPRINGS } from './springs.js';
+import { renderStatus } from './status.js';
 import { els, state, withStoreLogo } from './state.js';
 
 function renderSettings() {
@@ -17,11 +23,13 @@ function renderSettings() {
     ? sectionRows(section.key, state)
     : visibleSections(state).map((x) => {
         const [value, tone] = sectionSummary(x.key, state);
-        return { kind: 'section', key: x.key, label: x.title, value, tone };
+        return { kind: 'section', key: x.key, label: x.title, value, tone, icon: x.icon };
       });
   // Focus stays on its row when a refresh adds or removes rows above it.
   s.idx = focusIndex(s.rows, s.focus);
   s.focus = s.idx >= 0 ? rowKey(s.rows[s.idx]) : null;
+  // A hold in progress is let go: the row it was on is made again, and what it showed may have changed.
+  letGo();
   els.settingsList.textContent = '';
   s.rows.forEach((r, i) => {
     if (r.heading) {
@@ -32,13 +40,14 @@ function renderSettings() {
     }
     const row = document.createElement('div');
     row.className = 'row' + (r.kind ? '' : ' info') + (i === s.idx ? ' focus' : '') + (r.adjust ? ' adjust' : '');
-    const label = document.createElement('span');
-    label.append(...withStoreLogo(r.store, r.label));
+    const label = labelled('', r.note);
+    label.prepend(...withStoreLogo(r.store, r.label ?? ''));
     const value = document.createElement('span');
     value.className = 'value ' + (r.tone ?? '');
-    value.textContent = r.value;
-    row.append(label, value);
-    row.addEventListener('click', () => {
+    value.textContent = r.value ?? '';
+    row.append(...(r.icon ? [glyph(r.icon, !!r.hold)] : []), label, value);
+    // Held from when the mouse button goes down on a row that can't be taken back, else on a click.
+    row.addEventListener(r.hold ? 'pointerdown' : 'click', () => {
       if (!r.kind) return;
       s.focus = rowKey(r);
       renderSettings();
@@ -54,6 +63,86 @@ function renderSettings() {
     }
   });
   showHints();
+  // The capsule above shows what was just read, or switched.
+  renderStatus();
+}
+
+// ---------- the plate ----------
+
+/**
+ * The status capsule, as a place Settings grows down out of and goes back into: its box, its round ends. The plate
+ * stays where it is and only its clip moves, so the capsule is its header the whole way.
+ * @returns {import('./morph.js').Place}
+ */
+const capsule = () => ({ box: els.status.getBoundingClientRect(), round: els.status.offsetHeight / 2, still: true });
+
+/** The face of the plate that shows: Settings, or Add a game (add.js). */
+const shown = () => (els.add.classList.contains('on') ? els.add : els.settingsFace);
+
+/** The plate covers two faces while its clip moves from one to the other (turnPlate). */
+let turning = false;
+
+/**
+ * The plate takes the size of `face`, which is laid out where it shows, against the plate's top right corner: its
+ * height follows what the face holds.
+ * @param {HTMLElement} [face]
+ */
+export function fitPlate(face = shown()) {
+  const { width, height } = face.getBoundingClientRect();
+  els.settings.style.setProperty('--plate-w', `${width}px`);
+  els.settings.style.setProperty('--plate-h', `${height}px`);
+}
+
+// A face that changes size (a section's rows read in, Add a game's list) takes the plate with it.
+const resized = new ResizeObserver(() => {
+  if (!turning) fitPlate();
+});
+resized.observe(els.settingsFace);
+resized.observe(els.add);
+
+/**
+ * From what the plate showed (`from`, its box before the change) to the face that shows now: the plate covers both
+ * while its clip moves from one to the other, then takes the face's size (morph.js turn).
+ * @param {string} name @param {DOMRect} from @param {'tap' | 'close'} spring
+ */
+export function turnPlate(name, from, spring) {
+  // Where the face is laid out, against the plate's top right corner, rather than where it shows: a face coming in
+  // is still on its way from the side.
+  const face = shown();
+  const at = els.settings.getBoundingClientRect();
+  const to = new DOMRect(at.right - face.offsetWidth, at.top, face.offsetWidth, face.offsetHeight);
+  turn(els.settings, {
+    name,
+    from,
+    to,
+    spring,
+    cover: () => {
+      turning = true;
+      els.settings.style.setProperty('--plate-w', `${Math.max(from.width, to.width)}px`);
+      els.settings.style.setProperty('--plate-h', `${Math.max(from.height, to.height)}px`);
+    },
+    settle: () => {
+      turning = false;
+      fitPlate();
+    },
+  });
+}
+
+/**
+ * Into a section (`way` 1) or back out to the list (-1): the plate's height follows the new rows, which come in from
+ * the side they are on, as pushed inside the plate.
+ * @param {DOMRect} from @param {1 | -1} way
+ */
+function push(from, way) {
+  turnPlate(way > 0 ? 'settings-section' : 'settings-sections', from, way > 0 ? 'tap' : 'close');
+  const { easing, ms } = SPRINGS[way > 0 ? 'tap' : 'close'];
+  const moves = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  for (const el of [els.settingsTitle, els.settingsList]) {
+    el.animate(
+      moves ? [{ translate: `${way * 6}vw 0`, opacity: 0 }, { translate: '0 0', opacity: 1 }] : [{ opacity: 0 }, { opacity: 1 }],
+      moves ? { duration: ms, easing } : { duration: 150, easing: 'ease' }
+    );
+  }
 }
 
 /**
@@ -117,20 +206,40 @@ export function setStores(list) {
   showInfo();
 }
 
-export function openSettings() {
+/** @param {string | null} [focus]  the row to start on (logic.js rowKey), else the first */
+export function openSettings(focus = null) {
   state.mode = 'settings';
-  state.settings = { section: null, focus: null, idx: 0, rows: [], confirm: null };
-  els.settings.classList.add('on');
+  state.settings = { section: null, focus, idx: 0, rows: [] };
+  els.settings.classList.remove('grown');
   sfx.open();
   renderSettings();
+  fitPlate(els.settingsFace);
+  els.settings.classList.add('on');
+  // Settings grows down out of the status capsule, which is its header from then on.
+  morph(els.settings, { name: 'settings-grow', from: capsule(), to: null });
   refreshSettings();
 }
 
 export function closeSettings() {
+  // A hold on a Power row ends with it, also when a game's news closes it (launch.js).
+  letGo();
   state.mode = 'browse';
   els.settings.classList.remove('on');
+  // Back up into the capsule, fading once most of the way there (style.css).
+  morph(els.settings, { name: 'settings-return', from: null, to: capsule(), spring: 'close', hold: true });
   sfx.back();
   showHints();
+}
+
+/** Back from Add a game: the plate narrows to Settings again, with focus on `focus`. @param {string} focus */
+function returnFromAdd(focus) {
+  state.mode = 'settings';
+  state.settings = { section: null, focus, idx: 0, rows: [] };
+  const from = els.settings.getBoundingClientRect();
+  sfx.back();
+  renderSettings();
+  turnPlate('settings-from-add', from, 'close');
+  refreshSettings();
 }
 
 /** ○ in a section goes back to the list of sections, on the one it came from; on the list it closes. */
@@ -139,9 +248,10 @@ export function backSettings() {
   if (!s.section) return closeSettings();
   s.focus = rowKey({ kind: 'section', key: s.section });
   s.section = null;
-  s.confirm = null;
+  const from = els.settings.getBoundingClientRect();
   sfx.back();
   renderSettings();
+  push(from, -1);
 }
 
 /** @param {number} delta */
@@ -152,8 +262,6 @@ export function moveSettings(delta) {
   const next = focusable[Math.max(0, Math.min(focusable.length - 1, at + delta))];
   if (!next || next === s.rows[s.idx]) return sfx.edge();
   s.focus = rowKey(next);
-  // A Power row asks again once focus has left it.
-  s.confirm = null;
   sfx.move();
   renderSettings();
 }
@@ -179,9 +287,10 @@ export async function adjustSetting(dir) {
       const volume = await api.soundChangeVolume(dir * 5);
       // Into the sound shown now: a refresh may have replaced it while Windows answered.
       state.sound.volume = volume;
-    } else await adjustHeadset(row.kind, dir);
+    } else if (row.kind === 'saverafter') await adjustScreensaver(dir);
+    else await adjustHeadset(row.kind, dir);
   } catch (e) {
-    toast(e.message);
+    toast(e.message, { warn: true });
   }
   if (state.mode === 'settings') renderSettings();
 }
@@ -202,20 +311,63 @@ async function adjustHeadset(kind, dir) {
   }
 }
 
+/** A held ← or → repeats; presses wait for Rust's answer, so each steps from the value saved before it. */
+let saverBusy = false;
+
+/** Settings > Screensaver: the minutes without input before it starts. @param {number} dir */
+async function adjustScreensaver(dir) {
+  if (saverBusy) return;
+  const minutes = state.prefs?.screensaver_minutes ?? SAVER_DEFAULT.minutes;
+  const next = stepSaverMinutes(minutes, dir);
+  if (next === minutes) return;
+  saverBusy = true;
+  try {
+    state.prefs = await api.prefsSetScreensaverMinutes(next);
+  } finally {
+    saverBusy = false;
+  }
+}
+
 /** The rows that switch one of the player's prefs. */
-const PREF_ROWS = ['follows', 'touchmouse', 'steamport', 'onlineart'];
+const PREF_ROWS = ['follows', 'touchmouse', 'steamport', 'onlineart', 'dock', 'saverafter'];
 /** What each row of Settings > Power calls. */
 const POWER = { sleep: api.powerSleep, restart: api.powerRestart, shutdown: api.powerShutDown };
+
+/**
+ * Sleep, restart or shut down. The home screen is what shows when the PC wakes up, or if Windows doesn't go through
+ * with it.
+ * @param {import('./state.js').Row} row
+ */
+async function power(row) {
+  sfx.open();
+  closeSettings();
+  try {
+    await POWER[/** @type {keyof typeof POWER} */ (row.id)]();
+  } catch (e) {
+    toast(e.message, { warn: true });
+  }
+}
 
 export async function selectSetting() {
   const s = state.settings;
   const row = s.rows[s.idx];
   if (!row?.kind || row.adjust || (row.kind === 'stats' && statsBusy)) return;
+  // Add a game is pushed inside this plate; Back there comes back here, on its row.
+  if (row.kind === 'section' && row.key === 'add') return openAdd(() => returnFromAdd(rowKey(row)));
+  // Restart and Shut down happen once Cross has been held on them.
+  if (row.hold) {
+    sfx.move();
+    return hold(/** @type {HTMLElement} */ (els.settingsList.querySelector('.row.focus')), () => power(row));
+  }
   sfx.open();
   if (row.kind === 'section') {
+    const from = els.settings.getBoundingClientRect();
     s.section = row.key;
     s.focus = null;
-    return renderSettings();
+    // Show it now is a row away: the screensaver gets ready in idle time, so it starts without a stutter.
+    if (row.key === 'screensaver') warmScreensaver();
+    renderSettings();
+    return push(from, 1);
   }
   try {
     if (row.kind === 'device') {
@@ -234,9 +386,11 @@ export async function selectSetting() {
       toast(state.prefs.steam_devtools ? "Steam's DevTools port opens when Steam next starts." : "Steam's DevTools port closes when Steam next starts.");
     } else if (row.kind === 'onlineart') {
       state.prefs = await api.prefsSetOnlineArt(!state.prefs?.online_art);
+    } else if (row.kind === 'dock') {
+      state.prefs = await api.prefsSetDock(!state.prefs?.dock);
     } else if (row.kind === 'padoff') {
       await api.controllerTurnOff(row.id);
-      toast('Controller turned off.');
+      toast('Controller turned off.', { icon: 'i-controller' });
     } else if (row.kind === 'stats') {
       statsBusy = true;
       try {
@@ -249,26 +403,24 @@ export async function selectSetting() {
       // Off when the player has it on (that restores what was there, also when only partly applied), else on.
       const report = await api.quietSet(!state.quiet?.active);
       state.quiet = report;
-      if (report.notes.length) toast(report.notes.join(' '));
+      const told = report.notes.length ? report.notes.join(' ') : quietMode(report).note;
+      if (told) toast(told, { icon: 'i-quiet' });
     } else if (row.kind === 'setup') {
       // The command returns only once the prompt is answered, and Lamplit says how setup went when it ends.
       toast('Answer the Windows prompt with a keyboard or mouse.');
       await api.setupStart();
     } else if (row.kind === 'store') {
       await api.storesOpen(row.store);
+    } else if (row.kind === 'savernow') {
+      showScreensaver();
     } else if (row.kind === 'unhide') {
       setGames(await api.librarySetHidden(row.id, false));
-      toast(`${row.label} is back in the row.`);
-    } else if (row.kind === 'power' && s.confirm !== row.id) {
-      s.confirm = row.id;
+      toast(`${row.label} is back in the row.`, { game: { id: row.id, name: row.label }, icon: 'i-eye' });
     } else if (row.kind === 'power') {
-      s.confirm = null;
-      // The home screen is what shows when the PC wakes up, or if Windows doesn't go through with it.
-      closeSettings();
-      await POWER[row.id]();
+      return power(row);
     }
   } catch (e) {
-    toast(e.message);
+    toast(e.message, { warn: true });
     // The row shows what Rust holds, also after a change that failed halfway.
     if (PREF_ROWS.includes(row.kind)) state.prefs = (await orKeep(api.prefsState())) ?? state.prefs;
   }

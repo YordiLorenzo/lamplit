@@ -2,18 +2,22 @@
 // (or the player is asked to sign in, and Lamplit carries on once they have), a pending update is announced, then
 // the game opens and watch.rs watches it. Each step is a line on Lamplit's starting screen.
 
+mod handover;
 mod session;
 mod watch;
 pub mod window;
 
-pub use watch::resume;
+pub use watch::{game_windows, resume};
 
 use crate::error::{Error, Result};
 use crate::events::{self, Event, LaunchStep, Play, StepState};
 use crate::library::{Game, Launch};
 use crate::prefs;
 use crate::stores::{self, Account, Processes, Store, steam};
-use crate::win::{self, process::keep_awake};
+use crate::win::{
+    self,
+    process::{Held, keep_awake},
+};
 use parking_lot::Mutex;
 use std::ffi::OsStr;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -30,6 +34,10 @@ pub struct Launcher {
     go_anyway_for: AtomicU64,
     /// The game that runs now, and how to recognise its processes.
     running: Mutex<Option<(String, Watch)>>,
+    /// The launch whose game hasn't got the screen yet, 0 for none: summoning Lamplit holds the screen again for it.
+    starting: AtomicU64,
+    /// A window that opened during the launch and may need the player, which the starting screen offers to show.
+    waiting: Mutex<Option<isize>>,
 }
 
 impl Launcher {
@@ -42,9 +50,28 @@ impl Launcher {
         self.generation.load(Ordering::SeqCst) == generation
     }
 
-    pub fn cancel(&self) {
+    pub fn cancel(&self, app: &AppHandle) {
         self.generation.fetch_add(1, Ordering::SeqCst);
+        self.starting.store(0, Ordering::SeqCst);
+        window::release(app, None);
         log::info!("launch cancelled from Lamplit");
+    }
+
+    /// The launch whose game hasn't got the screen yet.
+    pub fn starting(&self) -> Option<u64> {
+        Some(self.starting.load(Ordering::SeqCst)).filter(|&g| g != 0 && self.is_current(g))
+    }
+
+    /// The game of launch `generation` closed right after starting (a launcher handing over), and Lamplit waits for it
+    /// again.
+    fn waiting_again(&self, generation: u64) {
+        self.starting.store(generation, Ordering::SeqCst);
+    }
+
+    /// The launch `generation` has given the screen to its game, or stopped.
+    fn started(&self, generation: u64) {
+        let _ = self.starting.compare_exchange(generation, 0, Ordering::SeqCst, Ordering::SeqCst);
+        *self.waiting.lock() = None;
     }
 
     pub fn go_anyway(&self) {
@@ -97,18 +124,27 @@ impl From<Error> for Stop {
     }
 }
 
-/// Runs the whole launch on its own thread; the UI follows it through `launch-step` and `play` events.
+/// Runs the whole launch on its own thread; the UI follows it through `launch-step` and `play` events. Lamplit holds
+/// the screen meanwhile, and hands it over once the game's window is up (watch.rs).
 pub fn start(app: &AppHandle, game: Game) {
-    let generation = app.state::<Launcher>().begin();
+    let launcher = app.state::<Launcher>();
+    let generation = launcher.begin();
+    launcher.starting.store(generation, Ordering::SeqCst);
+    *launcher.waiting.lock() = None;
+    window::hold(app, generation);
     let app = app.clone();
     std::thread::spawn(move || {
+        // The windows already open: the game's are among those that open from now on.
+        let before = watch::open_windows();
         // Store apps can take minutes to start, sign in or update; keep the PC and TV awake meanwhile.
         keep_awake(true);
         match prepare(&app, &game, generation) {
-            Ok(()) => watch::watch_game(&app, generation, &game),
+            Ok(started) => watch::watch_game(&app, generation, &game, &before, started),
             Err(Stop::Cancelled) => log::info!("launch of {} cancelled", game.name),
             Err(Stop::Failed(message)) => {
                 log::warn!("launch of {} stopped: {message}", game.name);
+                app.state::<Launcher>().started(generation);
+                window::release(&app, Some(generation));
                 events::emit(&app, Event::Play(Play::Failed { id: &game.id, message: &message }));
             }
         }
@@ -116,7 +152,8 @@ pub fn start(app: &AppHandle, game: Game) {
     });
 }
 
-fn prepare(app: &AppHandle, game: &Game, generation: u64) -> Result<(), Stop> {
+/// Starts the store apps the game needs and opens the game: the process its exe started, if Windows says.
+fn prepare(app: &AppHandle, game: &Game, generation: u64) -> Result<Option<Held>, Stop> {
     for &store in &game.requires {
         ensure_store(app, game, store, generation)?;
     }
@@ -174,13 +211,13 @@ fn ensure_store(app: &AppHandle, game: &Game, store: Store, generation: u64) -> 
         let remembered = st.account == Account::Remembered;
         line(StepState::Busy, &format!("Starting {name}…"));
         start_store(app, store)?;
-        st = wait(&launcher, generation, STORE_START, || Some(status()).filter(|s| s.running))?
+        st = wait(app, generation, STORE_START, || Some(status()).filter(|s| s.running))?
             .ok_or_else(|| Stop::Failed(format!("{name} didn't start.")))?;
         // A saved sign-in takes a moment once the app is up. Without one, the player has to sign in.
         if remembered && st.account == Account::SignedOut {
             line(StepState::Busy, &format!("{name} is signing in…"));
             let signed_in = || Some(status()).filter(|s| s.account == Account::SignedIn);
-            if let Some(s) = wait(&launcher, generation, SIGN_IN_SETTLE, signed_in)? {
+            if let Some(s) = wait(app, generation, SIGN_IN_SETTLE, signed_in)? {
                 st = s;
             }
         }
@@ -193,27 +230,29 @@ fn ensure_store(app: &AppHandle, game: &Game, store: Store, generation: u64) -> 
             line(StepState::Block, &format!("Sign in to {name}"));
             let anyway = || launcher.may_go_anyway(generation);
             let go = || (anyway() || status().account == Account::SignedIn).then_some(());
-            wait(&launcher, generation, SIGN_IN_WAIT, go)?
+            wait(app, generation, SIGN_IN_WAIT, go)?
                 .ok_or_else(|| Stop::Failed(format!("Still not signed in to {name}.")))?;
             if anyway() {
                 line(StepState::Warn, &format!("{name}: going ahead without a confirmed sign-in"));
             } else {
                 line(StepState::Ok, &format!("{name}: signed in"));
             }
-            window::bring_lamplit_forward(app);
+            // The player may have opened the store app to sign in.
+            window::hold(app, generation);
         }
     }
     Ok(())
 }
 
 /// Polls `check` about once a second until it gives a value; None when `limit` runs out. A cancel or a newer launch
-/// stops the wait.
+/// stops the wait. Meanwhile the starting screen keeps the keyboard from a store app's window (`take_keys`).
 fn wait<T>(
-    launcher: &Launcher,
+    app: &AppHandle,
     generation: u64,
     limit: Duration,
     mut check: impl FnMut() -> Option<T>,
 ) -> Result<Option<T>, Stop> {
+    let launcher = app.state::<Launcher>();
     let until = Instant::now() + limit;
     loop {
         if !launcher.is_current(generation) {
@@ -225,6 +264,7 @@ fn wait<T>(
         if Instant::now() >= until {
             return Ok(None);
         }
+        window::take_keys(app, generation);
         std::thread::sleep(Duration::from_secs(1));
     }
 }
@@ -239,10 +279,29 @@ fn start_store(app: &AppHandle, store: Store) -> Result<()> {
 /// Brings a store app's window forward so the player can sign in or deal with an update, and steps Lamplit aside.
 pub fn show_store(app: &AppHandle, store: Store) -> Result<()> {
     let target = store.window().ok_or_else(|| not_installed(store))?;
+    window::release(app, None);
     shell_open(&target, None)?;
     log::info!("showing {} for the player", store.name());
     window::minimize_lamplit(app);
     Ok(())
+}
+
+/// Shows the player what a launch may be waiting for: the window the starting screen pointed at, which Lamplit stays
+/// behind, else the window of `store`, the store app the line is about.
+pub fn show_waiting(app: &AppHandle, store: Option<Store>) -> Result<()> {
+    let launcher = app.state::<Launcher>();
+    let waiting = launcher.waiting.lock().filter(|&w| win::window::is_visible(win::window::HWND(w as *mut _)));
+    if let (Some(w), Some(generation)) = (waiting, launcher.starting()) {
+        log::info!("showing the window that may need the player");
+        if !window::hand_over(app, generation, w) {
+            return Err(Error::Player("That window has closed.".into()));
+        }
+        return Ok(());
+    }
+    match store {
+        Some(store) => show_store(app, store),
+        None => Err(Error::Player("That window has closed.".into())),
+    }
 }
 
 fn not_installed(store: Store) -> Error {
@@ -253,22 +312,36 @@ fn not_installed(store: Store) -> Error {
 /// the admin prompt of an exe that asks for one). Whatever opens may take the foreground from Lamplit.
 pub fn shell_open(launch: &Launch, args: Option<&str>) -> Result<()> {
     win::window::allow_any_foreground();
-    let (file, dir) = match launch {
-        Launch::Uri(u) => (OsStr::new(u), None),
-        Launch::Exe(p) => (p.as_os_str(), p.parent()),
+    let (file, dir, args) = match launch {
+        Launch::Uri(u) => (OsStr::new(u), None, args),
+        Launch::Exe(p) => (p.as_os_str(), p.parent(), args),
+        Launch::ExeArgs(p, own) => (p.as_os_str(), p.parent(), Some(own.as_str())),
     };
-    win::shell::open(file, args, dir).map_err(|code| {
-        let file = file.display();
-        Error::Player(match code {
-            2 | 3 => format!("{file} isn't there any more."),
-            31 => format!("No app is set up to open {file}. Is its store app installed?"),
-            _ => format!("Windows couldn't open {file} (error {code})."),
-        })
+    win::shell::open(file, args, dir).map_err(|code| not_opened(file, code))
+}
+
+/// What the player reads when Windows couldn't open `file`, from ShellExecute's error code.
+fn not_opened(file: &OsStr, code: isize) -> Error {
+    let file = file.display();
+    Error::Player(match code {
+        2 | 3 => format!("{file} isn't there any more."),
+        31 => format!("No app is set up to open {file}. Is its store app installed?"),
+        _ => format!("Windows couldn't open {file} (error {code})."),
     })
 }
 
-fn open_game(game: &Game) -> Result<()> {
-    shell_open(&game.launch, None).map_err(|e| match &game.launch {
+/// Opens the game. For a game started from its exe, returns the process that started, kept open, which may start the
+/// game proper and end before the watcher first looks.
+fn open_game(game: &Game) -> Result<Option<Held>> {
+    let started = match &game.launch {
+        Launch::Uri(_) => shell_open(&game.launch, None).map(|()| None),
+        Launch::Exe(exe) | Launch::ExeArgs(exe, _) => {
+            let args = if let Launch::ExeArgs(_, args) = &game.launch { Some(args.as_str()) } else { None };
+            win::window::allow_any_foreground();
+            win::shell::start(exe.as_os_str(), args, exe.parent()).map_err(|code| not_opened(exe.as_os_str(), code))
+        }
+    };
+    let started = started.map_err(|e| match &game.launch {
         // Moved, or uninstalled outside its store.
         Launch::Exe(exe) if !exe.exists() => Error::Player(format!("{e} Reinstall {} or move it back.", game.name)),
         _ => e,
@@ -276,9 +349,11 @@ fn open_game(game: &Game) -> Result<()> {
     let target = match &game.launch {
         Launch::Uri(u) => u.clone(),
         Launch::Exe(p) => p.display().to_string(),
+        Launch::ExeArgs(p, args) => format!("{} {args}", p.display()),
     };
-    log::info!("launch {} ({}) via {target}", game.name, game.id);
-    Ok(())
+    let process = started.as_ref().map_or(String::new(), |s| format!(", process {}", s.pid));
+    log::info!("launch {} ({}) via {target}{process}", game.name, game.id);
+    Ok(started)
 }
 
 #[cfg(test)]

@@ -7,9 +7,10 @@
 use crate::devices::headset::{self, Headset};
 use crate::devices::pad::{self, Controllers};
 use crate::devices::{accessories, audio};
+use crate::dock;
 use crate::error::{Error, Result};
 use crate::launch::{self, Launcher};
-use crate::library::{self, Game, Library};
+use crate::library::{self, ArtChoice, Game, Library};
 use crate::prefs::{self, Prefs};
 use crate::stores::steam::devtools;
 use crate::stores::{self, Store};
@@ -44,6 +45,42 @@ pub async fn library_set_hidden(app: AppHandle, id: String, on: bool) -> Result<
     blocking(move || library::set_hidden(&app, &id, on)).await?
 }
 
+/// What Steam's store has for `query`, for Change art. Goes online.
+#[tauri::command]
+pub async fn library_art_search(app: AppHandle, query: String) -> Result<Vec<library::Candidate>> {
+    blocking(move || library::art_candidates(&app, &query)).await?
+}
+
+/// The art the player chose for a game; None for Lamplit's own match. Returns every game, with the change.
+#[tauri::command]
+pub async fn library_set_art(app: AppHandle, id: String, choice: Option<ArtChoice>) -> Result<Vec<Game>> {
+    blocking(move || library::set_art(&app, &id, choice)).await?
+}
+
+/// The installed programs that aren't in the library, for Add a game.
+#[tauri::command]
+pub async fn library_programs(app: AppHandle) -> Result<Vec<library::Program>> {
+    blocking(move || library::programs(&app)).await
+}
+
+/// A folder's subfolders and exes, or the drives with no path, for Add a game.
+#[tauri::command]
+pub async fn library_browse(path: Option<String>) -> Result<library::Folder> {
+    blocking(move || library::browse(path.as_deref())).await?
+}
+
+/// Adds the game an exe starts, with the name the player gave it. Returns its id and every game.
+#[tauri::command]
+pub async fn library_add_game(app: AppHandle, exe: String, name: String) -> Result<library::Added> {
+    blocking(move || library::add_game(&app, &exe, &name)).await?
+}
+
+/// Takes a game added by hand out of the library. Returns every game.
+#[tauri::command]
+pub async fn library_remove_game(app: AppHandle, id: String) -> Result<Vec<Game>> {
+    blocking(move || library::remove_game(&app, &id)).await?
+}
+
 /// Starts the launch checks; the page follows them through `launch-step` and `play` events.
 #[tauri::command]
 pub fn launch_start(app: AppHandle, library: State<Library>, id: String) -> Result<()> {
@@ -59,8 +96,14 @@ pub fn launch_anyway(launcher: State<Launcher>) {
 }
 
 #[tauri::command]
-pub fn launch_cancel(launcher: State<Launcher>) {
-    launcher.cancel();
+pub fn launch_cancel(app: AppHandle, launcher: State<Launcher>) {
+    launcher.cancel(&app);
+}
+
+/// Shows the player what the launch may be waiting for: a window that opened, else the store app `store`.
+#[tauri::command]
+pub async fn launch_show(app: AppHandle, store: Option<Store>) -> Result<()> {
+    blocking(move || launch::show_waiting(&app, store)).await?
 }
 
 #[tauri::command]
@@ -206,6 +249,62 @@ pub async fn prefs_set_steam_devtools(app: AppHandle, on: bool) -> Result<Prefs>
 #[tauri::command]
 pub async fn prefs_set_online_art(app: AppHandle, on: bool) -> Result<Prefs> {
     blocking(move || library::set_online_art(&app, on).map(|()| prefs::get(&app))).await?
+}
+
+/// Minutes without input before the screensaver, 0 for never. The page reads the prefs again, so nothing else follows.
+#[tauri::command]
+pub async fn prefs_set_screensaver_minutes(app: AppHandle, minutes: u32) -> Result<Prefs> {
+    blocking(move || prefs::change(&app, |p| p.screensaver_minutes = minutes).map(|()| prefs::get(&app))).await?
+}
+
+/// The dock is switched on or off: off, holding PS over a game brings the home screen.
+#[tauri::command]
+pub async fn prefs_set_dock(app: AppHandle, on: bool) -> Result<Prefs> {
+    blocking(move || dock::set_on(&app, on).map(|()| prefs::get(&app))).await?
+}
+
+/// The game the dock is over, None when none runs. Reads every process.
+#[tauri::command]
+pub async fn dock_state(app: AppHandle) -> Result<Option<dock::GameState>> {
+    blocking(move || dock::game_state(&app)).await
+}
+
+/// Folds the dock away, back to the game.
+#[tauri::command]
+pub fn dock_resume(app: AppHandle) {
+    dock::fold(&app, true);
+}
+
+/// The home screen, in place of the dock.
+#[tauri::command]
+pub fn dock_home(app: AppHandle) {
+    dock::home(&app);
+}
+
+/// Real glass under the dock's island where it rests (in pixels of the dock's window), or with None none: true when
+/// the island rests on it now.
+#[tauri::command]
+pub fn dock_glass(island: Option<win::glass::Shape>) -> bool {
+    dock::show_glass(island)
+}
+
+/// The home page has drawn its screen after coming forward: the dock over it goes.
+#[tauri::command]
+pub fn dock_home_drawn(app: AppHandle) {
+    dock::home_drawn(&app);
+}
+
+/// Squeezes the real glass under the dock's island into the pill as the page folds it.
+#[tauri::command]
+pub fn dock_glass_fold(fold: win::glass::Fold) {
+    dock::fold_glass(&fold);
+}
+
+/// Asks the game the dock showed (`id` in `session`) to close, or with `force` ends it; refused when another game or
+/// session runs now.
+#[tauri::command]
+pub async fn dock_close_game(app: AppHandle, force: bool, id: String, session: u64) -> Result<()> {
+    blocking(move || dock::close_game(&app, force, &id, session)).await?
 }
 
 /// Returns once the PC has woken up again.

@@ -85,6 +85,9 @@ pub struct Input {
 pub enum Action {
     /// A step for the page: "up", "ok", "back" and so on.
     Nav(&'static str),
+    /// A button let go after Lamplit saw it pressed: "ok-up". The dock's Close game, and the home screen's actions
+    /// that can't be taken back, ask for Cross to be held.
+    Release(&'static str),
     /// Home, or View and Menu, was held: bring Lamplit to the front.
     Summon,
 }
@@ -103,10 +106,16 @@ const BUTTON_STEPS: [(Button, &str); 7] = [
     (|i| i.west, "square"),
 ];
 
+/// The buttons whose letting go is a step too, with that step: the dock and the home screen ask for Cross to be held
+/// for what can't be taken back.
+const RELEASE_STEPS: [(Button, &str); 1] = [(|i| i.south, "ok-up")];
+
 /// One controller's buttons, fed every input report.
 #[derive(Default)]
 pub struct Navigation {
     last: Input,
+    /// The buttons of RELEASE_STEPS whose press was a step, by their place there; one held since reading began wasn't.
+    pressed: [bool; RELEASE_STEPS.len()],
     next_repeat: Option<Instant>,
     repeats: u32,
     home: Hold,
@@ -154,9 +163,22 @@ impl Navigation {
         }
         let pressed = BUTTON_STEPS.iter().filter(|(down, _)| down(&input) && !down(&prev));
         actions.extend(pressed.map(|&(_, step)| Action::Nav(step)));
+        for (&(down, step), pressed) in RELEASE_STEPS.iter().zip(&mut self.pressed) {
+            if down(&input) && !down(&prev) {
+                *pressed = true;
+            } else if !down(&input) && std::mem::take(pressed) {
+                actions.push(Action::Release(step));
+            }
+        }
         self.home.update(input.home, prev.home, now);
         self.chord.update(input.view && input.menu, prev.view && prev.menu, now);
         actions
+    }
+
+    /// The controller went: every button is let go, so Cross held on the dock's Close game is let go too, and the
+    /// hold it began doesn't finish without it.
+    pub fn let_go(&mut self) -> Vec<Action> {
+        self.update(Input::default(), Instant::now())
     }
 
     /// What holding brings by `now`, between reports: a repeated direction, a summon.
@@ -238,8 +260,8 @@ mod tests {
         let all = Input { south: true, east: true, west: true, north: true, ..Input::default() };
         let steps = [Action::Nav("ok"), Action::Nav("back"), Action::Nav("triangle"), Action::Nav("square")];
         assert_eq!(nav.update(all, t), steps);
-        // View alone is no step.
-        assert!(nav.update(Input { view: true, ..Input::default() }, t + ms(10)).is_empty());
+        // View alone is no step; letting go of Cross is one, for the dock.
+        assert_eq!(nav.update(Input { view: true, ..Input::default() }, t + ms(10)), vec![Action::Release("ok-up")]);
     }
 
     #[test]
@@ -247,6 +269,33 @@ mod tests {
         let dirs = <Dir as strum::VariantArray>::VARIANTS.iter().map(|d| d.action());
         let steps: Vec<&str> = dirs.chain(BUTTON_STEPS.map(|(_, step)| step)).collect();
         assert_eq!(serde_json::to_value(steps).unwrap(), ipc_fixture!("values")["pad"]);
+        let releases = RELEASE_STEPS.map(|(_, step)| step);
+        assert_eq!(serde_json::to_value(releases).unwrap(), ipc_fixture!("values")["dock_release"]);
+    }
+
+    #[test]
+    fn letting_go_of_cross_is_a_step_once_it_was_pressed() {
+        let (mut nav, t) = (Navigation::default(), Instant::now());
+        let cross = Input { south: true, ..Input::default() };
+        assert_eq!(nav.update(cross, t), vec![Action::Nav("ok")]);
+        assert!(nav.update(cross, t + ms(300)).is_empty());
+        assert_eq!(nav.update(Input::default(), t + ms(900)), vec![Action::Release("ok-up")]);
+        assert!(nav.update(Input::default(), t + ms(950)).is_empty());
+        // Held since reading began: no press, so no letting go either.
+        let mut nav = Navigation::starting_from(cross);
+        assert!(nav.update(Input::default(), t).is_empty());
+    }
+
+    #[test]
+    fn a_controller_that_goes_lets_go_of_cross() {
+        let (mut nav, t) = (Navigation::default(), Instant::now());
+        nav.update(Input { south: true, dir: Some(Dir::Up), ..Input::default() }, t);
+        assert_eq!(nav.let_go(), vec![Action::Release("ok-up")]);
+        assert!(nav.let_go().is_empty());
+        // The direction it held doesn't repeat.
+        assert!(nav.tick(t + ms(1000)).is_empty());
+        // Cross held since reading began was no press, so losing the controller then is no step either.
+        assert!(Navigation::starting_from(Input { south: true, ..Input::default() }).let_go().is_empty());
     }
 
     #[test]

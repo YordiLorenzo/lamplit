@@ -41,6 +41,9 @@ test("the page's types allow exactly the values Rust sends", () => {
     pad_kind: 'PadKind',
     connection: 'Controller.connection',
     battery_level: 'BatteryLevel',
+    entry_kind: 'FolderEntry.kind',
+    dock_icon: 'DockIcon',
+    dock_release: 'DockRelease',
   };
   for (const [kind, type] of Object.entries(types)) assert.deepEqual(sorted(pageValues(type)), sorted(values[kind]), type);
 });

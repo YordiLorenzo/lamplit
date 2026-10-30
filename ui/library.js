@@ -1,9 +1,15 @@
 // @ts-check
-// The home screen: the cover row, and the hero art, logo and details of the focused game.
+// The home screen: the cover row, the hero art, logo and details of the focused game, and its menu, which lifts its
+// cover (lift.js).
 
-import { assetUrl, librarySetFavourite, librarySetHidden } from './api.js';
+import { assetUrl, dockCloseGame, dockState, libraryRemoveGame, librarySetFavourite, librarySetHidden } from './api.js';
 import { showHints, toast } from './hints.js';
-import { detailChoices, narrowed, playTimeText, playedText, readable, rowOf, storeWarning, words } from './logic.js';
+import { hold, holdRing, letGo } from './hold.js';
+import { backToGame } from './launch.js';
+import { face, lift, lower, settle, showSheet } from './lift.js';
+import { accentOf, detailChoices, folderParts, lightOf, metaParts, narrowed, playTimeText, playedText, rowOf, storeWarning, words } from './logic.js';
+import { reduced } from './morph.js';
+import { stageChanged } from './veil.js';
 import { sfx } from './sounds.js';
 import { byId, els, focused, icon, state, storeName, withStoreLogo } from './state.js';
 
@@ -19,36 +25,35 @@ const fileUrl = (path) => (path ? assetUrl(path) : null);
 // ---------- accent colour from the art ----------
 
 /**
- * The image is loaded with crossOrigin set, so a file without the CORS header fails to load instead of reaching
- * here, and the canvas can always be read back.
- * @param {HTMLImageElement} img
+ * The accent colour of the image at `url`, and how bright it is. It is read as a file and decoded straight to 64x36
+ * off the main thread: drawing the 4K hero itself, or an ImageBitmap of the loaded image, decodes it on the main
+ * thread, most of a frame or more. The asset protocol sends the CORS header, so the canvas can be read back.
+ * @param {string} url
  */
-function sampleAccent(img) {
+async function sampleAccent(url) {
+  const file = await (await fetch(url)).blob();
+  const small = await createImageBitmap(file, { resizeWidth: 64, resizeHeight: 36, resizeQuality: 'medium' });
   const canvas = document.createElement('canvas');
   canvas.width = 64;
   canvas.height = 36;
   const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d', { willReadFrequently: true }));
-  ctx.drawImage(img, 0, 0, 64, 36);
-  const d = ctx.getImageData(0, 0, 64, 36).data;
-  let r = 0, g = 0, b = 0, w = 0;
-  for (let i = 0; i < d.length; i += 4) {
-    const max = Math.max(d[i], d[i + 1], d[i + 2]);
-    const min = Math.min(d[i], d[i + 1], d[i + 2]);
-    const sat = max ? (max - min) / max : 0;
-    const lum = max / 255;
-    // Favour vivid, mid-bright pixels; dark and washed-out ones barely count.
-    const wt = sat * sat * (lum > 0.2 && lum < 0.95 ? 1 : 0.15) + 0.002;
-    r += d[i] * wt;
-    g += d[i + 1] * wt;
-    b += d[i + 2] * wt;
-    w += wt;
-  }
-  return readable([r / w, g / w, b / w]);
+  ctx.drawImage(small, 0, 0);
+  small.close();
+  const { data } = ctx.getImageData(0, 0, 64, 36);
+  return { rgb: accentOf(data), light: lightOf(data) };
 }
 
-/** @param {number[] | null | undefined} rgb */
-function applyAccent(rgb) {
-  document.documentElement.style.setProperty('--accent', (rgb ?? [140, 170, 255]).join(' '));
+/**
+ * The focused game's colour, and its art's brightness for the plates over it (plate.css); without art, the screen
+ * behind them is dark.
+ * @param {{ rgb: number[], light: number } | undefined} look
+ */
+function applyAccent(look) {
+  const root = document.documentElement.style;
+  const accent = (look?.rgb ?? [140, 170, 255]).join(' ');
+  if (root.getPropertyValue('--accent') !== accent) stageChanged();
+  root.setProperty('--accent', accent);
+  root.setProperty('--plate-light', String(look?.light ?? 0));
 }
 
 // ---------- hero, logo and details of the focused game ----------
@@ -73,20 +78,27 @@ function setHero(g) {
     next.classList.add('on');
     current.classList.remove('on');
     state.heroLayer = 1 - state.heroLayer;
+    stageChanged();
   };
   if (!url) {
     applyAccent(state.accents.get(g.id));
     show();
     return;
   }
+  const accent = state.accents.get(g.id);
+  if (accent) applyAccent(accent);
+  else {
+    sampleAccent(url).then(
+      (look) => {
+        state.accents.set(g.id, look);
+        if (focused()?.id === g.id) applyAccent(look);
+      },
+      () => {}
+    );
+  }
+  // Shown once loaded, so the hero doesn't build up line by line.
   const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => {
-    if (!state.accents.has(g.id)) state.accents.set(g.id, sampleAccent(img));
-    if (focused()?.id === g.id) applyAccent(state.accents.get(g.id));
-    show();
-  };
-  img.onerror = show;
+  img.onload = img.onerror = show;
   img.src = url;
 }
 
@@ -137,46 +149,137 @@ export function showInfo() {
   showHints();
 }
 
+/** The focused game's menu: its cover lifts, with the details and the choices beside it. */
 export function openDetails() {
   const g = focused();
   els.dName.textContent = g.name;
-  els.dStore.replaceChildren(...withStoreLogo(g.store, storeName(g.store) ?? 'Not from a store'));
-  els.dPlayed.textContent = playedText(g.last_played).replace(/^Played /, '') || 'Not yet';
-  // Lamplit counts from 0.2.0 on, so a game played before has no count of its own.
-  els.dTime.textContent = playTimeText(g.play_minutes, true) || 'Not counted yet';
-  els.dDir.textContent = g.dir;
+  // Lamplit counts from 0.2.0 on, so a game played before has no time of its own, and the line leaves it out.
+  const [store, played, time = ''] = metaParts(g, g.manual ? 'Added by hand' : storeName(g.store));
+  els.dStore.replaceChildren(...withStoreLogo(g.store, store));
+  els.dPlayed.textContent = played;
+  els.dTime.textContent = time;
+  els.dDir.replaceChildren(...folderParts(g.dir).map((part) => Object.assign(document.createElement('span'), { textContent: part })));
   state.detailsIdx = 0;
   renderChoices();
+  readCloser(g.id);
   state.mode = 'details';
-  els.details.classList.add('on');
+  showSheet('menu');
+  lift(g.id, restingCover(), coverLook(g.name, g.art.portrait));
+  layout();
   sfx.open();
   showHints();
 }
 
-export function closeDetails() {
+/**
+ * Lowers the menu's cover back into the row, or, `away`, lets it drop out of sight: its game is leaving the row.
+ * Change art, over the menu, closes with it.
+ * @param {boolean} [away]
+ */
+export function closeDetails(away = false) {
+  // A hold on one of its choices ends with it, also when a game's news closes it (launch.js).
+  letGo();
   state.mode = 'browse';
-  els.details.classList.remove('on');
+  state.art.open = false;
+  state.typing = null;
+  lower(away);
   sfx.back();
   showHints();
 }
 
-/** The choices under the details, the focused one marked. */
+/** The menu again, as it was before Change art: its choices, and the cover with the game's own art. */
+export function backToMenu() {
+  const g = focused();
+  state.art.open = false;
+  state.typing = null;
+  showSheet('menu');
+  face(coverLook(g.name, g.art.portrait));
+  renderChoices();
+  showHints();
+}
+
+/** The choices of the focused game's menu. */
+const choices = () => detailChoices(focused(), state.running, state.closer);
+
+/**
+ * The choices again, as what they offer changed underneath: the game ended, so Close game goes. Focus stays on a
+ * choice that is there.
+ */
+export function refreshChoices() {
+  if (state.mode !== 'details') return;
+  renderChoices();
+  showHints();
+}
+
+/**
+ * The running game as the dock reads it: whether Lamplit knows which programs are its own, so the menu can offer
+ * Close game, and whether it stopped responding. The menu shows the choice once the answer is in.
+ * @param {string} id
+ */
+async function readCloser(id) {
+  state.closer = null;
+  if (state.running !== id) return;
+  const read = await dockState().catch(() => null);
+  if (state.mode !== 'details' || focused()?.id !== id) return;
+  state.closer = read;
+  renderChoices();
+}
+
+/**
+ * The choices in the menu, each with its icon, the focused one marked: Play lit, Favourite's star filled when on.
+ * One that can't be taken back says what it does, and has a ring that fills while Cross is held on it (hold.js); a
+ * hold in progress is let go, as the rows it was on are made again.
+ */
 function renderChoices() {
-  const rows = detailChoices(focused(), state.running).map((c, i) => {
+  letGo();
+  const g = focused();
+  const list = choices();
+  state.detailsIdx = Math.min(state.detailsIdx, list.length - 1);
+  const rows = list.map((c, i) => {
     const row = document.createElement('div');
-    row.className = 'row' + (i === state.detailsIdx ? ' focus' : '');
-    row.textContent = c.label;
+    row.className = 'row';
+    row.classList.toggle('focus', i === state.detailsIdx);
+    row.classList.toggle('primary', c.kind === 'play');
+    if (c.kind === 'favourite') {
+      row.classList.toggle('on', g.favourite);
+      row.setAttribute('aria-pressed', String(g.favourite));
+    }
+    row.append(glyph(c.icon, !!c.hold), labelled(c.label, c.note));
     return row;
   });
   els.dChoices.replaceChildren(...rows);
 }
 
-/** The choice ✕ picks in Details. */
-export const detailChoice = () => detailChoices(focused(), state.running)[state.detailsIdx];
+/**
+ * A row's icon, with the ring a hold fills round it.
+ * @param {import('./icons.js').IconId} id @param {boolean} held
+ */
+export function glyph(id, held) {
+  const box = document.createElement('span');
+  box.className = 'glyph';
+  const svg = icon(id);
+  svg.setAttribute('class', 'icon');
+  box.append(svg, ...(held ? [holdRing()] : []));
+  return box;
+}
+
+/**
+ * A row's label, and under it what it does when that can't be taken back.
+ * @param {string} label @param {string} [note]
+ */
+export function labelled(label, note) {
+  const box = document.createElement('span');
+  box.className = 'label';
+  box.append(label);
+  if (note) box.append(Object.assign(document.createElement('span'), { className: 'note', textContent: note }));
+  return box;
+}
+
+/** The choice ✕ picks in the menu. */
+export const detailChoice = () => choices()[state.detailsIdx];
 
 /** @param {number} delta */
 export function moveDetails(delta) {
-  const next = Math.max(0, Math.min(detailChoices(focused(), state.running).length - 1, state.detailsIdx + delta));
+  const next = Math.max(0, Math.min(choices().length - 1, state.detailsIdx + delta));
   if (next === state.detailsIdx) return sfx.edge();
   state.detailsIdx = next;
   sfx.move();
@@ -184,20 +287,40 @@ export function moveDetails(delta) {
   showHints();
 }
 
-/** Details' choices other than Play: the focused game in or out of the favourites, or hidden. */
-export async function markGame() {
-  const g = focused();
-  const { kind } = detailChoice();
+/** Cross held on a choice that can't be taken back: it happens once the ring round its icon is full. */
+export function holdChoice() {
+  sfx.move();
+  // Made again with focus on it, as a mouse may hold one that wasn't in focus.
+  renderChoices();
+  // What it is for, as it was when the button went down: once the ring is full, that is what happens, to that game.
+  const target = { g: focused(), kind: detailChoice().kind, closer: state.closer };
+  hold(/** @type {HTMLElement} */ (els.dChoices.children[state.detailsIdx]), () => markGame(target));
+}
+
+/**
+ * The menu's choices other than Play and Change art: the focused game in or out of the favourites, hidden, closed
+ * while it runs, or, for a game added by hand, removed. The last two come once Cross has been held (holdChoice), on
+ * the game and choice the hold began on.
+ * @param {{ g?: Shown, kind?: import('./logic.js').DetailChoice['kind'], closer?: import('./api.js').DockGame | null }} [target]
+ */
+export async function markGame({ g = focused(), kind = detailChoice().kind, closer = state.closer } = {}) {
   try {
-    if (kind === 'favourite') {
+    if (kind === 'close' && closer) {
+      sfx.launch();
+      closeDetails();
+      // Rust closes the game it read, in its session, and nothing else. Asked to close, the game may ask whether to
+      // quit: it comes forward to ask. Ended, Lamplit stays in front.
+      await dockCloseGame(closer.force_close, closer.id, closer.session);
+      if (!closer.force_close) backToGame();
+    } else if (kind === 'favourite') {
       sfx.open();
       // The row moves around the game, and focus stays on it.
       setGames(await librarySetFavourite(g.id, !g.favourite));
       renderChoices();
     } else {
       const at = state.idx;
-      closeDetails();
-      const list = await librarySetHidden(g.id, true);
+      closeDetails(true);
+      const list = await (kind === 'hide' ? librarySetHidden(g.id, true) : libraryRemoveGame(g.id));
       // The row stays live while Rust saves: a player who moved on keeps the game they moved to (setGames).
       const stayed = focused()?.id === g.id;
       setGames(list);
@@ -206,10 +329,11 @@ export async function markGame() {
         state.idx = Math.max(0, Math.min(at, state.games.length - 1));
         render();
       }
-      toast(`${g.name} is hidden. Settings > Hidden games shows it again.`);
+      if (kind === 'hide') toast(`${g.name} is hidden. Settings > Hidden games shows it again.`, { game: g, icon: 'i-eye-off' });
+      else toast(`${g.name} is no longer in Lamplit.`, { game: g, icon: 'i-remove' });
     }
   } catch (e) {
-    toast(e.message);
+    toast(e.message, { game: g, warn: true });
   }
 }
 
@@ -236,30 +360,54 @@ function newCover(name) {
   return el;
 }
 
+/**
+ * A cover's look: its portrait, or the game's name on colours of its own. The row and the lifted card both draw it.
+ * @param {string} name @param {string | null} portrait
+ * @returns {import('./lift.js').Look}
+ */
+export function coverLook(name, portrait) {
+  const url = fileUrl(portrait);
+  return { image: url ? `url("${url}")` : coverFallback(name), art: !!url, name };
+}
+
 /** @param {Shown} g */
 export function paintCover(g) {
-  const url = fileUrl(g.art.portrait);
-  g.el.style.backgroundImage = url ? `url("${url}")` : coverFallback(g.name);
-  g.el.classList.toggle('has-art', !!url);
+  const look = coverLook(g.name, g.art.portrait);
+  g.el.style.backgroundImage = look.image;
+  g.el.classList.toggle('has-art', look.art);
   g.el.classList.toggle('playing', state.running === g.id);
 }
 
-/** A cover's width in px, measured from the stylesheet (--cover-h) again whenever the window's height changes. */
-let cover = { forHeight: 0, width: 0 };
+/** A cover's size in px, measured from the stylesheet (--cover-h) again whenever the window's height changes. */
+let cover = { forHeight: 0, width: 0, height: 0 };
+/** How much the focused cover grows. */
+const GROW = 1.14;
 
-/** Covers sit side by side; the focused one grows and the row slides so it stays in the first slot. */
+/**
+ * Covers sit side by side; the focused one grows and the row slides so it stays in the first slot. A lifted cover
+ * hides in the row while its card stands in for it (lift.js).
+ */
 export function layout() {
   if (cover.forHeight !== innerHeight && state.games.length) {
-    cover = { forHeight: innerHeight, width: parseFloat(getComputedStyle(state.games[0].el).width) };
+    const look = getComputedStyle(state.games[0].el);
+    cover = { forHeight: innerHeight, width: parseFloat(look.width), height: parseFloat(look.height) };
   }
-  const w = cover.width, gap = innerHeight * 0.02, grow = 1.14;
+  const w = cover.width, gap = innerHeight * 0.02;
   const i = state.idx;
   state.games.forEach((g, k) => {
-    const x = k * (w + gap) + (k > i ? w * (grow - 1) : 0);
-    g.el.style.transform = `translate3d(${x}px, 0, 0) scale(${k === i ? grow : 1})`;
+    const x = k * (w + gap) + (k > i ? w * (GROW - 1) : 0);
+    g.el.style.transform = `translate3d(${x}px, 0, 0) scale(${k === i ? GROW : 1})`;
     g.el.classList.toggle('focus', k === i);
+    g.el.classList.toggle('lifted', g.id === state.lifted);
   });
   els.track.style.transform = `translate3d(${-i * (w + gap)}px, 0, 0)`;
+  if (state.lifted && state.lifted !== focused()?.id) settle();
+}
+
+/** Where the focused cover rests once the row has slid: the first slot, grown, on the row's bottom edge. */
+function restingCover() {
+  const width = cover.width * GROW, height = cover.height * GROW;
+  return { x: parseFloat(getComputedStyle(els.track).left), y: els.row.getBoundingClientRect().bottom - height, width, height };
 }
 
 export function render() {
@@ -270,6 +418,7 @@ export function render() {
 /** @param {Game[]} list */
 export function setGames(list) {
   const keep = focused()?.id;
+  state.loaded = true;
   state.all = list.map((g) => ({ ...g, el: newCover(g.name) }));
   state.all.forEach(paintCover);
   showRow(keep);
@@ -287,9 +436,9 @@ export function showRow(keep = null) {
   state.games = rowOf(state.all, state.find);
   const k = state.games.findIndex((g) => g.id === keep);
   state.idx = Math.max(0, k);
-  // Details still names the game that is gone, and ✕ there would start whatever is focused now. They close before the
-  // row is drawn, which would show their hints for a game that isn't there.
-  if (k < 0 && state.mode === 'details') closeDetails();
+  // The menu still names the game that is gone, and ✕ there would start whatever is focused now. It closes before the
+  // row is drawn, which would show its hints for a game that isn't there.
+  if (k < 0 && state.mode === 'details') closeDetails(true);
   const shown = shownCount();
   els.empty.hidden = shown > 0;
   els.empty.textContent = state.all.length ? 'Every game is hidden. Settings > Hidden games shows them again.' : 'No games found';
@@ -320,9 +469,12 @@ export function showAllGames() {
   showRow(focused()?.id);
 }
 
+/** How many of the games the row holds, while the search or the store leaves some out: "2 of 6 games". */
+export const rowCount = () => (narrowed(state.find) ? `${state.games.length} of ${shownCount()} games` : '');
+
 /**
  * Above the row, while it isn't every game by last played: the search, the store and the sort that shape it, and how
- * many games it holds.
+ * many games it holds. Find works on this line (find.js), and its field grows out of the search's pill.
  */
 function showFilters() {
   const { query, store, sort } = state.find;
@@ -335,11 +487,12 @@ function showFilters() {
   };
   /** @type {Node[]} */
   const parts = [];
-  if (words(query).length) parts.push(pill('query', icon('icon-search'), query.trim()));
+  if (words(query).length) parts.push(pill('query', icon('i-search'), query.trim()));
   if (store) parts.push(pill('', ...withStoreLogo(store === 'pc' ? null : store, store)));
   if (sort === 'name') parts.push(pill('quiet', 'A to Z'));
-  if (narrowed(state.find)) parts.push(document.createTextNode(`${state.games.length} of ${shownCount()} games`));
-  els.filters.replaceChildren(...parts);
+  if (narrowed(state.find)) parts.push(document.createTextNode(rowCount()));
+  // A message about a game stands after them (hints.js toast).
+  els.filters.replaceChildren(...parts, els.gameNews);
 }
 
 /** @param {number} delta */
@@ -347,10 +500,13 @@ export function move(delta) {
   const next = Math.max(0, Math.min(state.games.length - 1, state.idx + delta));
   if (next === state.idx) {
     sfx.edge();
-    focused().el.animate([{ translate: '0 0' }, { translate: `${Math.sign(delta) * 1.2}vh 0` }, { translate: '0 0' }], {
-      duration: 200,
-      easing: 'ease-out',
-    });
+    // The end of the row: the cover bumps against it, and with Reduce Motion only the sound says so.
+    if (!reduced()) {
+      focused().el.animate([{ translate: '0 0' }, { translate: `${Math.sign(delta) * 1.2}vh 0` }, { translate: '0 0' }], {
+        duration: 200,
+        easing: 'ease-out',
+      });
+    }
     return;
   }
   state.idx = next;
@@ -364,5 +520,8 @@ export function onArt({ id, art }) {
   if (!g) return;
   g.art = art;
   paintCover(g);
-  if (focused() === g) showInfo();
+  if (focused() !== g) return;
+  showInfo();
+  // Change art previews on the card what it would show, and puts the game's own art back when it closes.
+  if (state.lifted === id && !state.art.open) face(coverLook(g.name, art.portrait));
 }

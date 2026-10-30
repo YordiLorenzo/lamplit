@@ -2,6 +2,7 @@
 // Both run on a thread of their own, one call at a time. ShellExecute can take long (a packaged app activating, the
 // admin prompt of an exe that asks for one), and the thread that runs Lamplit's window must not wait for it.
 
+use super::process::Held;
 use std::ffi::OsStr;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::path::Path;
@@ -46,6 +47,37 @@ pub fn open(file: &OsStr, args: Option<&str>, dir: Option<&Path>) -> std::result
         unsafe { ShellExecuteW(None, w!("open"), &file, ptr(&args), ptr(&dir), SW_SHOWNORMAL) }.0 as isize
     });
     if code > 32 { Ok(()) } else { Err(code) }
+}
+
+/// Starts `exe` as `open` does, and returns the process it started, kept open. None when Windows doesn't say which.
+/// Err is ShellExecute's error code, as for `open`.
+pub fn start(exe: &OsStr, args: Option<&str>, dir: Option<&Path>) -> std::result::Result<Option<Held>, isize> {
+    let file = HSTRING::from(exe);
+    let (args, dir) = (args.map(HSTRING::from), dir.map(|d| HSTRING::from(d.as_os_str())));
+    on_shell_thread(move || {
+        let ptr = |s: &Option<HSTRING>| s.as_ref().map_or(PCWSTR::null(), |s| PCWSTR(s.as_ptr()));
+        let mut info = SHELLEXECUTEINFOW {
+            cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+            fMask: SEE_MASK_NOCLOSEPROCESS,
+            lpVerb: w!("open"),
+            lpFile: PCWSTR(file.as_ptr()),
+            lpParameters: ptr(&args),
+            lpDirectory: ptr(&dir),
+            nShow: SW_SHOWNORMAL.0,
+            ..Default::default()
+        };
+        // SAFETY: info is a complete SHELLEXECUTEINFOW of the size it states, and its strings live until the call
+        // returns.
+        if unsafe { ShellExecuteExW(&raw mut info) }.is_err() {
+            return Err(info.hInstApp.0 as isize);
+        }
+        if info.hProcess.is_invalid() {
+            return Ok(None);
+        }
+        // SAFETY: SEE_MASK_NOCLOSEPROCESS hands the new process's handle to the caller, and nothing else owns or
+        // closes it.
+        Ok(Held::of(unsafe { OwnedHandle::from_raw_handle(info.hProcess.0) }))
+    })
 }
 
 /// A process started through the admin prompt, to wait for.

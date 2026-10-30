@@ -15,6 +15,7 @@ mod trackpad;
 mod xbox;
 
 use crate::devices::{Charge, accessories};
+use crate::dock;
 use crate::error::{Error, Result};
 use crate::events::{self, Event};
 use crate::launch::window;
@@ -257,7 +258,7 @@ fn read(mut dev: HidDevice, api: &Mutex<HidApi>, path: &CStr, bluetooth: bool, i
                     Ok(dev) => dev,
                     Err(e) => {
                         log::info!("controller: gone ({e})");
-                        return;
+                        break;
                     }
                 };
                 last_data = Instant::now();
@@ -293,12 +294,15 @@ fn read(mut dev: HidDevice, api: &Mutex<HidApi>, path: &CStr, bluetooth: bool, i
             }
             Err(e) => {
                 log::info!("controller: read ended: {e}");
-                return;
+                break;
             }
         }
         for action in navigation.tick(Instant::now()) {
             act(app, Kind::DualSense, action);
         }
+    }
+    for action in navigation.let_go() {
+        act(app, Kind::DualSense, action);
     }
 }
 
@@ -306,6 +310,7 @@ fn read(mut dev: HidDevice, api: &Mutex<HidApi>, path: &CStr, bluetooth: bool, i
 /// POLL_EVERY while one is connected, and only looking for new ones every LOOK_EVERY otherwise.
 fn poll(app: &AppHandle) {
     let (mut xbox, mut others) = (xbox::Slots::default(), other::Others::default());
+    other::hear_removals();
     let mut look_at = Instant::now();
     loop {
         let now = Instant::now();
@@ -337,12 +342,24 @@ fn act(app: &AppHandle, kind: Kind, action: Action) {
         events::emit(app, Event::PadKind(kind));
     }
     match action {
-        // Navigation only reaches the UI while Lamplit is the window in front, so a game never moves it.
+        // Navigation only reaches the UI while Lamplit is the window in front, or while the dock is open, so a game
+        // never moves it.
         Action::Nav(nav) => {
             if window::lamplit_in_front() {
                 events::emit(app, Event::Pad(nav));
+            } else if dock::is_open() {
+                events::emit(app, Event::DockPad(nav));
             }
         }
-        Action::Summon => window::summon(app),
+        // Letting go ends a hold: the dock's Close game, and the home screen's actions that can't be taken back, ask
+        // for Cross to be held.
+        Action::Release(step) => {
+            if window::lamplit_in_front() {
+                events::emit(app, Event::Pad(step));
+            } else if dock::is_open() {
+                events::emit(app, Event::DockPad(step));
+            }
+        }
+        Action::Summon => dock::summon(app),
     }
 }

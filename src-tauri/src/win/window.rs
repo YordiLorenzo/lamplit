@@ -1,19 +1,24 @@
 // Top-level windows: finding them, reading their title and process, and moving them in front, aside or down.
 // A window handle can go stale at any moment (its window closes); these calls then fail or read as empty.
-// Nothing here waits for another process's window: it may be a game that stopped responding, which is just when the
-// player calls Lamplit up, and Lamplit would then hang with it.
+// Nothing here waits for another process's window for more than a moment: it may be a game that stopped responding,
+// which is just when the player calls Lamplit up, and Lamplit would then hang with it.
 
 use std::ops::ControlFlow;
-use windows::Win32::Foundation::LPARAM;
+use std::time::Duration;
+use windows::Win32::Foundation::{LPARAM, RECT, WPARAM};
+use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
+use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow};
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, VK_MENU, keybd_event};
 use windows::Win32::UI::Shell::{
     QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN, SHQueryUserNotificationState,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    ASFW_ANY, AllowSetForegroundWindow, BringWindowToTop, EnumWindows, GW_OWNER, GetForegroundWindow, GetWindow,
-    GetWindowTextW, GetWindowThreadProcessId, IsHungAppWindow, IsIconic, IsWindowVisible, SHOW_WINDOW_CMD, SW_MINIMIZE,
-    SW_RESTORE, SetForegroundWindow, ShowWindow, ShowWindowAsync,
+    ASFW_ANY, AllowSetForegroundWindow, BringWindowToTop, EnumWindows, GW_OWNER, GWL_EXSTYLE, GetForegroundWindow,
+    GetWindow, GetWindowLongPtrW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, HWND_NOTOPMOST,
+    HWND_TOPMOST, IsIconic, IsWindowVisible, SHOW_WINDOW_CMD, SMTO_ABORTIFHUNG, SMTO_BLOCK, SW_MINIMIZE, SW_RESTORE,
+    SW_SHOWNOACTIVATE, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageTimeoutW,
+    SetForegroundWindow, SetWindowPos, ShowWindow, ShowWindowAsync, WM_NULL, WS_EX_TOPMOST,
 };
 use windows::core::BOOL;
 
@@ -52,10 +57,88 @@ pub fn is_visible(window: HWND) -> bool {
     unsafe { IsWindowVisible(window) }.as_bool()
 }
 
+/// Windows counts the window as visible but doesn't draw it: a packaged app's window that is suspended or on another
+/// virtual desktop, say.
+pub fn is_cloaked(window: HWND) -> bool {
+    let mut cloaked = 0u32;
+    // SAFETY: the attribute is a u32, which `cloaked` holds, and its size goes with it.
+    let read =
+        unsafe { DwmGetWindowAttribute(window, DWMWA_CLOAKED, (&raw mut cloaked).cast(), size_of::<u32>() as u32) };
+    read.is_ok() && cloaked != 0
+}
+
+/// A rectangle on the screen, in pixels, right and bottom outside it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Rect {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+impl From<RECT> for Rect {
+    fn from(r: RECT) -> Self {
+        Rect { left: r.left, top: r.top, right: r.right, bottom: r.bottom }
+    }
+}
+
+/// Where the window is on the screen.
+pub fn rect(window: HWND) -> Option<Rect> {
+    let mut r = RECT::default();
+    // SAFETY: r is a valid place for the answer; a stale handle makes the call fail.
+    unsafe { GetWindowRect(window, &raw mut r) }.ok()?;
+    Some(r.into())
+}
+
+/// The whole of the monitor the window is on (or nearest to).
+pub fn monitor(window: HWND) -> Option<Rect> {
+    let mut info = MONITORINFO { cbSize: size_of::<MONITORINFO>() as u32, ..Default::default() };
+    // SAFETY: MonitorFromWindow always returns a monitor with this flag, and info carries its own size.
+    let read = unsafe { GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &raw mut info) };
+    read.as_bool().then(|| info.rcMonitor.into())
+}
+
+/// Puts `window` behind `front` without activating it, among the windows that aren't topmost: right behind `front`, or,
+/// when `front` is topmost itself, at the top of those windows, since Windows keeps a window put behind a topmost one
+/// topmost too, above every ordinary window the player switches to. False, and `window` left where it was, when
+/// `front` has closed, as a game may close its window to open another while it sets its screen mode.
+pub fn place_behind(window: HWND, front: HWND) -> bool {
+    let after = if is_topmost(front) { HWND_NOTOPMOST } else { front };
+    let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
+    // SAFETY: changes only the window's place among the others; a stale handle makes the call fail.
+    unsafe { SetWindowPos(window, Some(after), 0, 0, 0, 0, flags) }.is_ok()
+}
+
+/// The window is above every window that isn't topmost.
+pub fn is_topmost(window: HWND) -> bool {
+    // SAFETY: only reads the window's extended style; a stale handle reads as 0.
+    let style = unsafe { GetWindowLongPtrW(window, GWL_EXSTYLE) } as u32;
+    style & WS_EX_TOPMOST.0 != 0
+}
+
+/// Puts the window above every window that isn't topmost (`on`), or back among them, without activating it. For
+/// another thread's window the change is posted to that thread, so a thread that is busy can't hold the caller up.
+pub fn set_topmost(window: HWND, on: bool) {
+    let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS;
+    let after = if on { HWND_TOPMOST } else { HWND_NOTOPMOST };
+    // SAFETY: changes only the window's place among the others; a stale handle makes the call fail.
+    let _ = unsafe { SetWindowPos(window, Some(after), 0, 0, 0, 0, flags) };
+}
+
 /// A window with an owner belongs to another one (a dialog or a tool window), rather than being an app's own.
 pub fn has_owner(window: HWND) -> bool {
     // SAFETY: only reads the window's state; it fails for a window without an owner.
     unsafe { GetWindow(window, GW_OWNER) }.is_ok()
+}
+
+/// The window's thread reads its messages: it answers a message that asks nothing (WM_NULL) within `wait`, or at once
+/// when Windows already counts it as not responding. IsHungAppWindow alone misses a thread that stopped while it
+/// waited for input: Windows counts it as hung only once a message has waited 5 seconds for it.
+pub fn responds(window: HWND, wait: Duration) -> bool {
+    let (flags, wait) = (SMTO_ABORTIFHUNG | SMTO_BLOCK, wait.as_millis() as u32);
+    // SAFETY: sends a message without parameters and waits at most `wait`; a stale handle makes it fail.
+    let answered = unsafe { SendMessageTimeoutW(window, WM_NULL, WPARAM(0), LPARAM(0), flags, wait, None) };
+    answered.0 != 0
 }
 
 pub fn is_minimized(window: HWND) -> bool {
@@ -78,6 +161,13 @@ fn show(window: HWND, cmd: SHOW_WINDOW_CMD) {
 
 pub fn minimize(window: HWND) {
     show(window, SW_MINIMIZE);
+}
+
+/// Restores a minimised window without activating it.
+pub fn unminimize(window: HWND) {
+    if is_minimized(window) {
+        show(window, SW_SHOWNOACTIVATE);
+    }
 }
 
 /// Restores the window and asks Windows to put it in front.
@@ -110,10 +200,11 @@ pub fn force_foreground(window: HWND) {
         let me = GetCurrentThreadId();
         let other = GetWindowThreadProcessId(front, None);
         // Attached threads share one input queue, so while a thread that has stopped responding (a frozen game) is
-        // attached, this one waits on it too. Such a thread gets the Alt press below instead.
+        // attached, this one waits on it too: on 2026-10-27 a suspended stand-in game held Lamplit's main thread here
+        // until it ran again. Such a thread gets the Alt press below instead.
         let attached = other != 0
             && other != me
-            && !IsHungAppWindow(front).as_bool()
+            && responds(front, Duration::from_millis(200))
             && AttachThreadInput(me, other, true).as_bool();
         // BringWindowToTop waits for the thread that owns the window. SetForegroundWindow raises another thread's
         // window without waiting, so a game that isn't responding can't hold Lamplit up here.
@@ -143,4 +234,115 @@ pub fn full_screen_app_in_front() -> bool {
     // SAFETY: takes nothing and returns a value.
     let state = unsafe { SHQueryUserNotificationState() };
     matches!(state, Ok(s) if s == QUNS_BUSY || s == QUNS_RUNNING_D3D_FULL_SCREEN || s == QUNS_PRESENTATION_MODE)
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use std::io::Write;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DestroyWindow, GW_HWNDNEXT, GetClassNameW, WINDOW_EX_STYLE, WS_POPUP,
+    };
+    use windows::core::w;
+
+    /// The tests that order windows take turns: one test's windows would come between another's.
+    pub static ONE_AT_A_TIME: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+    /// A hidden top-level window of this thread, topmost or not: the system's STATIC class needs no registering.
+    pub fn window(topmost: bool) -> HWND {
+        let style = if topmost { WS_EX_TOPMOST } else { WINDOW_EX_STYLE(0) };
+        // SAFETY: the class and title are constant strings; the window has no parent, menu or data.
+        unsafe {
+            CreateWindowExW(style, w!("STATIC"), w!("lamplit test"), WS_POPUP, 0, 0, 64, 64, None, None, None, None)
+        }
+        .unwrap()
+    }
+
+    /// The window right behind `window` in the z-order, passing over this thread's windows that aren't the tests'
+    /// (STATIC), such as the IME windows Windows makes with a thread's first window and keeps right above their owner:
+    /// on Windows CI (2026-10-30) a window of no test's came between a window and the one placed behind it. Another
+    /// thread's window isn't passed over: one between would be a window misplaced. Also what was passed over, by class
+    /// and owner, for the failure message, and on stderr, which the test harness doesn't capture, for the CI log.
+    pub fn next(window: HWND) -> (Option<HWND>, Vec<String>) {
+        let mut passed = Vec::new();
+        let mut at = window;
+        loop {
+            // SAFETY: only reads the z-order.
+            let Ok(behind) = (unsafe { GetWindow(at, GW_HWNDNEXT) }) else { return (None, passed) };
+            let class = class(behind);
+            // SAFETY: only reads which thread made the window.
+            let ours = unsafe { GetWindowThreadProcessId(behind, None) == GetCurrentThreadId() };
+            if !ours || class.eq_ignore_ascii_case("STATIC") {
+                if !passed.is_empty() {
+                    let _ =
+                        writeln!(std::io::stderr(), "z-order: passed over {passed:?} to reach {}", describe(behind));
+                }
+                return (Some(behind), passed);
+            }
+            passed.push(describe(behind));
+            at = behind;
+        }
+    }
+
+    /// The window's class name.
+    fn class(window: HWND) -> String {
+        let mut class = [0u16; 64];
+        // SAFETY: reads the class name into the buffer, at most its length.
+        let len = unsafe { GetClassNameW(window, &mut class) }.max(0) as usize;
+        String::from_utf16_lossy(&class[..len])
+    }
+
+    /// A window as a failure message names it: its handle, class, thread (this test's or another) and owner.
+    pub fn describe(window: HWND) -> String {
+        // SAFETY: only reads which thread made the window, and its owner; the latter fails for a window without one.
+        let (thread, owner) = unsafe { (GetWindowThreadProcessId(window, None), GetWindow(window, GW_OWNER).ok()) };
+        // SAFETY: takes nothing and returns a value.
+        let mine = thread == unsafe { GetCurrentThreadId() };
+        format!(
+            "{window:?} {}, thread {thread}{}, owner {owner:?}",
+            class(window),
+            if mine { " (this test's)" } else { "" }
+        )
+    }
+
+    /// Closes a window `window(..)` made on this thread.
+    pub fn destroy(window: HWND) {
+        // SAFETY: the caller made the window on this thread.
+        unsafe { DestroyWindow(window) }.unwrap();
+    }
+
+    #[test]
+    fn lamplit_behind_a_topmost_game_leaves_the_topmost_windows() {
+        let _turn = ONE_AT_A_TIME.lock();
+        let (lamplit, game, other) = (window(true), window(true), window(false));
+        assert!(place_behind(lamplit, game));
+        assert!(!is_topmost(lamplit), "it would stay above every ordinary window the player switches to");
+        // Behind a game that isn't topmost: right behind it.
+        set_topmost(lamplit, true);
+        assert!(is_topmost(lamplit));
+        assert!(place_behind(lamplit, other));
+        let (behind, passed) = next(other);
+        assert!(
+            !is_topmost(lamplit) && behind == Some(lamplit),
+            "{} behind it, after {passed:?}; Lamplit is {lamplit:?}",
+            behind.map_or("nothing".into(), describe)
+        );
+        for w in [lamplit, game, other] {
+            // SAFETY: each window is this thread's, made above.
+            unsafe { DestroyWindow(w) }.unwrap();
+        }
+    }
+
+    #[test]
+    fn lamplit_stays_on_top_when_the_window_it_was_to_go_behind_has_gone() {
+        let _turn = ONE_AT_A_TIME.lock();
+        // The game replaced its window while the screen faded to black.
+        let (lamplit, game) = (window(true), window(false));
+        // SAFETY: the window is this thread's, made above.
+        unsafe { DestroyWindow(game) }.unwrap();
+        assert!(!place_behind(lamplit, game), "the handover would count as done, and Lamplit stay on top");
+        assert!(is_topmost(lamplit), "it keeps holding the screen");
+        // SAFETY: the window is this thread's, made above.
+        unsafe { DestroyWindow(lamplit) }.unwrap();
+    }
 }

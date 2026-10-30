@@ -18,6 +18,7 @@ macro_rules! ipc_fixture {
 
 // The features, one folder each.
 mod devices;
+mod dock;
 mod launch;
 mod library;
 mod stores;
@@ -32,6 +33,7 @@ mod events;
 mod files;
 mod logging;
 mod prefs;
+mod probe;
 
 // The calls into Windows, the one place with unsafe code.
 #[allow(unsafe_code)]
@@ -47,6 +49,9 @@ const APP: &str = env!("CARGO_PKG_NAME");
 const TITLE: &str = "Lamplit";
 
 pub use error::Error;
+// For main.rs's test of closing the home window: Tauri's window code needs Common Controls 6, which the app manifest
+// asks for, and only the exe's test binary carries that manifest.
+pub use dock::{LABEL as DOCK_LABEL, on_close_request};
 pub use logging::to_file as log_to_file;
 pub use system::setup::{FLAG as SETUP_FLAG, FOR_FLAG as SETUP_FOR_FLAG, run as setup};
 pub use win::process::attach_parent_console;
@@ -93,7 +98,7 @@ fn first_lamplit_window() -> Option<win::window::HWND> {
 ///
 /// When Tauri can't start (WebView2 missing, for one).
 pub fn run() {
-    tauri::Builder::default()
+    probe::with(tauri::Builder::default())
         .plugin(logging::plugin())
         .manage(library::Library::default())
         .manage(launch::Launcher::default())
@@ -103,9 +108,16 @@ pub fn run() {
             commands::library_rescan,
             commands::library_set_favourite,
             commands::library_set_hidden,
+            commands::library_art_search,
+            commands::library_set_art,
+            commands::library_programs,
+            commands::library_browse,
+            commands::library_add_game,
+            commands::library_remove_game,
             commands::launch_start,
             commands::launch_anyway,
             commands::launch_cancel,
+            commands::launch_show,
             commands::launch_resume,
             commands::launch_running,
             commands::stores_status,
@@ -129,10 +141,19 @@ pub fn run() {
             commands::prefs_set_touchpad_mouse,
             commands::prefs_set_steam_devtools,
             commands::prefs_set_online_art,
+            commands::prefs_set_screensaver_minutes,
+            commands::prefs_set_dock,
             commands::power_sleep,
             commands::power_restart,
             commands::power_shut_down,
             commands::display_mode,
+            commands::dock_state,
+            commands::dock_resume,
+            commands::dock_home,
+            commands::dock_glass,
+            commands::dock_glass_fold,
+            commands::dock_home_drawn,
+            commands::dock_close_game,
         ])
         .setup(|app| {
             log::info!("Lamplit {} starting", env!("CARGO_PKG_VERSION"));
@@ -143,12 +164,18 @@ pub fn run() {
             // The headset before the controllers: a controller's thread reads the headset's state.
             devices::headset::start(app.handle().clone());
             devices::pad::start(app.handle().clone());
+            dock::start(app.handle());
             upkeep(app.handle().clone());
             stores::steam::guard_big_picture();
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("Lamplit failed to start");
+        .build(tauri::generate_context!())
+        .expect("Lamplit failed to start")
+        .run(|app, event| {
+            if dock::on_close_request(app, &event) {
+                dock::fold(app, true);
+            }
+        });
 }
 
 /// Every 10 s: Steam kept in line whenever it runs, and quiet-mode changes that had to wait (for Steam to start, or

@@ -3,13 +3,26 @@
 
 :root {
   --accent: 140 170 255;            /* rgb triplet, sampled from the focused game's art */
+  /* The springs (springs.js, which main.js has set them from): what a press opens, the lift, a step or the focus, a
+     dismissal, and Reduce Motion's fade. */
+  --tap: ease;
+  --tap-ms: 425ms;
+  --lift: ease;
+  --lift-ms: 520ms;
+  --snap: ease;
+  --snap-ms: 300ms;
+  --close: ease;
+  --close-ms: 355ms;
+  --fade-ms: 150ms;
   --bg: #07060b;
   --ink: #f5f5f7;
   --ink-dim: rgb(245 245 247 / .72);
   --safe-x: 5vw;
   --safe-y: 5vh;
   --cover-h: 30vh;
-  --spring: cubic-bezier(.34, 1.56, .64, 1);
+  /* The status capsule: where it sits, inset in Settings' plate as its header, and how tall it is. */
+  --status-top: calc(var(--safe-y) + var(--plate-inset));
+  --status-h: 5.4vh;
   --glide: cubic-bezier(.2, .9, .25, 1);
   font-family: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   color: var(--ink);
@@ -36,7 +49,8 @@ body.pointer { cursor: default; }
 .hero {
   position: absolute;
   inset: -5%;
-  background: center 30% / cover no-repeat;
+  /* Opaque, the colour of the page under it, so the page's own background isn't drawn under it on every frame. */
+  background: var(--bg) center 30% / cover no-repeat;
   opacity: 0;
   transition: opacity 700ms ease;
   animation: drift 40s ease-in-out infinite alternate;
@@ -53,8 +67,16 @@ body.pointer { cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .hero { animation: none; }
 }
-/* Nobody is using Lamplit (input.js): the drift holds where it is. */
-body.still .hero { animation-play-state: paused; }
+/* Nobody is using Lamplit (input.js): the drift holds where it is. Under a panel it keeps going: held still, the GPU
+   drops to its idle clocks within 2 s, and what closes then stutters on screen while they come back (about 12 W more
+   while one is open, the same as the home row). It holds while a plate morphs (morph.js), a pause too short to see,
+   which spares those frames drawing the whole screen, and under the game menu once it rests, where the stage is a
+   copy of itself (veil.js) whose frames are cheap enough at the idle clocks. */
+body.still .hero, body.morphing .hero, #stage[data-stage] .hero { animation-play-state: paused; }
+/* Under the game menu's veil, once the menu has come to rest: the hero and its shade as one opaque copy (veil.js). */
+#stageCopy { position: absolute; inset: 0; width: 100%; height: 100%; visibility: hidden; }
+#stage[data-stage='staged'] #stageCopy { visibility: visible; }
+#stage[data-stage='staged'] :is(.hero, .shade) { visibility: hidden; }
 
 .shade {
   position: absolute;
@@ -134,7 +156,8 @@ body.still .hero { animation-play-state: paused; }
 .pill.warn { background: rgb(255 190 80 / .2); border-color: rgb(255 190 80 / .6); color: #ffd58a; }
 .pill:empty { display: none; }
 
-/* Store logos (withStoreLogo in state.js): sized by the text beside them, in its colour. */
+/* Store logos (withStoreLogo in state.js) and the shared icons (icons.js): sized by the text beside them, in its
+   colour. */
 .sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 .store-logo {
   flex: none;
@@ -146,16 +169,32 @@ body.still .hero { animation-play-state: paused; }
 }
 #steps .store-logo { margin-right: 0; }
 
-#clock {
+/* The status capsule (status.js), top right: the batteries, the volume, quiet mode and the time, on a pill of the
+   plate's glass. Settings grows down out of it, and it is Settings' header while Settings is open: its own glass goes,
+   and it stays sharp over the plate. */
+#status {
   position: fixed;
-  right: var(--safe-x);
-  top: 7vh;
+  top: var(--status-top);
+  right: calc(var(--safe-x) + var(--plate-inset));
   z-index: 2;
-  font-size: 3.2vh;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  text-shadow: 0 .2vh 1vh rgb(0 0 0 / .5);
+  display: flex;
+  align-items: center;
+  gap: 2vh;
+  /* Inside Settings' plate, as its header: what doesn't fit is cut at the left. */
+  max-width: calc(38vw - 2 * var(--plate-inset));
+  height: var(--status-h);
+  padding: 0 2.2vh;
+  border-radius: calc(var(--status-h) / 2);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  font-size: 1.9vh;
+  transition: background 200ms ease, box-shadow 200ms ease;
 }
+body:has(#settings.on) #status { z-index: 5; background: transparent; box-shadow: none; }
+#chips { display: flex; justify-content: flex-end; align-items: center; gap: 1.6vh; min-width: 0; overflow: hidden; color: var(--ink-dim); }
+#chips .chip .icon { width: 2.4vh; height: 2.4vh; }
+#chips:empty { display: none; }
+#clock { flex: none; font-size: 2.3vh; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 #empty {
   position: fixed;
@@ -216,7 +255,7 @@ body.still .hero { animation-play-state: paused; }
   box-shadow: 0 1.2vh 3vh rgb(0 0 0 / .5);
   transform-origin: left bottom;
   opacity: .8;
-  transition: transform 170ms var(--spring), scale 420ms var(--glide), box-shadow 200ms ease, opacity 250ms ease;
+  transition: transform var(--snap-ms) var(--snap), scale 420ms var(--glide), box-shadow 200ms ease, opacity 250ms ease;
 }
 .cover.focus {
   opacity: 1;
@@ -256,6 +295,8 @@ body.still .hero { animation-play-state: paused; }
   text-transform: uppercase;
 }
 .cover.playing .badge { display: block; }
+/* Its card stands in for it while a game's menu is open (lift.js). */
+.cover.lifted { visibility: hidden; }
 
 #noMatch {
   position: absolute;
@@ -296,9 +337,8 @@ body.still .hero { animation-play-state: paused; }
   width: 3vh;
   height: 3vh;
   border-radius: 50%;
-  font-size: 1.8vh;
-  font-weight: 700;
 }
+#steps .icon svg { width: 2vh; height: 2vh; margin: 0; vertical-align: 0; }
 #steps .busy .icon { border: .4vh solid rgb(255 255 255 / .18); border-top-color: rgb(var(--accent)); animation: spin 900ms linear infinite; }
 #steps .ok .icon { background: rgb(80 200 120 / .25); color: #7be09a; }
 #steps .warn .icon { background: rgb(255 190 80 / .22); color: #ffc75e; }
@@ -306,6 +346,23 @@ body.still .hero { animation-play-state: paused; }
 #steps .error .icon { background: rgb(255 100 100 / .25); color: #ff8a8a; }
 #steps .ok { color: var(--ink-dim); }
 #steps .block, #steps .warn { font-weight: 600; }
+/* The step the player can act on carries its action as a chip on its line (launch.js renderSteps): ✕ and what it
+   does, on the plate's glass, as Find's chips. It takes clicks, though the starting screen lets them through. */
+#steps .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.2vh;
+  height: 4.6vh;
+  margin-left: 1vh;
+  padding: 0 2vh 0 .8vh;
+  border-radius: 2.3vh;
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  font-size: 2.1vh;
+  font-weight: 600;
+  color: var(--ink);
+  pointer-events: auto;
+}
 
 .spinner {
   width: 5vh;
@@ -318,10 +375,352 @@ body.still .hero { animation-play-state: paused; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 body.launching #info { opacity: 0; }
+
+/* Black over everything while the game's window takes the screen (launch.js curtain). Its 300 ms is watch.rs FADE. */
+#curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms ease;
+}
+body.curtain #curtain { opacity: 1; }
+
+/* Back from a game (the dock's Home, or holding PS over a game): a veil in the game's colours, as the dock's, lifts
+   off the home screen while it settles in, on the game's card (main.js arrive). */
+#arrival {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(90% 70% at 50% 100%, rgb(var(--accent) / .32), transparent 72%), rgb(9 8 14);
+  transition: opacity 340ms ease;
+}
+body.arriving #arrival { opacity: 1; transition: none; }
+body.arrived #stage { animation: settle-stage 520ms var(--glide); }
+body.arrived #row { animation: settle-row 460ms var(--glide); }
+body.arrived #info { animation: settle-info 460ms var(--glide); }
+@keyframes settle-stage { from { scale: 1.04; } }
+@keyframes settle-row { from { translate: 0 3vh; opacity: 0; } }
+@keyframes settle-info { from { translate: 0 1.5vh; } }
+/* Back to the game, the reverse (launch.js backToGame): the home screen eases out under the same veil before the game
+   gets the screen. */
+body.leaving #arrival { opacity: 1; transition: opacity 200ms ease; }
+body.leaving #stage { animation: leave-stage 200ms var(--glide) forwards; }
+body.leaving #row { animation: leave-row 200ms var(--glide) forwards; }
+body.leaving #info { animation: leave-info 200ms var(--glide) forwards; }
+@keyframes leave-stage { to { scale: 1.04; } }
+@keyframes leave-row { to { translate: 0 3vh; opacity: 0; } }
+@keyframes leave-info { to { translate: 0 1.5vh; } }
+@media (prefers-reduced-motion: reduce) {
+  #arrival, body.leaving #arrival { transition: none; }
+  body:is(.arrived, .leaving) :is(#stage, #row, #info) { animation: none; }
+}
 body.launching .cover:not(.focus) { opacity: .2; }
 body.launching .cover.focus { scale: 1.1; }
 
-/* ---------- details and settings ---------- */
+/* ---------- a game's menu: the lifted cover (lift.js) ----------
+   lift.js sets --card-x/y/w/h (where the card ends up), --from (the move and scale that put it back on its cover
+   in the row), --side (1 when the menu is on the right), and the sheets' --menu-x/w and --wide-x/w. It rises on the
+   lift spring and lowers on the close one. Only transform and opacity move. */
+
+#lift {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  visibility: hidden;
+  pointer-events: none;
+}
+#lift.shown { visibility: visible; }
+#lift.on { pointer-events: auto; }
+#lift.instant, #lift.instant * { transition: none !important; }
+
+/* The rest of the screen, blurred and dimmed, as it was when the menu opened; the hints stay sharp above it. Drawn
+   once, small, and scaled up (veil.js), and opaque, so nothing under it is drawn while the menu is open. It comes in
+   once drawn, a frame or two after the press. */
+#lift .veil {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: rgb(6 5 12);
+  opacity: 0;
+  transition: opacity 320ms ease;
+}
+/* Quick to come, so the menu that follows never shows over a sharp row. */
+#lift.on .veil.drawn { opacity: 1; transition: opacity 260ms cubic-bezier(.2, .7, .3, 1); }
+
+#card {
+  position: absolute;
+  left: var(--card-x);
+  top: var(--card-y);
+  width: var(--card-w);
+  height: var(--card-h);
+  transform: perspective(160vh) var(--from) rotateY(0deg);
+  transition: transform var(--close-ms) var(--close), opacity 200ms ease;
+  will-change: transform;
+}
+/* Lifted: full size, turned a little toward the menu, as if the two stood on an arc around the player. */
+#lift.on #card {
+  transform: perspective(160vh) translate(0, 0) scale(1) rotateY(calc(var(--side) * 4deg));
+  transition: transform var(--lift-ms) var(--lift);
+}
+/* Its game is leaving the row: the card drops back and fades instead of landing. */
+#lift.away #card {
+  transform: perspective(160vh) translate(0, 5vh) scale(.9) rotateY(0deg);
+  opacity: 0;
+  transition: transform 380ms cubic-bezier(.4, 0, .9, .6), opacity 300ms ease;
+}
+
+/* The white ring of a focused cover in the row, which the card starts with and loses as it lifts. */
+#card::before {
+  content: '';
+  position: absolute;
+  inset: -.6vh;
+  z-index: 1;
+  border: .6vh solid #fff;
+  border-radius: 2.5vh;
+  transition: opacity 160ms ease 200ms;
+}
+#lift.on #card::before { opacity: 0; transition: opacity 360ms ease 60ms; }
+
+/* Blurred once, then only moved: the shadow drops further and softens as the card comes up. */
+#card .shadow {
+  position: absolute;
+  inset: 10% 6% -2%;
+  border-radius: 3vh;
+  background: rgb(0 0 0 / .9);
+  filter: blur(4.5vh);
+  opacity: .4;
+  transform: translateY(1vh) scale(.92);
+  transition: opacity var(--close-ms) ease, transform var(--close-ms) var(--close);
+}
+#lift.on #card .shadow {
+  opacity: .95;
+  transform: translateY(7vh) scale(1.05);
+  transition: opacity 500ms ease, transform var(--lift-ms) var(--lift);
+}
+#card .glow {
+  position: absolute;
+  inset: -14% -18%;
+  background: radial-gradient(closest-side, rgb(var(--accent) / .5), rgb(var(--accent) / 0));
+  opacity: .3;
+  transition: opacity var(--close-ms) ease;
+}
+#lift.on #card .glow { opacity: .85; transition: opacity 700ms ease; }
+
+#face {
+  position: absolute;
+  inset: 0;
+  border-radius: 1.9vh;
+  overflow: hidden;
+  background: #1c1a26 center / cover no-repeat;
+  box-shadow: inset 0 0 0 .14vh rgb(255 255 255 / .2);
+}
+#face .name {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 3vh 2.6vh;
+  font-size: 3.6vh;
+  font-weight: 650;
+  line-height: 1.12;
+  background: linear-gradient(transparent, rgb(0 0 0 / .75));
+}
+#face.has-art .name { display: none; }
+/* The art that was, fading out over the next as Change art moves through the covers (lift.js face). */
+#face .was { position: absolute; inset: 0; background: center / cover no-repeat; }
+/* Light from above on a glossy card. */
+#face::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(165deg, rgb(255 255 255 / .2), rgb(255 255 255 / 0) 34%);
+  opacity: 0;
+  transition: opacity 240ms ease;
+}
+#lift.on #face::after { opacity: 1; transition: opacity 600ms ease 120ms; }
+/* One sweep of light across the card as it arrives. */
+#face .sheen {
+  position: absolute;
+  inset: -10% -100%;
+  background: linear-gradient(105deg, transparent 40%, rgb(255 255 255 / .3) 47%, rgb(255 255 255 / .08) 52%, transparent 58%);
+  opacity: 0;
+}
+#lift.on #face .sheen { animation: sweep 1100ms cubic-bezier(.3, .55, .2, 1) 140ms both; }
+@keyframes sweep {
+  from { opacity: 1; transform: translateX(-60%); }
+  to   { opacity: 1; transform: translateX(60%); }
+}
+
+/* The menu's plate beside the card (lift.js): it grows out of the card's edge once the card is most of the way up
+   (--grow-after), from a sliver to its full size on the tap spring, and goes back into it on lowering (morph.js). Its
+   two faces, the menu and Change art, take turns. Each is laid out at its own size where it shows, centred on the
+   card and against its edge, and the plate takes the size of the one that shows (lift.js --sheet-h), so the face
+   that goes stays where it was while the plate's clip moves from one to the other. A full face has room above and
+   below it, between the screen's safe area and the hints (6vh over its bottom edge). */
+#sheet {
+  --middle: calc(var(--card-y) + var(--card-h) / 2);
+  position: absolute;
+  top: var(--middle);
+  left: var(--menu-x);
+  width: var(--menu-w);
+  height: var(--sheet-h, auto);
+  transform: translateY(-50%);
+  border-radius: var(--plate-radius);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  overflow: clip;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+#sheet.art { left: var(--wide-x); width: var(--wide-w); }
+#lift.on #sheet { opacity: 1; pointer-events: auto; transition: opacity 100ms ease var(--grow-after); }
+.sheet-face {
+  --w: var(--menu-w);
+  position: absolute;
+  top: 50%;
+  /* Against the card's side of the plate: its left edge with the menu on the right (--side 1), else its right. */
+  left: calc((1 - var(--side)) / 2 * (100% - var(--w)));
+  width: var(--w);
+  translate: 0 -50%;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(2 * min(var(--middle) - var(--safe-y), 100vh - var(--middle) - var(--safe-y) - 6vh));
+  padding: 3.6vh 4vh;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
+}
+#artPick { --w: var(--wide-w); }
+/* What the plate holds fades in from 45% of its way: as it grows out of the card, or into the other face's size. */
+#lift.on .sheet-face.on { opacity: 1; pointer-events: auto; transition: opacity 180ms ease calc(var(--grow-after) + var(--tap-ms) * .45); }
+#lift.on #sheet.turned .sheet-face.on { transition-delay: calc(var(--tap-ms) * .45); }
+.sheet-face h2 { flex: none; font-size: 4.6vh; font-weight: 650; line-height: 1.1; margin-bottom: 2.4vh; }
+/* A long name takes three lines at most. */
+#dName { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin-bottom: 1.2vh; }
+/* One line under the name: the store, when it was last played, how long. */
+#dMeta { flex: none; display: flex; align-items: center; font-size: 2.3vh; color: var(--ink-dim); white-space: nowrap; overflow: hidden; }
+#dMeta .dot { white-space: pre; }
+#dMeta .dot:has(+ :empty) { display: none; }
+#dChoices { flex: none; display: grid; gap: .8vh; margin-top: 3vh; padding: .4vh; }
+#dChoices .row { justify-content: flex-start; gap: 1.8vh; font-size: 2.6vh; padding: 1.5vh 2vh; }
+#dChoices .row.on .icon { color: rgb(var(--lamp)); }
+#dChoices .row.warn { color: #ffc75e; font-weight: 600; }
+/* Play, or Back to game: lit, as the dock's Resume, with its icon on a lamp. */
+#dChoices .row.primary { font-weight: 650; background: linear-gradient(90deg, rgb(var(--lamp) / .3), rgb(var(--lamp) / .1)); }
+#dChoices .row.primary.focus { background: linear-gradient(90deg, rgb(var(--lamp) / .42), rgb(var(--lamp) / .16)); }
+#dChoices .row.primary .icon {
+  width: 4.4vh;
+  height: 4.4vh;
+  margin: -.7vh 0;
+  padding: 1vh .8vh 1vh 1.2vh;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffe0ad, rgb(var(--lamp)) 55%, #cf6f16);
+  color: #2b1605;
+}
+/* The folder, dim at the bottom, and the first to give way when the menu doesn't fit: in two lines at most, the path
+   to it cut short at its end (the middle of the whole path), and the folder's own name, which says the most, cut
+   short at its end if it must be. Both on one line when they fit. */
+#dDir { flex: 0 1 auto; min-height: 0; display: flex; flex-wrap: wrap; margin-top: 2.4vh; overflow: hidden; font-size: 1.9vh; color: var(--ink-dim); }
+#dDir span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Change art: the search, then Steam's matches as a row of covers, then no art and back to automatic. */
+#artPick h2 { margin-bottom: 2.4vh; }
+#artField.focus { background: rgb(255 255 255 / .14); box-shadow: inset 0 0 0 .25vh #fff; }
+#artPick:not(.editing) #artQuery::after { display: none; }
+#artKeys { display: none; }
+#artPick.editing #artKeys { display: grid; }
+#artPick.editing :is(#artStatus, #artTiles, #artChoices) { display: none; }
+/* Searching, or nothing found: as tall as the row of covers, so the sheet keeps its size. */
+#artStatus { display: grid; place-items: center; min-height: 31vh; font-size: 2.4vh; color: var(--ink-dim); text-align: center; }
+#artStatus:empty, #artTiles:empty { display: none; }
+#artTiles {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 15vh;
+  gap: 2vh;
+  /* Room inside the scroller for a focused cover's ring and glow, which it would clip. */
+  margin: -1vh -2.4vh;
+  padding: 2.8vh 2.4vh;
+  overflow-x: auto;
+  scroll-padding-inline: 2.4vh;
+  scrollbar-width: none;
+}
+.tile .art {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  border-radius: 1vh;
+  overflow: hidden;
+  background: #1c1a26 center / cover no-repeat;
+  box-shadow: 0 .8vh 2vh rgb(0 0 0 / .45);
+  transition: transform var(--snap-ms) var(--snap), box-shadow 180ms ease;
+}
+.tile .art .none {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 1.9vh;
+  color: var(--ink-dim);
+  background: rgb(0 0 0 / .25);
+}
+.tile .badge {
+  position: absolute;
+  top: .8vh;
+  left: .8vh;
+  padding: .3vh .8vh;
+  border-radius: 99px;
+  background: rgb(var(--accent));
+  color: #0b0b12;
+  font-size: 1.4vh;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.tile .caption {
+  margin-top: 1.2vh;
+  font-size: 1.9vh;
+  line-height: 1.2;
+  color: var(--ink-dim);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.tile.focus .art { transform: scale(1.06); box-shadow: 0 0 0 .3vh #fff, 0 0 1.8vh .2vh rgb(var(--accent) / .5); }
+.tile.focus .caption { color: var(--ink); }
+.tile.saving .art::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 4vh;
+  height: 4vh;
+  border-radius: 50%;
+  border: .5vh solid rgb(255 255 255 / .2);
+  border-top-color: #fff;
+  animation: spin 900ms linear infinite;
+}
+#artChoices { margin-top: .6vh; }
+#artChoices .choice { letter-spacing: 0; text-transform: none; font-size: 2.2vh; }
+
+@media (prefers-reduced-motion: reduce) {
+  #card, #lift.on #card, #lift.away #card { transform: none; transition: opacity 200ms ease; }
+  #card { opacity: 0; }
+  #lift.on #card { opacity: 1; }
+  #lift.on #sheet { transition: opacity var(--fade-ms) ease; }
+  .sheet-face { transition: opacity calc(var(--fade-ms) / 2) ease; }
+  #lift.on .sheet-face.on, #lift.on #sheet.turned .sheet-face.on {
+    transition: opacity calc(var(--fade-ms) / 2) ease calc(var(--fade-ms) / 2);
+  }
+  #lift.on #face .sheen { animation: none; }
+}
+
+/* ---------- panels: settings, find, add a game ---------- */
 
 .panel {
   display: flex;
@@ -333,18 +732,66 @@ body.launching .cover.focus { scale: 1.1; }
   width: 38vw;
   z-index: 4;
   padding: 5vh 4vh;
-  border-radius: 2vh;
-  background: rgb(14 13 22 / .82);
-  border: .12vh solid rgb(255 255 255 / .12);
-  backdrop-filter: blur(3vh) saturate(1.4);
+  border-radius: var(--plate-radius);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  backdrop-filter: var(--plate-blur);
   transform: translateX(4vw);
   opacity: 0;
   pointer-events: none;
-  transition: transform 260ms var(--glide), opacity 220ms ease;
+  transition: transform var(--close-ms) var(--close), opacity 220ms ease;
 }
-.panel.on { transform: none; opacity: 1; }
+.panel.on { transform: none; opacity: 1; transition: transform var(--tap-ms) var(--tap), opacity 220ms ease; }
 /* Settings rows take clicks; Details lets them through to the covers beneath it. */
 #settings.on { pointer-events: auto; }
+
+/* Settings is one plate, top right, that grows down out of the status capsule and goes back into it (settings.js,
+   morph.js), with the capsule as its header. Its height follows what it holds. Its faces, Settings and Add a game, are
+   each laid out where they show, against the plate's top right corner, and the plate takes the size of the one that
+   shows (settings.js --plate-w and --plate-h). Add a game, and each section, is pushed inside it: only the plate's
+   clip moves from the one size to the other, so nothing is laid out or painted again on the way. */
+#settings {
+  --narrow: 38vw;
+  --wide: 46vw;
+  --plate-max: calc(100vh - 2 * var(--safe-y) - 6vh);
+  top: var(--safe-y);
+  bottom: auto;
+  width: var(--plate-w, var(--narrow));
+  height: var(--plate-h, auto);
+  padding: 0;
+  /* Clipped, not hidden: a hidden overflow can still be scrolled, and a face's focused row scrolled into view would
+     scroll the whole plate sideways while the face comes in from the right. */
+  overflow: clip;
+  transform: none;
+  /* Going back into the capsule, it fades once most of the way there. */
+  transition: opacity 120ms ease calc(var(--close-ms) * .6);
+}
+#settings.on { transition: opacity 120ms ease; }
+/* A face that comes fades in once the one that goes has faded out. Under the capsule, which is its header. */
+.face {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: var(--plate-max);
+  padding: calc(var(--status-h) + var(--plate-inset) + 2.6vh) 4vh 4vh;
+  transition: opacity 160ms ease 100ms, translate var(--tap-ms) var(--tap);
+}
+#settingsFace { width: var(--narrow); }
+#settings:has(#add.on) #settingsFace {
+  opacity: 0;
+  translate: -6vw 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, translate var(--tap-ms) var(--tap);
+}
+/* Grown from the empty home screen's line (morph.js grow), the plate only fades in place, and its rows come in once it
+   is most of the way. */
+#settings.grown { transform: none; transition: opacity 120ms ease; }
+#settings.grown #add.on { transition: opacity 160ms ease calc(var(--tap-ms) * .45), translate var(--tap-ms) var(--tap); }
+/* The line the plate grows from goes as it does. */
+#empty { transition: opacity 150ms ease; }
+body:has(#settings.on) #empty { opacity: 0; }
 .panel h2 { font-size: 4.4vh; font-weight: 650; line-height: 1.1; margin-bottom: 3vh; }
 /* A long section (Sound lists every device) scrolls; the focused row is kept in view. */
 #settingsList {
@@ -357,7 +804,7 @@ body.launching .cover.focus { scale: 1.1; }
   padding: .4vh;
   scrollbar-width: none;
 }
-#settingsList h3, #find h3 {
+#settingsList h3, #addList h3 {
   margin-top: 2vh;
   font-size: 1.8vh;
   font-weight: 650;
@@ -376,6 +823,14 @@ body.launching .cover.focus { scale: 1.1; }
   transition: background 150ms ease;
 }
 .row .value { color: var(--ink-dim); font-size: 2.1vh; }
+.row .label { flex: 1; min-width: 0; display: grid; gap: .3vh; }
+/* What a row that can't be taken back does, said before the press. */
+.row .note { font-size: 1.9vh; font-weight: 400; color: var(--ink-dim); }
+/* A row's icon, and the ring a hold fills round it (hold.js, plate.css .hold). */
+.row .glyph { position: relative; flex: none; display: grid; place-items: center; }
+.row .glyph .icon { width: 3vh; height: 3vh; transition: scale var(--snap-ms) var(--snap); }
+.row .glyph .hold { width: 5.4vh; height: 5.4vh; }
+.row.holding .glyph .icon { scale: .9; }
 .row .value.warn { color: #ffc75e; font-weight: 600; }
 .row .value.good { color: #7be09a; }
 .row.focus { background: rgb(255 255 255 / .12); box-shadow: inset 0 0 0 .25vh #fff; }
@@ -383,22 +838,111 @@ body.launching .cover.focus { scale: 1.1; }
 .row.adjust.focus .value { color: var(--ink); }
 .row.adjust.focus .value::before { content: '‹  '; color: var(--ink-dim); }
 .row.adjust.focus .value::after { content: '  ›'; color: var(--ink-dim); }
-#details dl { display: grid; grid-template-columns: auto 1fr; gap: 2.2vh 3vh; font-size: 2.4vh; }
-#details dt { color: var(--ink-dim); }
-#details dd { overflow-wrap: anywhere; }
-/* Play, favourite and hide; these take clicks, the rest of Details doesn't. */
-#dChoices { display: grid; gap: .8vh; margin-top: 4vh; padding: .4vh; }
-#details.on #dChoices { pointer-events: auto; }
 
-/* ---------- find ---------- */
+/* ---------- find (find.js) ----------
+   Find works on the filter line above the row, in #filters' place: the field, the store and sort chips and the count
+   stand there. The keyboard plate grows up out of the field, and the store list up out of the store chip (morph.js
+   grow); one focus ring (ring.js) moves across keys and chips. The row stays sharp below: it is the result list. The
+   game's info fades while Find is open. The hero keeps drifting: held still, the GPU drops to its idle clocks, and
+   Find's close then stutters while they come back. */
+#find {
+  --line: calc(12vh + var(--cover-h) * 1.2 + 1.6vh);
+  --line-h: 5.6vh;
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+#findPlate, #findLine, #findStores { opacity: 0; transition: opacity 160ms ease; }
+#find.on #findPlate, #find.on #findLine, #find.on #findStores.on { opacity: 1; pointer-events: auto; }
+/* Going, the field and the keyboard go back into the search's pill (or the field's glass) and fade there; the chips,
+   the count and the list fade at once. */
+#find.going :is(#findStore, #findSort, #findCount, #findStores) { opacity: 0; transition: opacity 120ms ease; }
+#find.going :is(#findPlate, #findLine, #findStores), #findStores.going { pointer-events: none; }
+body:has(#find.on:not(.going)) #info { opacity: 0; transition-duration: 160ms; }
+body:has(#find.on) #filters { opacity: 0; transition: none; }
 
-/* Wider than Settings for a keyboard ten keys across; the row's first covers stay in view beside it. */
-#find { width: 46vw; padding: 4.4vh 4vh; overflow-y: auto; scroll-padding: 4.4vh 0; scrollbar-width: none; }
-#find.on { pointer-events: auto; }
-#find h2 { margin-bottom: 2.4vh; }
-#find h3 { margin: 2.4vh 0 1.2vh; }
+#findLine {
+  position: absolute;
+  left: var(--safe-x);
+  bottom: var(--line);
+  display: flex;
+  gap: 1.4vh;
+  align-items: center;
+  font-size: 2.2vh;
+  color: var(--ink-dim);
+  text-shadow: 0 .2vh 1vh rgb(0 0 0 / .5);
+}
+#findField, #find .chip {
+  display: flex;
+  align-items: center;
+  height: var(--line-h);
+  border-radius: calc(var(--line-h) / 2);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  color: var(--ink);
+  text-shadow: none;
+  white-space: nowrap;
+}
+#findField { gap: 1.2vh; width: 30vw; padding: 0 2.2vh; font-size: 2.6vh; backdrop-filter: var(--plate-blur); }
+#findField .glass { flex: none; width: 2.6vh; height: 2.6vh; color: var(--ink-dim); }
+#find .chip { gap: 1vh; padding: 0 2.2vh; font-size: 2.2vh; font-weight: 600; }
+#find .chip .store-logo { margin-right: 0; }
+/* The store chip's list opens upward. */
+#find .chip .up { width: 1.8vh; height: 1.8vh; rotate: 90deg; color: var(--ink-dim); }
 
-#findField {
+/* The keyboard, grown up out of the field: ten keys across, its first row level with the game's name. */
+#findPlate {
+  position: absolute;
+  left: var(--safe-x);
+  bottom: calc(var(--line) + var(--line-h) + 1.4vh);
+  width: 46vw;
+  padding: 2.2vh;
+  border-radius: var(--plate-radius);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  backdrop-filter: var(--plate-blur);
+}
+#findKeys .key { height: 4.8vh; }
+/* The ring shows the focused key. */
+#findKeys .key.focus { box-shadow: none; }
+
+/* The store chip's list: a logo and a name each, grown up out of the chip, in a second column past six. */
+#findStores {
+  position: absolute;
+  left: var(--store-x, var(--safe-x));
+  bottom: calc(var(--line) + var(--line-h) + 1.4vh);
+  /* At least as wide as its chip, which it grows out of. */
+  min-width: var(--store-w, 0);
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(var(--rows, 6), auto);
+  gap: .6vh 1vh;
+  padding: 1.2vh;
+  border-radius: var(--plate-radius);
+  background: var(--plate-fill);
+  box-shadow: var(--plate-rim), var(--plate-shadow);
+  backdrop-filter: var(--plate-blur);
+}
+#findStores .choice {
+  gap: 1.2vh;
+  height: 4.6vh;
+  padding: 0 1.8vh;
+  border: none;
+  border-radius: var(--plate-inner);
+  background: none;
+  font-size: 2.1vh;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+#findStores .choice.on { background: rgb(var(--accent) / .3); }
+#findStores .choice.focus { box-shadow: none; }
+#findStores .store-logo { margin-right: 0; }
+
+/* Shared by the names keyboard's fields: Change art's search and Add a game's name. */
+.field {
   display: flex;
   align-items: center;
   gap: 1.4vh;
@@ -409,10 +953,10 @@ body.launching .cover.focus { scale: 1.1; }
   border: .12vh solid rgb(255 255 255 / .2);
   font-size: 3.4vh;
 }
-#findField .glass { flex: none; width: 3vh; height: 3vh; fill: var(--ink-dim); }
+.field .glass { flex: none; width: 3vh; height: 3vh; color: var(--ink-dim); }
 /* The caret follows the search; with nothing typed, it stands before the dimmed placeholder. */
-#findQuery { display: flex; align-items: center; min-height: 1.3em; white-space: pre; overflow: hidden; }
-#findQuery::after {
+#findQuery, .typed { display: flex; align-items: center; min-height: 1.3em; white-space: pre; overflow: hidden; }
+#findQuery::after, .typed::after {
   content: '';
   order: 1;
   width: .3vh;
@@ -421,14 +965,18 @@ body.launching .cover.focus { scale: 1.1; }
   background: rgb(var(--accent));
   animation: blink 1s step-end infinite;
 }
-#findQuery:empty::before { content: attr(data-placeholder); order: 2; margin-left: 1vh; color: var(--ink-dim); }
+#findQuery:empty::before, .typed:empty::before { content: attr(data-placeholder); order: 2; margin-left: 1vh; color: var(--ink-dim); }
 @keyframes blink { 50% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  #findQuery::after { animation: none; }
+  #findQuery::after, .typed::after { animation: none; }
+  /* Find fades in place: nothing grows or goes back (morph.js), and the game's info fades on the same 150 ms. */
+  #findPlate, #findLine, #findStores, #find.going :is(#findStore, #findSort, #findCount, #findStores), #info {
+    transition: opacity var(--fade-ms) ease;
+  }
 }
 
-/* Half-key columns, so the QWERTY rows can step right by half a key (find.js KEYBOARD). */
-#findKeys { display: grid; grid-template-columns: repeat(20, 1fr); gap: .8vh; }
+/* Half-key columns, so the QWERTY rows can step right by half a key (keyboard.js). */
+.keys { display: grid; grid-template-columns: repeat(20, 1fr); gap: .8vh; }
 .key {
   display: grid;
   place-items: center;
@@ -441,8 +989,10 @@ body.launching .cover.focus { scale: 1.1; }
 }
 .key.wide { font-size: 2.2vh; }
 .key.focus { background: rgb(255 255 255 / .22); box-shadow: inset 0 0 0 .25vh #fff; }
+/* Shift: the next letter is a capital. */
+.key.on { color: rgb(var(--accent)); }
 
-/* Store and sort choices, drawn like the store pill on the home screen. */
+/* Change art's choices, drawn like the store pill on the home screen. */
 .choices { display: flex; flex-wrap: wrap; gap: 1vh; }
 .choice {
   display: inline-flex;
@@ -460,6 +1010,35 @@ body.launching .cover.focus { scale: 1.1; }
 .choice.on { background: rgb(var(--accent) / .3); border-color: rgb(var(--accent) / .75); }
 .choice.focus { box-shadow: 0 0 0 .3vh #fff; }
 
+/* ---------- add a game (add.js) ---------- */
+
+#add {
+  width: var(--wide);
+  opacity: 0;
+  translate: 6vw 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, translate var(--tap-ms) var(--tap);
+}
+#add.on { opacity: 1; translate: 0; pointer-events: auto; transition: opacity 160ms ease 100ms, translate var(--tap-ms) var(--tap); }
+#addPath { margin: -1.6vh 0 2.2vh; font-size: 2vh; color: var(--ink-dim); overflow-wrap: anywhere; }
+#addList {
+  display: grid;
+  align-content: start;
+  gap: .6vh;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: .4vh;
+  scrollbar-width: none;
+}
+#addList .row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#addList .row .value { flex: 0 1 45%; text-align: right; }
+#addField, #addKeys { display: none; }
+#add.naming #addList { display: none; }
+#add.naming #addField { display: flex; }
+#add.naming #addKeys { display: grid; }
+#addName { white-space: pre-wrap; overflow-wrap: anywhere; }
+
 /* ---------- hints and messages ---------- */
 
 #hint {
@@ -473,7 +1052,7 @@ body.launching .cover.focus { scale: 1.1; }
   color: var(--ink-dim);
 }
 #hint span { display: inline-flex; align-items: center; gap: 1vh; }
-#hint b {
+:is(#hint, #steps .chip) b {
   display: inline-grid;
   place-items: center;
   width: 3.2vh;
@@ -484,30 +1063,56 @@ body.launching .cover.focus { scale: 1.1; }
   font-weight: 700;
   line-height: 1;
 }
-#hint b svg { width: 2vh; height: 2vh; }
+:is(#hint, #steps .chip) b svg { width: 2vh; height: 2vh; }
 /* The symbol as text, for screen readers: the drawn shape shows instead. */
-#hint b i { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-#hint b.cross { color: #8fb0ff; }
-#hint b.circle { color: #ff7a7a; }
-#hint b.options { color: var(--ink); }
-#hint b.xbox-a { color: #7fd36e; }
-#hint b.xbox-b { color: #ff7a7a; }
-#hint b.xbox-x { color: #8fb0ff; }
-#hint b.xbox-y { color: #ffd166; }
+:is(#hint, #steps .chip) b i { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+:is(#hint, #steps .chip) b.cross { color: #8fb0ff; }
+:is(#hint, #steps .chip) b.circle { color: #ff7a7a; }
+:is(#hint, #steps .chip) b.options { color: var(--ink); }
+:is(#hint, #steps .chip) b.xbox-a { color: #7fd36e; }
+:is(#hint, #steps .chip) b.xbox-b { color: #ff7a7a; }
+:is(#hint, #steps .chip) b.xbox-x { color: #8fb0ff; }
+:is(#hint, #steps .chip) b.xbox-y { color: #ffd166; }
 
+/* ---------- messages: pills (pill.js, hints.js toast) ----------
+   A message about a game stands on the line above the row, after what narrows it; any other at the top right, under
+   the status capsule, or beside Settings' plate while it is open, so it never covers the plate's rows. Never over the
+   covers. Each comes in on the tap spring, from a
+   little below the line or above, and goes on the close spring. Sized as Find's chips on the same line. */
+#toast, #gameNews {
+  --u: .85vh;
+  max-width: 46vw;
+  opacity: 0;
+  pointer-events: none;
+  text-shadow: none;
+  color: var(--ink);
+  transition: translate var(--close-ms) var(--close), opacity 220ms ease;
+}
+#toast.on, #gameNews.on { opacity: 1; translate: 0 0; transition: translate var(--tap-ms) var(--tap), opacity 220ms ease; }
+#gameNews { translate: 0 1vh; }
 #toast {
   position: fixed;
-  left: 50%;
-  bottom: calc(var(--safe-y) + 7vh);
+  top: calc(var(--status-top) + var(--status-h) + var(--plate-inset));
+  right: calc(var(--safe-x) + var(--plate-inset));
   z-index: 6;
-  max-width: 70vw;
-  padding: 1.4vh 2.6vh;
-  border-radius: 1.4vh;
-  background: rgb(20 18 30 / .92);
-  border: .12vh solid rgb(255 255 255 / .14);
-  font-size: 2.4vh;
-  transform: translate(-50%, 2vh);
-  opacity: 0;
-  transition: transform 260ms var(--glide), opacity 220ms ease;
+  translate: 0 -1vh;
 }
-#toast.on { transform: translate(-50%, 0); opacity: 1; }
+body:has(#settings.on) #toast { top: var(--status-top); right: calc(var(--safe-x) + 38vw + 2vh); }
+body:has(#settings.on #add.on) #toast { right: calc(var(--safe-x) + 46vw + 2vh); }
+/* The line keeps the height of a pill, so one coming doesn't move what narrows the row. */
+#filters { min-height: 5.6vh; }
+
+/* Reduce Motion: Settings, Find, Add a game and the messages fade in place for 150 ms rather than sliding. The faces of
+   Settings' plate fade where they are in the same 150 ms, one out and then the other in, so their titles never show
+   over each other, while the plate takes its width at once (morph.js). A step along the row moves the covers on a short
+   eased curve rather than a spring, and the end of the row doesn't bump (library.js move). */
+@media (prefers-reduced-motion: reduce) {
+  .panel, .panel.on, #settings, #settings.on, #settings.grown { transform: none; transition: opacity var(--fade-ms) ease; }
+  .face, #add, #settings:has(#add.on) #settingsFace { translate: none; transition: opacity calc(var(--fade-ms) / 2) ease; }
+  #settingsFace, #add.on, #settings.grown #add.on {
+    translate: none;
+    transition: opacity calc(var(--fade-ms) / 2) ease calc(var(--fade-ms) / 2);
+  }
+  #toast, #toast.on, #gameNews, #gameNews.on { translate: none; transition: opacity var(--fade-ms) ease; }
+  .cover { transition: transform 170ms var(--glide), scale 420ms var(--glide), box-shadow 200ms ease, opacity 250ms ease; }
+}

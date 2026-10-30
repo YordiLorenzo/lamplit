@@ -1,7 +1,7 @@
 // A game as Lamplit shows and launches it.
 
 use crate::stores::Store;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Clone, Serialize, PartialEq)]
@@ -21,6 +21,10 @@ pub struct Game {
     /// Left out of the row; Settings lists it.
     pub hidden: bool,
     pub art: Art,
+    /// The art the player chose in Change art; None for Lamplit's own match.
+    pub art_choice: Option<ArtChoice>,
+    /// Added by hand (Settings > Add a game), so the player can remove it again.
+    pub manual: bool,
     /// Store apps that must run and be signed in: the game's own, plus any its publisher adds.
     pub requires: Vec<Store>,
     #[serde(skip)]
@@ -37,11 +41,21 @@ pub struct Game {
     pub exe_names: Vec<String>,
 }
 
-#[derive(Clone, Default, Serialize, PartialEq)]
+#[derive(Clone, Default, Serialize, PartialEq, Debug)]
 pub struct Art {
     pub portrait: Option<String>,
     pub hero: Option<String>,
     pub logo: Option<String>,
+}
+
+/// The art the player chose for a game, kept in games.json. The page sends it back as it gets it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ArtChoice {
+    /// The art of this app on Steam's store.
+    Steam(u32),
+    /// No art: the cover shows the game's name.
+    None,
 }
 
 /// How a game (or a store app) is opened: a link its store handles, or an exe.
@@ -49,6 +63,8 @@ pub struct Art {
 pub enum Launch {
     Uri(String),
     Exe(PathBuf),
+    /// An exe with its arguments: a store app told which game to start (Battle.net's `--exec="launch <code>"`).
+    ExeArgs(PathBuf, String),
 }
 
 impl Game {
@@ -64,6 +80,8 @@ impl Game {
             favourite: false,
             hidden: false,
             art: Art::default(),
+            art_choice: None,
+            manual: false,
             requires: Vec::new(),
             steam_appid: None,
             store_minutes: 0,
@@ -97,5 +115,13 @@ mod tests {
         game.steam_appid = Some(70);
         game.store_minutes = 754;
         assert_eq!(serde_json::to_value([game]).unwrap(), ipc_fixture!("games"));
+    }
+
+    #[test]
+    fn art_choices_go_both_ways_as_in_their_fixture() {
+        let choices = [ArtChoice::Steam(1_091_500), ArtChoice::None];
+        assert_eq!(serde_json::to_value(choices).unwrap(), ipc_fixture!("art-choice"));
+        let back: Vec<ArtChoice> = serde_json::from_value(ipc_fixture!("art-choice")).unwrap();
+        assert_eq!(back, choices);
     }
 }
