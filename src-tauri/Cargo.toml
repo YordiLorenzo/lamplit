@@ -32,7 +32,7 @@ tauri-plugin-log = "2"
 time = { version = "0.3", features = ["formatting", "local-offset", "macros", "parsing"] }
 hidapi = { version = "2.6", default-features = false, features = ["windows-native"] }
 winreg = "0.56"
-sysinfo = "0.39"
+sysinfo = "0.40"
 ureq = { version = "3", features = ["json"] }
 # Steam's DevTools (Runtime.evaluate in its SharedJSContext); plain ws:// on localhost, no TLS.
 tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
