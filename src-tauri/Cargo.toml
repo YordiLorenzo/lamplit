@@ -40,7 +40,7 @@ tungstenite = { version = "0.30", default-features = false, features = ["handsha
 # windows-core is named because the `interface` macro (IPolicyConfig in win/audio.rs) expands to it.
 windows-core = "0.62"
 # The vectors Windows.UI.Composition takes (the dock's glass, win/glass.rs): the version windows 0.62 uses.
-windows-numerics = "0.3"
+windows-numerics = "0.100"
 windows = { version = "0.62", features = [
   "Devices_Power",
   "Foundation_Numerics",
