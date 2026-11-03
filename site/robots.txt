@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://lamplit.gg/sitemap.xml
+Sitemap: https://yordilorenzo.github.io/lamplit/sitemap.xml
