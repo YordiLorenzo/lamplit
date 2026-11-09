@@ -3,7 +3,8 @@
 
 use super::installed::pick_exe;
 use super::names::clean_name;
-use super::{Store, machine_value};
+use super::{Store, machine_value, read};
+use crate::error::Result;
 use crate::files::{folder_key, local_app_data, nonempty};
 use crate::library::{Game, Launch};
 use std::path::{Path, PathBuf};
@@ -18,18 +19,23 @@ pub fn exe() -> Option<PathBuf> {
 }
 
 /// `game_exes`: the exes Windows has seen run as games, which tell which exe in a game's folder starts it.
-pub fn games(game_exes: &[PathBuf]) -> Vec<Game> {
-    let Ok(root) = RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(TITLES) else { return Vec::new() };
+pub fn games(game_exes: &[PathBuf]) -> Result<Vec<Game>> {
+    let Some(root) = read::optional(RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(TITLES))? else {
+        return Ok(Vec::new());
+    };
     let mut out = Vec::new();
-    for title in root.enum_keys().flatten() {
+    for title in root.enum_keys() {
+        let title = title?;
         if title == "Launcher" || title == "Steam" || title.contains("Social Club") {
             continue;
         }
-        let Ok(dir) = root.open_subkey(&title).and_then(|k| k.get_value::<String, _>("InstallFolder")) else {
+        let Some(dir) =
+            read::optional(root.open_subkey(&title).and_then(|k| k.get_value::<String, _>("InstallFolder")))?
+        else {
             continue;
         };
         let dir = PathBuf::from(dir.trim_end_matches('\\'));
-        if !dir.is_dir() {
+        if !read::is_dir(&dir)? {
             continue;
         }
         let Some(exe) = pick_exe(&dir, game_exes, None) else { continue };
@@ -41,7 +47,7 @@ pub fn games(game_exes: &[PathBuf]) -> Vec<Game> {
             Launch::Exe(exe),
         ));
     }
-    out
+    Ok(out)
 }
 
 /// Folders of Rockstar games bought on another store (`InstallFolderSteam`, `InstallFolderEpic`): they run through

@@ -2,8 +2,9 @@
 // a launcher window and use the Windows account, so there is no store app to start or sign in.
 
 use super::names::{clean_name, prettify};
-use super::{Store, xml};
-use crate::files::{file_name, read_text, subdirs};
+use super::{Store, read, xml};
+use crate::error::Result;
+use crate::files::file_name;
 use crate::library::{Game, Launch};
 use std::path::{Path, PathBuf};
 use winreg::RegKey;
@@ -20,43 +21,56 @@ struct Package {
     dir: PathBuf,
 }
 
-fn packages() -> Vec<Package> {
+fn packages() -> Result<Vec<Package>> {
     const REPO: &str =
         r"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages";
-    let Ok(root) = RegKey::predef(HKEY_CURRENT_USER).open_subkey(REPO) else { return Vec::new() };
-    root.enum_keys()
-        .flatten()
-        .filter_map(|full| {
-            let dir: String = root.open_subkey(&full).ok()?.get_value("PackageRootFolder").ok()?;
-            let parts: Vec<&str> = full.split('_').collect();
-            let (name, publisher) = (parts.first()?, parts.last()?);
-            (parts.len() == 5).then(|| Package {
-                name: name.to_string(),
-                family: format!("{name}_{publisher}"),
-                dir: dir.into(),
-            })
-        })
-        .collect()
+    let Some(root) = read::optional(RegKey::predef(HKEY_CURRENT_USER).open_subkey(REPO))? else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    for full in root.enum_keys() {
+        let full = full?;
+        let Some(dir): Option<String> =
+            read::optional(root.open_subkey(&full).and_then(|k| k.get_value("PackageRootFolder")))?
+        else {
+            continue;
+        };
+        let parts: Vec<&str> = full.split('_').collect();
+        let [name, _, _, _, publisher] = parts.as_slice() else { continue };
+        out.push(Package { name: name.to_string(), family: format!("{name}_{publisher}"), dir: dir.into() });
+    }
+    Ok(out)
 }
 
-pub fn games(drives: &[PathBuf]) -> Vec<Game> {
+pub fn games(drives: &[PathBuf]) -> Result<Vec<Game>> {
     // The games themselves live in <drive>:\XboxGames\<title>\Content, keyed by the package identity.
     let mut mirrors: Vec<(String, PathBuf)> = Vec::new();
-    for dir in drives.iter().flat_map(|d| subdirs(&d.join("XboxGames"))) {
-        if let Some(text) = read_text(&dir.join(r"Content\MicrosoftGame.config"))
-            && let Some(id) = xml::tag_attrs(&xml::strip_comments(&text), "Identity", "Name").into_iter().next()
-        {
-            mirrors.push((id.to_lowercase(), dir));
+    for drive in drives {
+        let dirs = read::subdirs(&drive.join("XboxGames")).unwrap_or_else(|e| {
+            log::warn!("discovery xbox: mirror folders unavailable: {e}");
+            Vec::new()
+        });
+        for dir in dirs {
+            if let Some(text) = read::detail_text(&dir.join(r"Content\MicrosoftGame.config"))
+                && let Some(id) = xml::tag_attrs(&xml::strip_comments(&text), "Identity", "Name").into_iter().next()
+            {
+                mirrors.push((id.to_lowercase(), dir));
+            }
         }
     }
     let mut out = Vec::new();
-    for p in packages() {
+    for p in packages()? {
         // Games are the packages with a MicrosoftGame.config; the app to start is in the package manifest.
-        let Some(config) = read_text(&p.dir.join("MicrosoftGame.config")).map(|t| xml::strip_comments(&t)) else {
+        let Some(config) = read::text(&p.dir.join("MicrosoftGame.config"))?.map(|t| xml::strip_comments(&t)) else {
             continue;
         };
-        let manifest = read_text(&p.dir.join("AppxManifest.xml")).map(|t| xml::strip_comments(&t)).unwrap_or_default();
-        let Some(app) = xml::tag_attrs(&manifest, "Application", "Id").into_iter().next() else { continue };
+        let Some(manifest) = read::text(&p.dir.join("AppxManifest.xml"))?.map(|t| xml::strip_comments(&t)) else {
+            continue;
+        };
+        let Some(app) = xml::tag_attrs(&manifest, "Application", "Id").into_iter().next() else {
+            log::warn!("discovery xbox: {} skipped, AppxManifest.xml has no Application Id", p.dir.display());
+            continue;
+        };
         let dir = p.dir.clone();
         let name = xml::tag_attrs(&config, "ShellVisuals", "DefaultDisplayName")
             .into_iter()
@@ -80,5 +94,5 @@ pub fn games(drives: &[PathBuf]) -> Vec<Game> {
         }
         out.push(g);
     }
-    out
+    Ok(out)
 }

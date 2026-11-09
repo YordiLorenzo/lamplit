@@ -133,13 +133,20 @@ Settings > Power > Exit to Windows uses the same hold as Restart and Shut down, 
 That successful exit closes both windows and ends the supervisor, as Alt+F4 on the home window does. It leaves
 running games and Windows settings as they are.
 
+`data.rs` saves JSON atomically and keeps the previous valid content beside it as `<name>.bak`. A file that no
+longer parses is copied to `<name>.damaged` (replacing the older damaged copy). The loader restores a valid backup
+atomically and logs the recovery; without one, `load_or_default` callers use their defaults. The invalid primary
+also stays until replaced, so quiet mode's strict loader continues to refuse changes without a good restore record.
+Removing quiet mode's completed record also removes its backup, so it cannot be restored by a later read. Damaged
+copies stay in the data folder.
+
 ## Inside the app
 
 `lib.rs` loads the prefs and sound return records, starts the first library scan and these threads:
 
 | Thread | Does |
 | --- | --- |
-| Library scan | Reads every store side by side, then games outside any store, then art on disk, then missing art online. Runs at start and when the page asks (each time Lamplit comes forward), at most every 30 seconds. |
+| Library scan | Reads every store side by side, then games outside any store, then art on disk, then missing art online. A store read that fails is logged and keeps that store's games from the previous scan; an empty successful read removes them. The first scan has nothing to keep. Runs at start and when the page asks (each time Lamplit comes forward), at most every 30 seconds. |
 | Headset | Looks for the PRO X 2 receiver every 10 seconds and owns it while it is plugged in. |
 | Controllers | Looks for DualSense and 2026 Steam Controller HID collections every 2 seconds and reads each on a thread of its own. An empty Steam receiver slot is listed only once input arrives. |
 | Other controllers | Reads XInput and Windows.Gaming.Input every 15 ms while one of their controllers is connected, and looks for new ones every 2 seconds. |
@@ -148,6 +155,10 @@ running games and Windows settings as they are.
 | Dock news | Every second: compares the headset and the controllers with a second before, for the news the folded dock shows. |
 | Shell | Opens links and exes with ShellExecute, one at a time. |
 | Updates | Checks once 10 seconds after start if enabled and the last attempt was at least 24 hours ago. Every second, installs a verified download only when no game runs or starts and Lamplit is in front. HTTP uses Tauri's async runtime from this thread or the command's blocking worker. |
+
+A malformed per-game manifest is logged and skipped without hiding other games. Optional detail files, such as
+Steam play minutes, never fail a store scan. An unreadable installed-games list or a file I/O error keeps that
+store's previous games; a missing file counts as absent.
 
 A Tauri command that isn't `async` runs on the main thread, where waiting freezes the window and controller
 navigation. So every command that touches the disk, the registry, COM, HID, a socket or the process list is `async`
@@ -189,6 +200,11 @@ Controller presses reach the page as `pad` events only while Lamplit's window is
 Menu, is the exception: over a running game it opens the dock, and anywhere else it brings Lamplit forward. Each kind of
 controller is read into the same buttons, by position (south is Cross or A), so navigation doesn't care which it is.
 
+`devices/accessories.rs` serialises automatic sound moves and explicit device choices under one lock. It saves changed
+return records through `data::save`; an output and a microphone have independent records. Pending returns survive
+missing endpoints and automatic fallback moves. Choosing a device in Settings cancels the pending return in that
+direction. Automatic moves still use `win/audio.rs::move_default`, which preserves a separate communications device.
+
 ## Epic's two launchers
 
 `stores/epic.rs` reads the legacy `.item` manifests in
@@ -210,11 +226,6 @@ Saved sign-in detection follows that selected launcher. The legacy launcher uses
 the Preview uses the presence of a non-empty encrypted `auth\access-token-prod.dpapi` file, without reading it.
 The account cache alone only records past logins. These are local hints, not proof that Epic still accepts the
 session; the existing Try anyway action remains available. [Sources and Windows verification limits](epic-launcher.md).
-
-`devices/accessories.rs` serialises automatic sound moves and explicit device choices under one lock. It saves changed
-return records through `data::save`; an output and a microphone have independent records. Pending returns survive
-missing endpoints and automatic fallback moves. Choosing a device in Settings cancels the pending return in that
-direction. Automatic moves still use `win/audio.rs::move_default`, which preserves a separate communications device.
 
 ## How a launch works
 

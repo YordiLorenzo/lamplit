@@ -7,7 +7,8 @@ pub mod settings;
 mod vdf;
 
 use super::names::clean_name;
-use super::{Account, Store};
+use super::{Account, Store, read};
+use crate::error::{Error, Result};
 use crate::files::{folder_key, inside, on_a_drive, read_text};
 use crate::library::{Game, Launch};
 use crate::win::region;
@@ -41,9 +42,15 @@ const COMMITTING: u64 = 1 << 22;
 const BUSY: u64 = UPDATE_RUNNING | UPDATE_STARTED | VALIDATING | PREALLOCATING | DOWNLOADING | STAGING | COMMITTING;
 
 pub fn path() -> Option<PathBuf> {
-    let key = RegKey::predef(HKEY_CURRENT_USER).open_subkey(r"Software\Valve\Steam").ok()?;
-    let path: String = key.get_value("SteamPath").ok()?;
-    Some(PathBuf::from(path.replace('/', "\\")))
+    read_path().ok().flatten()
+}
+
+fn read_path() -> Result<Option<PathBuf>> {
+    let Some(key) = read::optional(RegKey::predef(HKEY_CURRENT_USER).open_subkey(r"Software\Valve\Steam"))? else {
+        return Ok(None);
+    };
+    let path: Option<String> = read::optional(key.get_value("SteamPath"))?;
+    Ok(path.map(|p| PathBuf::from(p.replace('/', "\\"))))
 }
 
 pub fn exe() -> Option<PathBuf> {
@@ -68,11 +75,18 @@ fn country(region: &str) -> String {
     }
 }
 
-pub fn games() -> Vec<Game> {
-    let Some(root) = path() else { return Vec::new() };
-    let mut libs = vec![root.clone()];
-    if let Some(text) = read_text(&root.join(r"steamapps\libraryfolders.vdf")) {
+pub fn games() -> Result<Vec<Game>> {
+    let Some(root) = read_path()? else { return Ok(Vec::new()) };
+    games_in(&root)
+}
+
+fn games_in(root: &Path) -> Result<Vec<Game>> {
+    let mut libs = vec![root.to_path_buf()];
+    if let Some(text) = read::text(&root.join(r"steamapps\libraryfolders.vdf"))? {
         let vdf = vdf::parse(&text);
+        if !text.is_empty() && !matches!(vdf.get("libraryfolders"), Some(vdf::Vdf::Map(_))) {
+            return Err(Error::Internal("Steam libraryfolders.vdf has no libraryfolders map".into()));
+        }
         for (_, lib) in vdf.get("libraryfolders").map(vdf::Vdf::entries).unwrap_or_default() {
             if let Some(p) = lib.str("path").map(PathBuf::from)
                 && on_a_drive(&p)
@@ -82,32 +96,39 @@ pub fn games() -> Vec<Game> {
             }
         }
     }
-    let minutes = play_minutes(&root);
+    let minutes = play_minutes(root);
     let mut out = Vec::new();
     for lib in libs {
-        let Ok(rd) = std::fs::read_dir(lib.join("steamapps")) else { continue };
-        for entry in rd.flatten() {
+        for entry in read::entries(&lib.join("steamapps"))? {
             let fname = entry.file_name().to_string_lossy().into_owned();
-            if fname.starts_with("appmanifest_")
-                && fname.ends_with(".acf")
-                && let Some(mut game) = read_text(&entry.path()).and_then(|text| installed_game(&lib, &text))
-            {
+            if !fname.starts_with("appmanifest_") || !fname.ends_with(".acf") {
+                continue;
+            }
+            let Some(text) = read::text(&entry.path())? else { continue };
+            if let Some(mut game) = installed_game(&lib, &text) {
                 game.store_minutes = game.steam_appid.and_then(|a| minutes.get(&a)).copied().unwrap_or(0);
                 out.push(game);
+            } else {
+                log::info!(
+                    "discovery steam: {} skipped, it has no installed game Lamplit can read",
+                    entry.path().display()
+                );
             }
         }
     }
-    out
+    Ok(out)
 }
 
 /// Minutes played per app, as Steam counts them for the account that signed in last: `Playtime` in that account's
 /// localconfig.vdf. Steam's count includes play that Lamplit didn't see, from Steam's own library or before
 /// Lamplit was installed.
 fn play_minutes(root: &Path) -> HashMap<u32, u64> {
-    let Some(account) = read_text(&root.join(r"config\loginusers.vdf")).and_then(|text| last_account(&text)) else {
+    let Some(text) = read::detail_text(&root.join(r"config\loginusers.vdf")) else { return HashMap::new() };
+    let Some(account) = last_account(&text) else {
+        log::info!("discovery steam: loginusers.vdf has no recent account; play minutes unavailable");
         return HashMap::new();
     };
-    read_text(&root.join(format!(r"userdata\{account}\config\localconfig.vdf")))
+    read::detail_text(&root.join(format!(r"userdata\{account}\config\localconfig.vdf")))
         .map(|text| playtimes(&text))
         .unwrap_or_default()
 }
@@ -126,7 +147,10 @@ fn last_account(loginusers: &str) -> Option<u32> {
 fn playtimes(localconfig: &str) -> HashMap<u32, u64> {
     let vdf = vdf::parse(localconfig);
     let path = ["UserLocalConfigStore", "Software", "Valve", "Steam", "apps"];
-    let Some(apps) = path.iter().try_fold(&vdf, |v, key| v.get(key)) else { return HashMap::new() };
+    let Some(apps) = path.iter().try_fold(&vdf, |v, key| v.get(key)) else {
+        log::info!("discovery steam: localconfig.vdf has no apps; play minutes unavailable");
+        return HashMap::new();
+    };
     apps.entries()
         .iter()
         .filter_map(|(appid, app)| Some((appid.parse().ok()?, app.str("Playtime")?.parse().ok()?)))
@@ -335,6 +359,78 @@ mod tests {
             assert!(installed_game(&lib, &manifest(elsewhere)).is_none(), "{elsewhere}");
         }
         std::fs::remove_dir_all(&lib).unwrap();
+    }
+
+    #[test]
+    fn bad_manifests_and_optional_details_do_not_hide_steam_games() {
+        use std::fs;
+        let lib = std::env::temp_dir().join(format!("lamplit-test-steam-partial-{}", std::process::id()));
+        fs::create_dir_all(lib.join(r"steamapps\common\Game")).unwrap();
+        fs::write(
+            lib.join(r"steamapps\appmanifest_70.acf"),
+            r#""AppState" { "appid" "70" "name" "Game" "installdir" "Game" }"#,
+        )
+        .unwrap();
+        let baseline = games_in(&lib).unwrap();
+        assert_eq!(baseline.len(), 1);
+        fs::write(lib.join(r"steamapps\appmanifest_71.acf"), r#""AppState""#).unwrap();
+        fs::write(lib.join(r"steamapps\appmanifest_72.acf"), r#""AppState" { "appid" "72" }"#).unwrap();
+        assert!(games_in(&lib).unwrap() == baseline);
+
+        let loginusers = lib.join(r"config\loginusers.vdf");
+        fs::create_dir_all(&loginusers).unwrap();
+        assert!(games_in(&lib).unwrap() == baseline, "an unreadable account file only omits play time");
+        fs::remove_dir(&loginusers).unwrap();
+        fs::write(&loginusers, r#""users" { "76561197960265729" { "Timestamp" "1" } }"#).unwrap();
+        let localconfig = lib.join(r"userdata\1\config\localconfig.vdf");
+        fs::create_dir_all(&localconfig).unwrap();
+        assert!(games_in(&lib).unwrap() == baseline, "an unreadable play-time file only omits play time");
+        fs::remove_dir(&localconfig).unwrap();
+        fs::write(&localconfig, r#""nested" { "#.repeat(32)).unwrap();
+        assert!(games_in(&lib).unwrap() == baseline, "deep or cut-off optional VDF cannot hide a game");
+        fs::write(
+            &localconfig,
+            r#""UserLocalConfigStore" { "Software" { "Valve" { "Steam" { "apps" { "70" { "Playtime" "12" } } } } } }"#,
+        )
+        .unwrap();
+        assert_eq!(games_in(&lib).unwrap()[0].store_minutes, 12);
+
+        fs::create_dir(lib.join(r"steamapps\appmanifest_73.acf")).unwrap();
+        assert!(games_in(&lib).is_err(), "an I/O error on a per-game manifest fails the store");
+        fs::remove_dir_all(lib).unwrap();
+    }
+
+    #[test]
+    fn library_lists_need_a_map_but_no_new_fields() {
+        use std::fs;
+        let root = std::env::temp_dir().join(format!("lamplit-test-steam-libraries-{}", std::process::id()));
+        fs::create_dir_all(root.join("steamapps")).unwrap();
+        let list = root.join(r"steamapps\libraryfolders.vdf");
+        assert!(games_in(&root).unwrap().is_empty());
+        for text in ["", r#""libraryfolders" { "0" { "label" "No path" } }"#] {
+            fs::write(&list, text).unwrap();
+            assert!(games_in(&root).unwrap().is_empty());
+        }
+        let extra = root.join("Extra");
+        fs::create_dir_all(extra.join(r"steamapps\common\Game")).unwrap();
+        fs::write(
+            extra.join(r"steamapps\appmanifest_70.acf"),
+            r#""AppState" { "appid" "70" "name" "Game" "installdir" "Game" }"#,
+        )
+        .unwrap();
+        let escaped = extra.to_string_lossy().replace('\\', "\\\\");
+        fs::write(&list, format!(r#""libraryfolders" {{ "named" {{ "path" "{escaped}" }} }}"#)).unwrap();
+        let games = games_in(&root).unwrap();
+        assert_eq!(games.len(), 1, "library keys need not be numeric");
+        assert_eq!(games[0].dir, extra.join(r"steamapps\common\Game"));
+        for text in [r#""libraryfolders""#, r#""libraryfolders" "not a map""#] {
+            fs::write(&list, text).unwrap();
+            assert!(games_in(&root).is_err());
+        }
+        fs::remove_file(&list).unwrap();
+        fs::create_dir(&list).unwrap();
+        assert!(games_in(&root).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

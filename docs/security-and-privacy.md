@@ -80,6 +80,12 @@ Device names and identifiers are left out. In log lines, paths become `<folder>`
 Device names in sound-switch errors and device addresses are removed, including errors about disconnected devices.
 Read the whole preview before sharing it. Saving writes exactly that preview; nothing is uploaded or sent.
 
+Lamplit also keeps one previous good copy of each JSON settings file in its data folder, with `.bak` added to the
+name. If a settings file is damaged, Lamplit copies it with `.damaged` added to the name, replacing an older damaged
+copy, and restores the good copy when available. These files stay on the PC and can contain the same game names,
+folders and settings as the original files. Once quiet mode has restored all settings, its record and backup are
+removed; a damaged copy is kept.
+
 ## Steam's DevTools port (off unless you switch it on)
 
 Two features need Steam's DevTools port: keeping the PS button from opening Steam's Big Picture, and switching off

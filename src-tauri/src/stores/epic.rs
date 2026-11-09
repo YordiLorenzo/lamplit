@@ -1,7 +1,8 @@
 // Both Epic launchers: the legacy .item manifests and the Preview's installations.jsonl journal.
 
-use super::Store;
 use super::names::clean_name;
+use super::{Store, read};
+use crate::error::Result;
 use crate::files::{file_name, local_app_data, on_a_drive, read_text};
 use crate::library::{Game, Launch};
 use serde_json::Value;
@@ -61,46 +62,51 @@ fn legacy_exe(exe: &Path) -> bool {
     ["win32", "win64"].iter().any(|arch| path.ends_with(&format!(r"\portal\binaries\{arch}\epicgameslauncher.exe")))
 }
 
-pub fn games() -> Vec<Game> {
+pub fn games() -> Result<Vec<Game>> {
     let manifests =
         std::env::var_os("ProgramData").map(|dir| Path::new(&dir).join(r"Epic\EpicGamesLauncher\Data\Manifests"));
     games_in(manifests.as_deref(), &local_app_data().join(PREVIEW_DATA), Store::Epic.exe().as_deref())
 }
 
-fn games_in(manifests: Option<&Path>, preview: &Path, launcher: Option<&Path>) -> Vec<Game> {
+fn games_in(manifests: Option<&Path>, preview: &Path, launcher: Option<&Path>) -> Result<Vec<Game>> {
     // Migration or rollback can leave records behind. Only the active launcher can start the games it knows.
     if launcher.is_some_and(legacy_exe) {
-        return manifests.map_or_else(Vec::new, legacy_games);
+        return manifests.map_or_else(|| Ok(Vec::new()), legacy_games);
     }
-    let mut out = preview_games(preview);
+    let mut out = preview_games(preview)?;
     if launcher.is_some() {
-        return out;
+        return Ok(out);
     }
     // With no launcher installed, still list its games so Play can explain which store app is missing.
     let mut ids: HashSet<String> = out.iter().map(|game| game.id.clone()).collect();
     if let Some(manifests) = manifests {
         // A migrated game keeps its app id, and therefore its favourites and play time in Lamplit.
-        out.extend(legacy_games(manifests).into_iter().filter(|game| ids.insert(game.id.clone())));
+        out.extend(legacy_games(manifests)?.into_iter().filter(|game| ids.insert(game.id.clone())));
     }
-    out
+    Ok(out)
 }
 
-fn legacy_games(manifests: &Path) -> Vec<Game> {
-    let Ok(rd) = std::fs::read_dir(manifests) else { return Vec::new() };
+fn legacy_games(manifests: &Path) -> Result<Vec<Game>> {
     let mut out = Vec::new();
-    for entry in rd.flatten() {
+    for entry in read::entries(manifests)? {
         if entry.path().extension().is_none_or(|e| !e.eq_ignore_ascii_case("item")) {
             continue;
         }
-        let Some(v) = read_text(&entry.path()).and_then(|t| serde_json::from_str::<Value>(&t).ok()) else {
-            continue;
+        let Some(text) = read::text(&entry.path())? else { continue };
+        let v: Value = match serde_json::from_str(&text) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("discovery epic: {} skipped: {e}", entry.path().display());
+                continue;
+            }
         };
         if !is_game(&v) {
+            log::info!("discovery epic: {} skipped, it has no launchable game", entry.path().display());
             continue;
         }
         let s = |k: &str| v[k].as_str().unwrap_or_default().to_string();
         let dir = PathBuf::from(s("InstallLocation"));
-        if !on_a_drive(&dir) || !dir.is_dir() {
+        if !on_a_drive(&dir) || !read::is_dir(&dir)? {
             log::info!("discovery epic: {} skipped, {} is missing", s("DisplayName"), dir.display());
             continue;
         }
@@ -113,15 +119,15 @@ fn legacy_games(manifests: &Path) -> Vec<Game> {
             Launch::Uri(format!("com.epicgames.launcher://apps/{ns}%3A{item}%3A{app}?action=launch&silent=true")),
         ));
     }
-    out
+    Ok(out)
 }
 
-fn preview_games(data: &Path) -> Vec<Game> {
-    let Some(journal) = read_text(&data.join("installations.jsonl")) else { return Vec::new() };
+fn preview_games(data: &Path) -> Result<Vec<Game>> {
+    let Some(journal) = read::text(&data.join("installations.jsonl"))? else { return Ok(Vec::new()) };
     let catalog = read_text(&data.join(r"cache\prod\catalog-cache.json"))
         .and_then(|text| serde_json::from_str::<Value>(&text).ok())
         .unwrap_or_default();
-    installations(&journal).values().filter_map(|record| preview_game(record, &catalog)).collect()
+    Ok(installations(&journal).values().filter_map(|record| preview_game(record, &catalog)).collect())
 }
 
 /// Entries are full snapshots, not patches. Replay before filtering, or an unfinished update can revive an old
@@ -240,6 +246,44 @@ mod tests {
     }
 
     #[test]
+    fn unreadable_manifests_are_not_an_empty_library() {
+        let dir = std::env::temp_dir().join(format!("lamplit-test-epic-read-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(legacy_games(&dir).unwrap().is_empty());
+        let manifest = dir.join("game.item");
+        std::fs::write(&manifest, "{").unwrap();
+        assert!(legacy_games(&dir).unwrap().is_empty());
+        std::fs::write(&manifest, "{}").unwrap();
+        assert!(legacy_games(&dir).unwrap().is_empty());
+        std::fs::remove_file(&manifest).unwrap();
+        std::fs::create_dir(&manifest).unwrap();
+        assert!(legacy_games(&dir).is_err());
+        assert!(legacy_games(&dir.join("missing")).unwrap().is_empty());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_damaged_manifest_does_not_hide_other_epic_games() {
+        let dir = std::env::temp_dir().join(format!("lamplit-test-epic-partial-{}", std::process::id()));
+        let manifests = dir.join("Manifests");
+        let game = dir.join("Fennel");
+        std::fs::create_dir_all(&manifests).unwrap();
+        std::fs::create_dir_all(&game).unwrap();
+        let good = json!({"AppName": "Fennel", "DisplayName": "Fennel", "InstallLocation": game,
+            "LaunchExecutable": "Game.exe"});
+        std::fs::write(manifests.join("good.item"), serde_json::to_vec(&good).unwrap()).unwrap();
+        let baseline = legacy_games(&manifests).unwrap();
+        assert_eq!(baseline.len(), 1);
+        std::fs::write(manifests.join("damaged.item"), "{").unwrap();
+        std::fs::write(manifests.join("incomplete.item"), "{}").unwrap();
+        let with_damage = legacy_games(&manifests).unwrap();
+        assert!(with_damage == baseline, "a bad sibling leaves the one readable game unchanged");
+        std::fs::create_dir(manifests.join("unreadable.item")).unwrap();
+        assert!(legacy_games(&manifests).is_err(), "an I/O error still fails the store");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn finds_the_launcher_from_its_link_registration() {
         let quoted = r#""C:\Program Files (x86)\Epic Games\Launcher\Portal\Binaries\Win32\EpicGamesLauncher.exe" %1"#;
         assert_eq!(
@@ -335,7 +379,7 @@ mod tests {
         fs::write(manifests.join("legacy.item"), legacy("Legacy", &legacy_dir).to_string()).unwrap();
         fs::write(manifests.join("broken.item"), "{").unwrap();
 
-        let games = games_in(Some(&manifests), &preview, None);
+        let games = games_in(Some(&manifests), &preview, None).unwrap();
         assert_eq!(games.len(), 2);
         let game = games.iter().find(|game| game.id == "epic:Fennel").unwrap();
         assert_eq!(game.name, "Fennel Game");
@@ -346,14 +390,14 @@ mod tests {
                 if uri == "com.epicgames.launcher://apps/sample-namespace%3Asample-item%3AFennel?action=launch&silent=true"
         ));
         assert!(games.iter().any(|game| game.id == "epic:Legacy"));
-        assert_eq!(games_in(None, &preview, None).len(), 1);
-        assert_eq!(games_in(Some(&root.join("absent")), &preview, None).len(), 1);
-        assert_eq!(games_in(Some(&manifests), &root.join("absent"), None).len(), 2);
+        assert_eq!(games_in(None, &preview, None).unwrap().len(), 1);
+        assert_eq!(games_in(Some(&root.join("absent")), &preview, None).unwrap().len(), 1);
+        assert_eq!(games_in(Some(&manifests), &root.join("absent"), None).unwrap().len(), 2);
 
         let preview_exe = Path::new(r"D:\Epic Preview\EpicGamesLauncher.exe");
         let legacy_exe = Path::new(r"D:\Epic\Launcher\Portal\Binaries\Win64\EpicGamesLauncher.exe");
-        assert_eq!(games_in(Some(&manifests), &preview, Some(preview_exe)).len(), 1);
-        let legacy_games = games_in(Some(&manifests), &preview, Some(legacy_exe));
+        assert_eq!(games_in(Some(&manifests), &preview, Some(preview_exe)).unwrap().len(), 1);
+        let legacy_games = games_in(Some(&manifests), &preview, Some(legacy_exe)).unwrap();
         assert_eq!(legacy_games.len(), 2);
         assert_eq!(legacy_games.iter().find(|game| game.id == "epic:Fennel").unwrap().name, "Fennel");
         fs::write(
@@ -361,7 +405,7 @@ mod tests {
             format!("{record}\n{{\"installationId\":\"0123456789ABCDEF0123456789ABCDEF\",\"deleted\":true}}\n"),
         )
         .unwrap();
-        assert!(games_in(Some(&manifests), &preview, Some(preview_exe)).is_empty());
+        assert!(games_in(Some(&manifests), &preview, Some(preview_exe)).unwrap().is_empty());
         fs::remove_dir_all(root).unwrap();
     }
 

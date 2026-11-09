@@ -2,8 +2,10 @@
 // app's GameInstallInfo.sqlite and the itch app's butler.db. Lamplit reads the database and its write-ahead log
 // (`-wal`) as plain files, the way the file format describes them (https://www.sqlite.org/fileformat2.html). So it
 // takes no lock the store app could wait on, writes nothing (a SQLite reader would write the `-shm` index), and needs
-// no C library. Anything it doesn't understand reads as no table.
+// no C library. An unreadable structure is an error, so discovery can keep the previous games.
 
+use super::read;
+use crate::error::{Error, Result};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -57,12 +59,14 @@ pub struct Db {
 const MAGIC: &[u8] = b"SQLite format 3\0";
 
 impl Db {
-    pub fn open(path: &Path) -> Option<Db> {
-        let file = std::fs::read(path).ok()?;
+    pub fn open(path: &Path) -> Result<Option<Db>> {
+        let Some(file) = read::bytes(path)? else { return Ok(None) };
         let mut wal_path = path.as_os_str().to_owned();
         wal_path.push("-wal");
-        let wal = std::fs::read(wal_path).unwrap_or_default();
+        let wal = read::bytes(Path::new(&wal_path))?.unwrap_or_default();
         Db::from_bytes(file, wal)
+            .map(Some)
+            .ok_or_else(|| Error::Internal(format!("{}: damaged or unsupported SQLite database", path.display())))
     }
 
     fn from_bytes(file: Vec<u8>, wal: Vec<u8>) -> Option<Db> {
@@ -97,8 +101,13 @@ impl Db {
         self.file.get(at..at + self.page_size)
     }
 
-    /// Every row of a table; None when there is no such table, or it isn't one this reader can read.
-    pub fn rows(&self, table: &str) -> Option<Vec<Row>> {
+    /// Every row of a required table. Missing or unsupported tables are not an empty library.
+    pub fn rows(&self, table: &str) -> Result<Vec<Row>> {
+        self.table_rows(table)
+            .ok_or_else(|| Error::Internal(format!("SQLite table {table} is missing, damaged or unsupported")))
+    }
+
+    fn table_rows(&self, table: &str) -> Option<Vec<Row>> {
         let schema = self.records(1)?;
         let (root, sql) = schema.iter().find_map(|(_, r)| match r.as_slice() {
             [Value::Text(kind), Value::Text(name), _, Value::Int(root), Value::Text(sql)]
@@ -422,7 +431,7 @@ mod tests {
         assert_eq!(rows[0].int("installed"), Some(1));
         assert_eq!(rows[2].int("Installed"), Some(0));
         assert_eq!(rows[0].get("Missing"), &Value::Null);
-        assert!(db.rows("Nothing").is_none());
+        assert!(db.rows("Nothing").is_err());
     }
 
     #[test]
@@ -461,6 +470,35 @@ mod tests {
         assert_eq!(db.rows("caves").unwrap().len(), 1);
         assert!(Db::from_bytes(b"not a database".to_vec(), Vec::new()).is_none());
         assert!(Db::from_bytes(Vec::new(), Vec::new()).is_none());
+    }
+
+    #[test]
+    fn an_invalid_wal_header_leaves_the_main_database_readable() {
+        for byte in [0, 24] {
+            let mut wal = BUTLER_WAL.to_vec();
+            wal[byte] ^= 0xFF;
+            assert!(committed_frames(&wal).is_none());
+            let db = Db::from_bytes(BUTLER.to_vec(), wal).unwrap();
+            assert_eq!(db.rows("caves").unwrap().len(), 1);
+        }
+    }
+
+    #[test]
+    fn a_reused_wal_tail_keeps_committed_games() {
+        let (page_size, committed) = committed_frames(BUTLER_WAL).unwrap();
+        assert!(!committed.is_empty());
+        let frame_size = 24 + page_size;
+        let end = 32 + ((BUTLER_WAL.len() - 32) / frame_size) * frame_size;
+        for byte in [8, 16] {
+            let mut wal = BUTLER_WAL[..end].to_vec();
+            let mut stale_frame = BUTLER_WAL[32..32 + frame_size].to_vec();
+            // Salt mismatch, then checksum mismatch: both end the log, not the store scan.
+            stale_frame[byte] ^= 0xFF;
+            wal.extend(stale_frame);
+            assert_eq!(committed_frames(&wal).unwrap().1, committed);
+            let db = Db::from_bytes(BUTLER.to_vec(), wal).unwrap();
+            assert_eq!(db.rows("caves").unwrap().len(), 6);
+        }
     }
 
     #[test]
@@ -530,14 +568,20 @@ mod tests {
     }
 
     #[test]
-    fn a_damaged_overflow_chain_reads_as_nothing() {
-        let rows = |file: Vec<u8>| Db::from_bytes(file, Vec::new()).unwrap().rows("t").map(|r| r.len());
+    fn a_damaged_overflow_chain_is_an_error() {
+        let rows = |file: Vec<u8>| Db::from_bytes(file, Vec::new()).unwrap().rows("t");
         // Sound: a row that continues on one overflow page.
-        assert_eq!(rows(crafted(489, 0)), Some(1));
+        assert_eq!(rows(crafted(489, 0)).unwrap().len(), 1);
         // A chain that comes back to its own page.
-        assert_eq!(rows(crafted(997, 3)), None);
+        assert!(rows(crafted(997, 3)).is_err());
         // A length far past the database, on that same loop.
-        assert_eq!(rows(crafted(39 + 508 * 100_000 + 450, 3)), None);
+        assert!(rows(crafted(39 + 508 * 100_000 + 450, 3)).is_err());
+        let mut unsupported = crafted(489, 0);
+        unsupported[512] = 0x0A;
+        assert!(rows(unsupported).is_err(), "an index b-tree is not an empty table");
+        let mut empty = crafted(489, 0);
+        empty[512 + 3..512 + 5].fill(0);
+        assert!(rows(empty).unwrap().is_empty(), "a readable empty table is a successful scan");
     }
 
     #[test]
