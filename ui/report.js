@@ -15,7 +15,7 @@ export async function openReport(back) {
   backTo = back;
   const from = els.settings.getBoundingClientRect();
   state.mode = 'report';
-  state.report = { text: '', loading: true, saving: false };
+  state.report = { text: '', saving: false };
   const report = state.report;
   els.report.classList.add('on');
   els.reportText.textContent = 'Preparing the report…';
@@ -36,7 +36,6 @@ export async function openReport(back) {
     if (state.mode !== 'report' || state.report !== report) return;
     els.reportText.textContent = `Couldn't prepare the report. ${e.message}`;
   } finally {
-    report.loading = false;
     if (state.mode === 'report' && state.report === report) showHints();
   }
 }
@@ -56,7 +55,7 @@ export function closeReport() {
 
 async function save() {
   const report = state.report;
-  if (report.loading || report.saving || !report.text) return;
+  if (report.saving || !report.text) return;
   report.saving = true;
   els.reportSave.disabled = true;
   els.reportSave.textContent = 'Saving…';

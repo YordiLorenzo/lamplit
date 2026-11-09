@@ -42,9 +42,7 @@ fn setup() -> ExitCode {
     lamplit_lib::attach_parent_console();
     match lamplit_lib::setup() {
         Ok(done) => {
-            for line in done {
-                println!("{line}");
-            }
+            println!("{done}");
             ExitCode::SUCCESS
         }
         Err(e) => {

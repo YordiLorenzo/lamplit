@@ -240,11 +240,7 @@ pub fn restoring() -> Result<bool> {
 
 fn keep_or_remove(saved: &Saved) -> Result<()> {
     if saved.guide.is_none() && saved.flags.is_empty() && saved.unrecorded_flag.is_none() {
-        match data::remove(RECORD_FILE) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(e.into()),
-        }
+        data::remove(RECORD_FILE).map_err(Into::into)
     } else {
         data::save(RECORD_FILE, saved)
     }

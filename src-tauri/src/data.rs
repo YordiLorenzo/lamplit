@@ -110,12 +110,15 @@ pub fn remove(name: &str) -> std::io::Result<()> {
 
 fn remove_from(path: &Path) -> std::io::Result<()> {
     // Quiet mode has restored these settings. Its old backup must not bring the record back on the next read.
-    match std::fs::remove_file(beside(path, ".bak")) {
-        Ok(()) => {}
-        Err(e) if e.kind() == ErrorKind::NotFound => {}
-        Err(e) => return Err(e),
+    let backup = beside(path, ".bak");
+    for file in [backup.as_path(), path] {
+        match std::fs::remove_file(file) {
+            Ok(()) => {}
+            Err(e) if e.kind() == ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
+        }
     }
-    std::fs::remove_file(path)
+    Ok(())
 }
 
 #[cfg(test)]

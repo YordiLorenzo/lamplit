@@ -22,14 +22,14 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// # Errors
 ///
 /// Without admin rights, a trusted repair executable, or a successful repair.
-pub fn run() -> Result<Vec<String>> {
+pub fn run() -> Result<String> {
     if !token::elevated() {
         let message = "Repairing Steam's background service needs admin rights. Start it from Lamplit's settings.";
         return Err(Error::Player(message.into()));
     }
     let steam = repair_steam_service()?;
     log::info!("setup: {steam}");
-    Ok(vec![steam])
+    Ok(steam)
 }
 
 /// Valve's own repair: `<Steam>\bin\SteamService.exe /repair` reinstalls the service and its permissions, also when

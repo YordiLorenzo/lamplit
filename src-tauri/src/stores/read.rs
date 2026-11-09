@@ -17,14 +17,7 @@ pub fn bytes(path: &Path) -> Result<Option<Vec<u8>>> {
 
 pub fn text(path: &Path) -> Result<Option<String>> {
     let Some(bytes) = bytes(path)? else { return Ok(None) };
-    let text = if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
-        let units: Vec<u16> = rest.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
-        String::from_utf16_lossy(&units)
-    } else {
-        let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
-        String::from_utf8_lossy(bytes).into_owned()
-    };
-    Ok(Some(text))
+    Ok(Some(crate::files::decode_text(&bytes)))
 }
 
 /// Optional details must not hide an otherwise readable installed game.

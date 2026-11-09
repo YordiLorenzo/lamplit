@@ -119,7 +119,7 @@ export const state = {
   findList: false,
   /** @type {'browse' | 'starting' | 'details' | 'settings' | 'find' | 'add' | 'report' | 'news'} details: a game's menu (library.js) */
   mode: 'browse',
-  report: { text: '', loading: false, saving: false },
+  report: { text: '', saving: false },
   /** whether the library has come in yet, so an empty row means no games found */
   loaded: false,
   /** the focused choice in a game's menu (logic.js detailChoices) */

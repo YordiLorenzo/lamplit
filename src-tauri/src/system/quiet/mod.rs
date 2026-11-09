@@ -106,13 +106,7 @@ fn save_record(saved: &Saved) -> Result<()> {
 /// previous record on disk, with every original still available.
 fn save_or_remove_record(saved: &Saved) -> Result<()> {
     let done = !saved.wanted && saved.registry.is_empty() && saved.ubisoft.is_empty() && saved.steam.is_empty();
-    if done {
-        data::remove(RECORD_FILE)
-            .or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(e) })?;
-        Ok(())
-    } else {
-        save_record(saved)
-    }
+    if done { data::remove(RECORD_FILE).map_err(Into::into) } else { save_record(saved) }
 }
 
 fn read_dword(key: &str, name: &str) -> Option<u32> {
