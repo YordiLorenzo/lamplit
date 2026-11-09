@@ -8,44 +8,46 @@ Every release of Lamplit, newest first. The format follows
 
 ### Highlights
 
-- Updates come to Lamplit itself, and install once you're done playing.
-- Start when I sign in is a switch now, with no admin prompt.
-- Restore Lamplit's changes puts back everything Lamplit changed on this PC.
+- Updates in Lamplit install once you're done playing.
+- Start when I sign in is a switch, with no admin prompt.
+- Restore Lamplit's changes from Settings or when uninstalling.
 
 ### Added
 
-- Settings > Check for updates: Lamplit asks GitHub for a newer version, downloads it when you choose to, checks its
-  signature, and installs it once no game runs and Lamplit is in front. Lamplit starts again by itself afterwards. With
-  the switch on (the default), it also checks by itself, at most once a day after start; nothing downloads without
-  you. After an update, a short "What's new" shows the three changes that matter.
-- Settings > System > Start when I sign in, as a switch. Lamplit registers and removes its own sign-in task, without
-  an admin prompt. The switch shows what Task Scheduler really has, so a task removed by hand shows as off. Repairing
-  Steam's background service is a step of its own, which still asks Windows once. On a PC set up with 0.3 or earlier,
-  switching it off may ask for admin rights one time.
-- Settings > System > Restore Lamplit's changes, held to confirm: puts back what quiet mode changed, Steam's Guide
-  button setting and DevTools port, and removes the sign-in task, and turns off the switches that would make the
-  changes again. Each step says how it went, and one that has to wait (Steam or Ubisoft Connect open) says what to
-  do. Uninstalling Lamplit runs the same restore first.
-- Settings > System > Save a report: one plain-text file in Downloads with Lamplit's version, Windows, the screen,
-  the controllers, the stores and the last warnings in the log, for an issue. It shows the whole file before saving,
-  and leaves out folders, your account name, game names and device names. The bug report form asks for it.
+- Settings > Check for updates: choose Check or Download and install to download a newer version from GitHub.
+  Lamplit checks its signature and installs once no game is starting or running and Lamplit is in front. It then
+  starts again by itself. Automatic checks are on by default, at most once every 24 hours after a start. They only
+  show whether an update is available; nothing downloads until you choose it. After a version change, "What's new"
+  shows three highlights if Lamplit has a previous version recorded.
+- Settings > System > Start when I sign in is now a switch. Lamplit registers and removes its sign-in task without
+  an admin prompt. The switch reads Task Scheduler, so a task removed by hand shows as off. Repair Steam's background
+  service is a separate step that still asks Windows once for admin rights. Removing a task made by 0.3 or earlier
+  may also ask once.
+- Settings > System > Restore Lamplit's changes, held to confirm: restores quiet mode, Steam's Guide button setting
+  and DevTools flag, and removes the sign-in task. It turns quiet mode and Lamplit's automatic Steam changes off.
+  Each step shows its result and what needs attention, such as opening Steam with its DevTools port or closing
+  Ubisoft Connect. Older versions did not save every Steam setting's original value. Uninstalling runs the same
+  restore first and keeps the saved settings if a step cannot finish.
+- Settings > System > Save a report: preview a plain-text file, then save it to Downloads for an issue. It includes
+  Lamplit and Windows versions, the screen, controllers, stores, selected settings and recent warnings and errors.
+  It removes paths, account and device names, and replaces current library game names with ids. Nothing is uploaded.
+  The bug report form asks for it.
 - Exit to Windows in the power menu, held to confirm like Restart and Shut down.
 - Settings > Sound > Interface sounds: Off, Quiet or Normal. The dock follows the same choice.
-- Two hints for the first minute: the button that opens a game's menu, and how to come back from a game. Each goes
-  once you've done it, or after it has shown on three starts.
+- Two hints to get started: the button that opens a game's menu, and how to come back from a game. Each stops once
+  you've done it, or after it has appeared on three starts.
 
 ### Fixed
 
-- Epic's new launcher (in preview since 2026-10-14): its games show up and start, and Lamplit waits for its sign-in,
-  as with the old launcher. Not yet checked against a real install of the new launcher.
-- Valve's new Steam Controller moves around Lamplit, over USB, Bluetooth and its receiver, next to Steam and without
-  changing the controller's mode. Steam Input's own copy of a controller is still left out. Not yet tested with the
-  controller itself.
-- When a store's list of games can't be read for a moment (a file the store app is writing, a locked database), its
-  games stay in the row instead of disappearing until the next scan.
-- Lamplit remembers the TV or soundbar to put the sound back on after a restart, not only while it runs.
-- A damaged settings file is kept as `.damaged` and the last good copy is used, so favourites and hidden games aren't
-  lost. Every save keeps the previous good copy as `.bak`.
+- Epic's new launcher (in preview since 14 October 2026): games appear and start, and Lamplit waits for sign-in,
+  as with the original launcher. Not yet checked against a real install of the new launcher.
+- Valve's new Steam Controller can navigate Lamplit over USB, Bluetooth and its receiver, alongside Steam, without
+  changing its mode. Steam Input's virtual copy is still left out. Not yet tested on real hardware.
+- When a store's game list cannot be read, such as while it is being written or its database is locked, Lamplit
+  keeps that store's games from the previous scan.
+- Lamplit remembers which TV or soundbar to return sound to, even after a restart.
+- A damaged settings file is kept as `.damaged`. Lamplit uses the previous good copy when available, recovering
+  saved settings such as favourites and hidden games. Each save keeps the previous good copy as `.bak`.
 - After Change art, the screen's colours follow the new art at once.
 
 ## 0.3.0 - 2026-10-30

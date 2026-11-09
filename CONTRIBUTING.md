@@ -10,11 +10,14 @@ Be kind to each other. The maintainer moderates issues and pull requests.
 
 Open an issue with the bug report form. In Lamplit, open **Settings > System > Save a report**, read the preview,
 then choose **Save**. Attach the `Lamplit report ...txt` file from Downloads and describe what happened. The report
-includes versions, devices, stores, prefs and recent warnings, with names and folders removed. Nothing is sent by
-Lamplit. If Lamplit cannot open, say so in the issue.
+includes versions, screen and device details, stores, selected settings and the last 50 warnings and errors. It
+removes paths, account and device names, and replaces current library game names with ids. Nothing is sent by
+Lamplit. If Lamplit cannot open, say so in the issue and attach the relevant log instead.
 
 The raw log, `%LOCALAPPDATA%\lamplit\lamplit.log`, is a second, optional attachment when more detail is needed.
 It names your games, devices and folders, so read it and remove anything private before attaching it.
+For Steam repair or old sign-in task removal, include `setup.log` from the account that ran the helper. For
+uninstall or command-line restoration, include `restore.log`; if Lamplit closes by itself, include `supervisor.log`.
 
 For a game Lamplit doesn't find, or finds twice, also say where the game is installed, whether the store app itself
 lists it, and paste the `discovery` lines from the log.

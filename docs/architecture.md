@@ -77,8 +77,8 @@ ui/
   pill.js          the pill a short message shows in, with its icon in a round badge: the dock's news and the
                    home screen's messages
   logic.js         pure functions (the cover row's search and order, the Settings rows), tested in Node
-  hints.js         the button hints, and short messages as pills: one about a game on the line above the row,
-                   naming the game, any other at the top right under the clock
+  hints.js         the button hints, the two introductory hints, and short messages as pills: one about a game on
+                   the line above the row, naming the game, any other at the top right under the clock
   sounds.js        interface sounds made with Web Audio
   screensaver/     the screensaver: when it shows and what ends it (index.js), the show and the games' art it loads
                    (saver.js), the WebGL2 renderer with its particles, the scenes' shaders, palettes from the game art,
@@ -121,7 +121,7 @@ outside any store; 0.1.0's `played.json` is still read for the last-played times
 through), plus the logs. Old `setup.json` files no longer determine startup state. WebView2 keeps its profile in
 `%LOCALAPPDATA%\io.github.yordilorenzo.lamplit`.
 
-`prefs.json` also keeps the interface sound level (`off`, `quiet` or `normal`, the default) and each first-minute
+`prefs.json` also keeps the interface sound level (`off`, `quiet` or `normal`, the default) and each introductory
 hint's shown-start count and completion. A hint counts only when its screen is reached, at most once per app
 process, and stops after three starts or its action. Opening a game's menu completes its hint; a `summoned` event
 with a running game or the dock opening completes the return hint. A WebView profile reset leaves this state intact.
@@ -137,8 +137,8 @@ running games and Windows settings as they are.
 longer parses is copied to `<name>.damaged` (replacing the older damaged copy). The loader restores a valid backup
 atomically and logs the recovery; without one, `load_or_default` callers use their defaults. The invalid primary
 also stays until replaced, so quiet mode's strict loader continues to refuse changes without a good restore record.
-Removing quiet mode's completed record also removes its backup, so it cannot be restored by a later read. Damaged
-copies stay in the data folder.
+Removing a completed quiet-mode or Steam restore record also removes its backup, so it cannot be restored by a
+later read. Damaged copies stay in the data folder.
 
 ## Inside the app
 
@@ -168,7 +168,8 @@ and does its work on Tauri's pool for blocking work.
 
 The page calls Lamplit's own commands; it has no updater package or plugin permissions. `updates_state` is an offline
 snapshot and the `update` event brings later changes. A check returns a version or null. Automatic checks only show
-the version; choosing the Settings row downloads it and verifies its Minisign signature with the built-in public key.
+the version. The Settings action checks if no version is known, then downloads any newer version and verifies its
+Minisign signature with the built-in public key.
 The downloaded bytes stay in memory until the player finishes playing and Lamplit is in front. Closing Lamplit
 discards a waiting download. Check and download errors leave a retry action and are logged.
 
@@ -199,6 +200,8 @@ Controller presses reach the page as `pad` events only while Lamplit's window is
 `dock-pad` events only while the dock is open, so a game never moves the menu behind it. Holding PS, or View and
 Menu, is the exception: over a running game it opens the dock, and anywhere else it brings Lamplit forward. Each kind of
 controller is read into the same buttons, by position (south is Cross or A), so navigation doesn't care which it is.
+
+## Sound routing
 
 `devices/accessories.rs` serialises automatic sound moves and explicit device choices under one lock. It saves changed
 return records through `data::save`; an output and a microphone have independent records. Pending returns survive
@@ -387,6 +390,7 @@ permits own-user interactive registration; the task's DACL, not its run level, c
 Legacy permissions need verification on Windows with both same-account and other-administrator setup.
 
 `system/setup.rs` now only runs the signed Valve service repair. It emits a `notice` when the elevated process ends.
+The Settings command opens the admin prompt; `lamplit.exe --setup` itself refuses to run without admin rights.
 
 `system/restore.rs` runs four steps and emits each `restore-step`: quiet mode, Steam's Guide button, Steam's DevTools
 flag, then the sign-in task. It saves `steam_devtools = false` and `steam_guide = false` first. The switches,
@@ -397,8 +401,9 @@ may still need its port. Failed registry, Ubisoft, Steam and flag restores keep 
 Upkeep; explicit Steam opt-in cancels its pending restore while preserving originals for another restore.
 
 Releases before 0.4 saved quiet mode's originals but not Steam's Guide setting or DevTools flag. Restore reports the
-missing Guide original. A still-enabled old port with an unrecorded flag requires the player to check and remove
-the flag manually if Lamplit created it; it is kept as pending rather than deleting a possibly pre-existing flag.
+missing Guide original. If the port pref was on and a flag has no saved original, the player must check it and
+remove it manually only if Lamplit created it. This includes an unchanged flag that predated Lamplit's port switch.
+It stays pending rather than deleting a possibly pre-existing flag.
 
 The uninstaller closes Lamplit and runs `--restore` before removing the exe, except for `/UPDATE` or a reinstall
 in place (`$EXEDIR == $INSTDIR`). Silent and passive uninstalls pass `--no-prompt`. A failed or pending restore
@@ -455,7 +460,7 @@ message is written for the player, and the page shows it.
 | `power_restart`, `power_shut_down` | | Nothing, once Windows has started to restart or shut down |
 | `app_exit` | | Exits Lamplit with code 0, which also ends its supervisor |
 | `display_mode` | | The screen's mode, such as `3840 × 2160 at 120 Hz` |
-| `report_preview` | | Plain text with system facts and the last 50 warnings and errors, with names and paths removed |
+| `report_preview` | | Plain text with selected system facts and prefs, and the last 50 warnings and errors; paths, account and device names are removed, and current library game names become ids |
 | `report_save` | `text` (the preview) | The saved file's name, in the account's Downloads known folder |
 | `dock_state` | | The game the dock is over: `{ id, name, art, started, responding, force_close }`, or `null` |
 | `dock_resume` | | Nothing; the dock folds and the game is in front again |

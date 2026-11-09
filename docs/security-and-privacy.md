@@ -23,11 +23,10 @@ Art requests carry the user agent `lamplit/<version>`.
 
 ### App updates
 
-**Settings > Check for updates > Check for updates** controls automatic checks. It is on by default. Ten seconds
-after start, Lamplit requests `https://github.com/YordiLorenzo/lamplit/releases/latest/download/latest.json` if its
+In **Settings > Check for updates**, the **Check for updates** switch controls automatic checks. It is on by default.
+Ten seconds after start, Lamplit requests `https://github.com/YordiLorenzo/lamplit/releases/latest/download/latest.json` if its
 last check attempt was at least 24 hours ago. Failed attempts count too. Switching the setting off prevents future
-automatic requests; a request already sent can finish. The row's **Check** button still makes a check when you choose
-it, even with automatic checks off.
+automatic requests; a request already sent can finish. The **Check** action still works with automatic checks off.
 
 GitHub and its release download hosts receive your IP address, a request for Lamplit's release metadata and the
 updater's user agent, `tauri-plugin-updater/<plugin version>`. The fixed URL sends no installed Lamplit version, game
@@ -44,6 +43,8 @@ installer then closes Lamplit, replaces its installed files and starts the new L
 for no clicks or admin rights in the normal per-account installation and keeps the player's settings, art and sign-in
 task. Closing Lamplit before installation discards the download. What's new comes from the changelog built into the
 exe; displaying it sends nothing online.
+
+### Other network access
 
 Two more things go online, but not from Lamplit itself:
 
@@ -67,14 +68,16 @@ file is only a hint that the launcher can sign in; it does not confirm a live se
 
 ## The logs
 
-Lamplit writes `lamplit.log`, `supervisor.log`, `setup.log` and `restore.log` in its data folder, and keeps them there. They name
-the games it found, their folders and your sound devices. Read a log before you attach it to a public issue, and
-remove anything you'd rather not share.
+Lamplit writes `lamplit.log`, `supervisor.log`, `setup.log` and `restore.log` in its data folder, and keeps them there.
+The app's log names the games it found, their folders and your sound devices. `setup.log` records Steam repair and
+legacy task removal, under the account that runs the helper. `restore.log` records command-line and uninstall
+restoration. Read a log before attaching it to a public issue, and remove anything you'd rather not share.
 
 **Settings > System > Save a report** shows a plain-text preview before saving one file in your account's Downloads
 folder. It contains Lamplit and Windows versions, the screen mode and screen count, controller kinds, connections
 and batteries, headset status, the number of sound outputs and the default output's kind, store status and game
-counts, counts of added, hidden and favourite games, prefs, and the last 50 warning and error lines from `lamplit.log`.
+counts, counts of added, hidden and favourite games, selected prefs, and the last 50 warning and error lines from
+`lamplit.log`.
 Device names and identifiers are left out. In log lines, paths become `<folder>`, the Windows account name becomes
 `<user>`, and current library game names become their ids. Path-based game ids also have their paths removed.
 Device names in sound-switch errors and device addresses are removed, including errors about disconnected devices.
@@ -84,7 +87,9 @@ Lamplit also keeps one previous good copy of each JSON settings file in its data
 name. If a settings file is damaged, Lamplit copies it with `.damaged` added to the name, replacing an older damaged
 copy, and restores the good copy when available. These files stay on the PC and can contain the same game names,
 folders and settings as the original files. Once quiet mode has restored all settings, its record and backup are
-removed; a damaged copy is kept.
+removed; a damaged copy is kept. The same applies to completed Steam restore records.
+Interface sound levels and the two introductory hints' counts and completion stay in `prefs.json`; they are not
+sent online.
 
 ## Steam's DevTools port (off unless you switch it on)
 
@@ -118,8 +123,9 @@ deletes only the original account's Lamplit task, even if another administrator 
 
 ## Repair Steam's background service
 
-`lamplit.exe --setup`, or **Settings > System > Repair Steam's background service**, asks Windows for admin rights.
-It runs Valve's own `<Steam>\bin\SteamService.exe /repair`, after checking that Steam's folder is on a fixed drive
+**Settings > System > Repair Steam's background service** asks Windows for admin rights. From the command line,
+`lamplit.exe --setup` must be run as administrator; it does not open the prompt itself.
+The repair runs Valve's own `<Steam>\bin\SteamService.exe /repair`, after checking that Steam's folder is on a fixed drive
 and the file carries Valve's signature. This stops Steam asking for admin rights to repair that service itself.
 It does not change Lamplit's start at sign-in. Restore does not undo Valve's service repair.
 
@@ -150,8 +156,8 @@ NVIDIA's overlay notifications aren't covered; switch those off in NVIDIA's over
 - **Turn off** on a DualSense on Bluetooth drops its Bluetooth link.
 - While **Touchpad as mouse** is on, the DualSense touchpad sends ordinary mouse input to Windows (never over a
   full-screen game).
-- Lamplit only reads the controllers and the headset receiver. It never changes a controller's mode, lights or
-  rumble. A DualSense and the 2026 Steam Controller are read over shared HID handles, Xbox-style controllers through
+- Lamplit reads controllers without changing their mode, lights or rumble.
+  A DualSense and the 2026 Steam Controller are read over shared HID handles, Xbox-style controllers through
   XInput and others through Windows.Gaming.Input; none of these takes a controller from a game or from Steam Input,
   or changes what they see.
   On the headset it changes only what you change in Settings (sidetone and the auto-off timer), and those settings
@@ -167,8 +173,8 @@ These don't change any setting, but you may notice them:
   that the itch app runs in its sandbox (a Windows account of its own, with less access than yours) starts through
   the app's launcher, `itch-setup --run-game <id>`, which keeps it in the sandbox; Lamplit never starts such a game
   from its exe. So does a game that asks the itch app for an itch.io API key, which only the app hands out.
-- While **Keep the Guide button for Lamplit** is on, it closes Steam's Big Picture mode whenever it opens. It minimises Steam's main window when Lamplit takes the
-  screen back after a Steam game.
+- While **Keep the Guide button for Lamplit** is on, it closes Steam's Big Picture mode whenever it opens.
+  It minimises Steam's main window when Lamplit takes the screen back after a Steam game.
 - It keeps the PC and the screen awake while a game is starting or Steam is updating it, and lets them sleep again
   once the game runs.
 - While a game starts, its own window stays above the other windows, the taskbar included. Once the game's window
@@ -192,15 +198,16 @@ These don't change any setting, but you may notice them:
   that, Lamplit enables the shutdown privilege, which a standard account holds but has switched off, in its own
   process only. It doesn't force apps to close, and it doesn't sign out another account that is signed in.
 - **Settings > Power > Exit to Windows** closes Lamplit and its supervisor. It leaves running games and settings
-  as they are. Interface sound levels and the two first-minute hints' counts and completion stay in `prefs.json`
-  in Lamplit's data folder; they are not sent online.
+  as they are.
 
 ## Removing Lamplit
 
 Hold **Settings > System > Restore Lamplit's changes**. Its report shows quiet mode, Steam's Guide setting,
 Steam's DevTools flag, and the sign-in task one by one. It turns quiet mode and Lamplit's two automatic Steam prefs
-off, so the changes stay restored while Lamplit runs. A pre-existing DevTools flag is restored too; in that case
-Steam will still open its port as it did before Lamplit changed it. Restart Steam to apply any flag change.
+off, so the changes stay restored while Lamplit runs. If Lamplit saved a pre-existing DevTools flag, it puts that
+file back; Steam will still open its port as before. Restart Steam to apply any flag change.
+Restore leaves sound choices, headset settings and Steam's service repair as they are. It does not reset your
+library or other preferences.
 
 If Steam is closed or its DevTools port is unavailable, or Ubisoft Connect is running, the report says what to do.
 The originals remain in `quiet-saved.json` and `steam-saved.json`; Lamplit retries while it runs. Keep those files
@@ -208,16 +215,18 @@ until every change is back. Steam must be signed in with its DevTools port open 
 when necessary, restart Steam with `-cef-enable-debugging` for the restore, then restart it normally afterwards.
 
 Versions before 0.4 did not save the Guide setting or the DevTools flag's original state. Restore names this
-limitation. Check **Guide Button Focuses Steam** in Steam's Controller settings yourself. If the old version opened
-the port and the flag is still there without an original, remove `.cef-enable-remote-debugging` from Steam's folder
-only if Lamplit created it, then try Restore again. A flag you had before Lamplit can stay.
+limitation. Check **Guide Button Focuses Steam** in Steam's Controller settings yourself. If Lamplit's port switch
+was on and the flag has no saved original, restoration stays pending while that file exists. This can also happen
+with a flag that was already present when you switched the port on. Remove `.cef-enable-remote-debugging` from
+Steam's folder only if Lamplit created it, then try Restore again. A flag you had before Lamplit can stay, but the
+report will still mark that step as needing attention.
 
 Uninstall from **Settings > Apps > Installed apps**. The uninstaller runs the same restore before removing the exe;
 updates and reinstalls in place keep your settings. Silent and passive removal (`/S` or `/P`) cannot ask for admin
 rights, so a protected legacy task may remain. Remove it in Task Scheduler. If anything could not be restored,
-the uninstaller keeps the data folder and `restore.log`, even if **Delete the application data** was selected.
-Run Lamplit again to finish restoring the saved settings. When restoration succeeds, that checkbox also removes
-`%LOCALAPPDATA%\lamplit`, where the installer puts lamplit.exe by default.
+the uninstaller keeps the saved data and `restore.log`, even if **Delete the application data** was selected.
+Reinstall Lamplit into the same folder to finish restoring the saved settings. When restoration succeeds, that
+checkbox also removes `%LOCALAPPDATA%\lamplit`, where the installer puts lamplit.exe by default.
 
 For a copy used without the installer, close Lamplit and run `lamplit.exe --restore`. It writes `restore.log` and
 returns a nonzero exit code for pending changes. Finish those before deleting the exe and its data folder.

@@ -65,12 +65,13 @@ while you play. When the game closes, Lamplit is back on screen.
 - **Change art** when Steam's match is the wrong game. In a game's menu, Change art shows what Steam's store finds for
   the game's name as covers to pick from, and the lifted cover shows the one you are on. You can edit the search on
   the on-screen keyboard, or choose no art, which shows the game's name. **Back to automatic** undoes the choice. Lamplit
-  keeps it through restarts and new scans.
+  keeps it through restarts and new scans. The screen's colours follow the new art as soon as you choose it.
 - **Add a game by hand.** **Settings > Add a game** lists the installed programs Lamplit didn't take for games, and
   lets you browse the PC's drives and folders for a game's exe, all with a controller. Name the game on the on-screen
   keyboard, then choose its art. Lamplit starts it from its exe, as it does games outside any store, and its menu has
   **Remove from Lamplit**. When Lamplit finds no games at all, Cross on the empty home screen adds one.
-- **New installs show up by themselves.** Lamplit looks again every time it comes back to the front.
+- **New installs show up by themselves.** Lamplit looks again every time it comes back to the front. If a store's
+  list cannot be read, its games stay in the row until a later scan can read it.
 - **Steam's install and update state** on the game: "Installing" or "Update pending".
 
 ### Launching
@@ -92,8 +93,8 @@ while you play. When the game closes, Lamplit is back on screen.
   press Cross (A) to return to the game.
 - **Awake while it waits.** The PC and the TV don't go to sleep while a store app starts or Steam downloads an
   update.
-- **Steam stays in the background.** Lamplit closes Steam's Big Picture mode whenever Steam opens it, and minimises
-  Steam's window after a Steam game.
+- **Steam stays in the background.** While **Keep the Guide button for Lamplit** is on (the default), Lamplit closes
+  Steam's Big Picture mode whenever Steam opens it. It also minimises Steam's window after a Steam game.
 
 ### The in-game dock
 
@@ -139,7 +140,9 @@ How it works, and its limits:
 
 - **Sound settings on the TV:** choose the output and the microphone, change the volume, mute either.
 - **Sound that follows you.** Turn the PRO X 2 headset on and the sound moves to it. Plug headphones into a
-  controller on a USB cable and the sound moves there. When they go, it moves back. This is on by default.
+  controller on a USB cable and the sound moves there. When they go, it moves back, even after Lamplit restarts.
+  This is on by default.
+- **Interface sounds:** Off, Quiet or Normal in **Settings > Sound**. The home screen and dock use the same level.
 - **Headset settings, for the Logitech G PRO X 2 LIGHTSPEED only (for now):** whether it is on, its battery,
   sidetone (how much of your own voice you hear) and its auto-off timer. Other headsets work as normal Windows sound
   devices.
@@ -160,9 +163,10 @@ How it works, and its limits:
 
 ### Power
 
-- **Sleep, restart and shut down** from **Settings > Power**. Press Cross once more to confirm; if a game is
-  running, Lamplit names it first, since restarting or shutting down closes it. Apps get the chance to close, as
-  with the Start menu.
+- **Sleep, restart and shut down** from **Settings > Power**. Sleep takes one press; hold Cross (A) to restart or
+  shut down. If a game is running, Lamplit names it first, since either action closes it. Apps get the chance to
+  close, as with the Start menu.
+- **Exit to Windows** in the same menu closes Lamplit. Hold Cross (A) to confirm. Running games stay open.
 
 ### Screensaver
 
@@ -185,12 +189,22 @@ How it works, and its limits:
 
 ### Controller
 
-- **DualSense, Xbox and other controllers,** several at once. Lamplit only reads a controller: it doesn't touch its
-  lights, rumble or mode, so Steam and your games see it as before.
+- **DualSense, Xbox, the new Steam Controller and other controllers,** several at once. Lamplit only reads a
+  controller: it doesn't touch its lights, rumble or mode, so Steam and your games see it as before.
 - **Hints in your controller's buttons:** PlayStation symbols on a PlayStation controller, A, B and Y on the others.
+- **Two hints to get started:** how to open a game's menu, and how to come back from a game. Each stops once you
+  have done it, or after it has appeared on three starts.
 - **Console-style navigation:** a held direction repeats and speeds up, and L1 and R1 (LB and RB) jump five games at a
   time.
 - **A keyboard and mouse work too.**
+
+### System
+
+- **Updates from the sofa.** **Settings > Check for updates** downloads a newer version when you choose it, checks
+  its signature and installs once no game is starting or running and Lamplit is in front. Automatic checks are on
+  by default and can be switched off. See [Updating](#updating).
+- **Save a report** in **Settings > System** previews a plain-text file for a bug report, then saves it to Downloads.
+  Nothing is uploaded. See [Where are the logs?](#where-are-the-logs).
 
 ## Supported stores and hardware
 
@@ -199,7 +213,7 @@ How it works, and its limits:
 | Store | How Lamplit finds its games | Before the game starts |
 | --- | --- | --- |
 | Steam | The app manifest in each Steam library folder | Starts Steam, checks who is signed in, shows update progress |
-| Epic Games Launcher | The launcher's install manifests | Starts the launcher, checks for a saved sign-in |
+| Epic Games Launcher (original and new Preview) | The original launcher's install manifests, or the Preview's installed-game records and cached names | Starts the installed launcher, checks for a saved sign-in |
 | EA app | The installer data every EA game carries | Starts the EA app, checks for a saved sign-in |
 | Ubisoft Connect | The launcher's list of installs | Starts Ubisoft Connect, checks for a saved sign-in |
 | Rockstar Games Launcher | The launcher's list of titles | Starts the launcher, checks for a saved sign-in |
@@ -217,6 +231,8 @@ sign in if it needs to.
 
 A Battle.net game starts with a code Battle.net doesn't keep on the PC, so Lamplit carries a list of them. For a game
 newer than that list, Lamplit opens Battle.net on the game's page, and you press Play there.
+
+Epic's new launcher, in preview since 14 October 2026, has not yet been checked against a real install.
 
 Other stores aren't read yet. Their games can still turn up as games outside any store, but Lamplit then starts the
 game's exe directly, which some of those games refuse.
@@ -244,6 +260,11 @@ Bluetooth or Microsoft's wireless adapter, read through XInput. The Xbox button 
 View and Menu together to bring Lamplit forward. Windows reports only a rough battery level for them: empty, low,
 medium or full.
 
+**The new Steam Controller (2026),** over USB, Bluetooth or its receiver, is read over HID alongside Steam without
+changing the controller's mode. It uses Xbox-style button hints; hold View and Menu for one second to open the dock.
+The Steam button stays with Steam. Battery, touchpads and extra grip buttons are not read. It has not yet been tested
+on real hardware, including whether it sends input with Steam closed on every connection.
+
 **Other controllers** Windows knows, such as a DualShock 4, a Switch Pro Controller or a plain USB pad, are read
 through Windows.Gaming.Input. Windows hands their input only to the window in front, so they move around Lamplit but
 can't bring it over a game: use Alt+Tab or another controller. Once the dock is open, they move through it too.
@@ -255,7 +276,7 @@ those out, since it reads the real one. Tools such as DS4Windows that add virtua
 one controller count twice; hide the real one from other programs (HidHide does this) or close the tool.
 
 The DualSense is tested over USB and Bluetooth. The DualSense Edge sends the same reports and is read the same way,
-but hasn't been tested. Xbox and other controllers are new in this version and not yet tested on real hardware.
+but hasn't been tested. Xbox and other controllers have not yet been tested on real hardware either.
 
 ### Headset
 
@@ -281,7 +302,8 @@ is welcome; [docs/accessories.md](docs/accessories.md) shows how the PRO X 2 pro
 2. Run it. The installer installs Lamplit for your Windows account only, by default into `%LOCALAPPDATA%\Lamplit`
    (the folder that also holds its settings, logs and art), and adds it to the Start menu. It doesn't ask for admin
    rights.
-3. Start Lamplit, then run the [first-time setup](#first-time-setup) so it starts when you sign in.
+3. Start Lamplit and switch on **Settings > System > Start when I sign in** if you want it to start with Windows.
+   [First-time setup](#first-time-setup) also covers Steam's separate service repair.
 
 ### Windows warns about the installer
 
@@ -299,33 +321,50 @@ Every new version starts with no reputation, so expect the same warnings when yo
 
 ### First-time setup
 
-Lamplit runs with your normal rights. Two jobs need admin rights, so it asks Windows once:
+Open Settings (Triangle or Y, or C on a keyboard), then **System**:
 
-1. **A logon task** that starts Lamplit when you sign in to Windows. Registering a task that runs at sign-in takes
-   admin rights.
-2. **Steam's background service repaired** with Valve's own repair tool. Otherwise Steam stops to ask for admin
-   rights when it updates that service, with a prompt you can't answer from the sofa.
+1. **Start when I sign in** is a switch, off on a fresh install. Switching it on creates Lamplit's sign-in task
+   without an admin prompt. Lamplit still runs with your normal rights. Switching it off removes the task; a task
+   made by 0.3 or earlier may ask for admin rights once when removed.
+2. **Repair Steam's background service** is a separate step, using Valve's own repair tool. It asks Windows for
+   admin rights once, so Steam need not stop for a service repair prompt when you play. Answer with a mouse or
+   keyboard: the prompt runs on a secure screen that a controller can't reach. On a standard Windows account,
+   it asks for an administrator's password.
 
-Open Settings (Triangle or Y, or C on a keyboard), go to **System**, and choose **First-time setup**. Answer the Windows
-prompt with a mouse or keyboard: it runs on a secure screen that a controller can't reach. You can also run it
-from PowerShell opened as administrator; the pipe makes PowerShell wait and show what setup did:
+You can also run the Steam repair from PowerShell opened as administrator. The pipe makes PowerShell wait and
+show what the repair did:
 
 ```powershell
 & "$env:LOCALAPPDATA\Lamplit\lamplit.exe" --setup | Out-Host
 ```
 
-On a standard Windows account, the prompt asks for an administrator's password; the logon task is still made for
-your own account. Without setup Lamplit works the same, but you start it yourself.
+The repair does not change the sign-in switch. With that switch off, you start Lamplit yourself.
 
 ### Updating
 
-Run the new version's installer and install into the same folder. Your settings, art and logon task stay.
+Open **Settings > Check for updates**. Choose **Check**, or **Download and install** if a version is already shown.
+If a newer version exists, Lamplit downloads it and checks its signature. It installs only when no game is starting
+or running and Lamplit is in front, then starts again by itself. Closing Lamplit before installation discards the
+download.
+
+Automatic checks are on by default, at most once every 24 hours after a start. They only show whether an update is
+available. Switch **Check for updates** off in that section to stop them; the manual check still works. After a
+version change, a short **What's new** card shows three highlights once Lamplit has a previous version recorded.
+
+You can still run the new version's installer into the same folder. Both methods keep your settings, art and
+sign-in task. Update signatures are separate from the Windows publisher signing described above.
 
 ### Uninstalling
 
-First switch off **Quiet mode** and **Steam's DevTools port** in Settings: the uninstaller can't undo those. Then
-uninstall Lamplit from **Settings > Apps > Installed apps**. Windows usually asks for admin rights to delete the
-logon task.
+Uninstall Lamplit from Windows **Settings > Apps > Installed apps**. The uninstaller first runs **Restore Lamplit's
+changes**: quiet mode, Steam's Guide button setting and DevTools flag, and the sign-in task. A protected task from
+an older install may ask for admin rights. If a step cannot finish, the saved settings and `restore.log` stay on disk,
+even if you chose **Delete the application data**.
+
+To restore those changes without uninstalling, hold **Settings > System > Restore Lamplit's changes**. It turns
+quiet mode and Lamplit's automatic Steam changes off, and shows each result and anything that needs attention.
+It does not undo sound choices or Steam's service repair. Older versions did not save every Steam setting's original
+value; the restore report explains what to check yourself.
 [What Lamplit changes on your PC](docs/security-and-privacy.md#removing-lamplit) has the full list.
 
 ## Controls
@@ -343,7 +382,7 @@ logon task.
 | Return to the running game from the row | Circle | B | Esc |
 | Open the dock over a running game | Hold PS for 0.6 seconds | Hold View and Menu for 1 second | |
 | Bring Lamplit over a running game | Home in the dock, or hold PS with the dock off | Home in the dock, or hold View and Menu with the dock off | Alt+Tab |
-| Close Lamplit | | | Alt+F4 |
+| Close Lamplit | Settings > Power > Exit to Windows; hold Cross | Settings > Power > Exit to Windows; hold A | Alt+F4, or hold Enter on Exit to Windows |
 
 Other controllers follow the same layout by position: the bottom face button plays, the right one goes back, the top
 one opens Settings and the left one opens Find.
@@ -373,18 +412,20 @@ Change art's covers and Add a game's rows and keys take a click too. A click bes
 
 | Change | When | How to undo it |
 | --- | --- | --- |
-| A logon task, `lamplit-<your account's SID>`, that starts Lamplit at sign-in | First-time setup | The uninstaller deletes it |
-| Steam's background service repaired with Valve's `SteamService.exe /repair` | First-time setup | Nothing to undo: it is Steam's own repair |
-| Windows notification, tips and Game Bar settings; Ubisoft Connect's and Steam's notification settings | While quiet mode is on | Switch quiet mode off |
-| The file `.cef-enable-remote-debugging` in Steam's folder, and Steam started with `-cef-enable-debugging` | While **Steam's DevTools port** is on (off by default) | Switch it off in Settings > Stores |
-| Steam's **Guide Button Focuses Steam** turned off | Whenever Steam's DevTools port is open | Steam > Settings > Controller |
-| Windows' default sound output and microphone | When the headset or controller headphones come and go (on by default) | Switch **Sound follows** off in Settings > Sound |
+| A logon task, `lamplit-<your account's SID>`, that starts Lamplit at sign-in | **Start when I sign in** is switched on | Switch it off in Settings > System, restore changes or uninstall; removing an older task may ask for admin rights |
+| Steam's background service repaired with Valve's `SteamService.exe /repair` | **Repair Steam's background service** in Settings > System | Nothing to undo: it is Steam's own repair |
+| Windows notification, tips and Game Bar settings; Ubisoft Connect's and Steam's notification settings | While quiet mode is on | Switch quiet mode off, restore changes or uninstall; follow any pending steps |
+| The file `.cef-enable-remote-debugging` in Steam's folder, and Steam started with `-cef-enable-debugging` | While **Steam's DevTools port** is on (off by default) | Switch it off in Settings > Stores and restart Steam to close the port; restore changes or uninstall puts back the flag's saved original state |
+| Steam's **Guide Button Focuses Steam** turned off | While **Keep the Guide button for Lamplit** is on (the default) and Steam's DevTools port is open | Restore changes or uninstall; for changes from before 0.4, check Steam > Settings > Controller yourself |
+| Windows' default sound output and microphone | When chosen in Settings, or when the headset or controller headphones come and go (**Sound follows**, on by default) | Switch **Sound follows** off to stop automatic changes, then choose the devices you want in Settings > Sound |
 | Mouse input from the DualSense touchpad | While **Touchpad as mouse** is on (off by default) | Switch it off in Settings > Controllers |
-| Prefs, favourites, hidden games, play time, the art you chose, the games you added, logs and art in `%LOCALAPPDATA%\lamplit` | Always | Tick **Delete the application data** when you uninstall |
+| Prefs, favourites, hidden games, play time, the art you chose, the games you added, saved originals, logs and art in `%LOCALAPPDATA%\lamplit` | Always; JSON files keep a previous good `.bak` copy, and a damaged file is kept as `.damaged` | Tick **Delete the application data** when you uninstall; pending restoration keeps these files |
+| A plain-text report in Downloads | When you preview and save it in Settings > System | Delete the report when you no longer need it |
 
-Lamplit goes online only to fetch game art from Steam's store, and you can switch that off. No accounts, no
-telemetry. [What Lamplit changes on your PC, and what it sends](docs/security-and-privacy.md) has every detail,
-including the risk of Steam's DevTools port.
+Lamplit goes online for game art from Steam's store and app updates from GitHub. You can switch off online art and
+automatic update checks separately. No accounts, no telemetry.
+[What Lamplit changes on your PC, and what it sends](docs/security-and-privacy.md) has every detail, including the
+risk of Steam's DevTools port.
 
 ## How it compares
 
@@ -394,7 +435,7 @@ including the risk of Steam's DevTools port.
 | Runs on | Windows | Windows, macOS, Linux, SteamOS | Windows |
 | Games it lists | Installed games from ten stores and outside any store, found by itself, and games you add by hand | Steam games; others as shortcuts you add by hand | Games from the libraries you connect through its add-ons, and emulated games |
 | Before a game starts | Starts the store apps it needs, waits for sign-in, shows Steam's update progress | Steam updates its own games first | Starts the game through its store or its exe |
-| Controllers | DualSense, Xbox and other controllers Windows knows; keyboard and mouse | Most controllers, through Steam Input | Many controllers, through SDL |
+| Controllers | DualSense, Xbox, the new Steam Controller and other controllers Windows knows; keyboard and mouse | Most controllers, through Steam Input | Many controllers, through SDL |
 | Themes, add-ons, emulators | No | No themes or add-ons; emulators as shortcuts you add | Yes, with an add-on browser |
 | Also does | Quiet mode, sound that follows the headset, PRO X 2 headset settings, NVIDIA stats switch | Store, friends and chat, Steam Input remapping, Remote Play | Metadata, filters and collections, play time |
 
@@ -409,9 +450,9 @@ What comes next: [ROADMAP.md](ROADMAP.md).
 ### Does Lamplit replace Steam?
 
 No. Steam games still start through Steam, which has to be installed and signed in. Lamplit only takes over Steam's
-job as the big-screen interface: it closes Big Picture whenever Steam opens it, and with the DevTools port on, it
-stops the PS button from opening Big Picture. You don't need Steam at all for games from other stores; art still
-comes from Steam's public store website.
+job as the big-screen interface: with **Keep the Guide button for Lamplit** on, it closes Big Picture whenever Steam
+opens it. With the DevTools port open too, it stops the PS button from opening Big Picture. You don't need Steam
+at all for games from other stores; art still comes from Steam's public store website.
 
 ### Is it safe to use with anti-cheat?
 
@@ -422,10 +463,11 @@ objects to Lamplit, please open an issue.
 
 ### Which controllers work?
 
-The DualSense and DualSense Edge, Xbox controllers and the many that work like one, and other controllers Windows
-knows, such as a DualShock 4 or a Switch Pro Controller. A DualSense (hold PS) or an Xbox-style controller (hold View
-and Menu) can bring Lamplit over a game; other controllers work only while Lamplit is in front. The headphone and
-Turn off rows in Settings are a DualSense's. [Controllers](#controllers) has what each kind can do. Better support
+The DualSense and DualSense Edge, Xbox controllers and the many that work like one, the new Steam Controller, and
+other controllers Windows knows, such as a DualShock 4 or a Switch Pro Controller. A DualSense (hold PS), an Xbox-style
+controller or the new Steam Controller (hold View and Menu) can bring Lamplit over a game. Other controllers work
+only while Lamplit is in front. The headphone and Turn off rows in Settings are a DualSense's.
+[Controllers](#controllers) has what each kind can do. Better support
 for a controller you have is welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Why only Windows?
@@ -437,12 +479,15 @@ SteamOS's game mode already does this job for Steam.
 
 ### Does it replace the Windows shell?
 
-No. Windows starts as usual, and the logon task starts Lamplit after you sign in. If Lamplit crashes, it starts again
-within seconds; after five crashes in two minutes it stops trying until the next sign-in.
+No. Windows starts as usual. With **Start when I sign in** on, the logon task starts Lamplit after you sign in.
+If Lamplit crashes, it starts again within seconds; after five crashes in two minutes it stops trying until the
+next start.
 
 ### How do I stop it starting at sign-in?
 
-Uninstall it, or open Task Scheduler as administrator and disable or delete the task `lamplit-<your account's SID>`.
+Switch **Settings > System > Start when I sign in** off. It removes Lamplit's task without an admin prompt on new
+installs. Removing a task made by 0.3 or earlier may ask for admin rights once. The switch reads Task Scheduler,
+so a task disabled or deleted there also shows as off.
 
 ### A game is missing, or shows up twice.
 
@@ -451,14 +496,23 @@ with the store, the game's install folder, and the `discovery` lines from `lampl
 
 ### Where are the logs?
 
-In `%LOCALAPPDATA%\lamplit`: `lamplit.log` for the app, `supervisor.log` for the process that restarts it, and
-`setup.log` for first-time setup. They name your games and their folders, so read them before you post one.
+For a bug report, use **Settings > System > Save a report**. Read the preview, then choose **Save** and attach the
+text file from Downloads to your issue. It includes versions, screen, controller and store details, selected settings,
+and the last 50 warnings and errors. It removes paths, account and device names, and replaces current library game
+names with ids. Nothing is uploaded by Lamplit.
+
+Raw logs are in `%LOCALAPPDATA%\lamplit`: `lamplit.log` for the app, `supervisor.log` for the process that restarts it,
+`setup.log` for Steam repair and old task removal, and `restore.log` for restoration during uninstall or from the
+command line. An elevated helper writes to the account that ran it. Raw logs name games, devices and folders, so
+read them before posting one. If Lamplit cannot open, attach the relevant log instead.
 
 ### Does it send anything online?
 
-Only requests for game art to Steam's store, and only while **Find art online** is on: the names of games that
-aren't from Steam, what you search for in Change art, Steam app ids, and your country. Details are in
-[the privacy section](docs/security-and-privacy.md#network-art-only).
+Game art requests go to Steam's store while **Find art online** is on: names of games that aren't from Steam,
+Change art searches, Steam app ids and your country. Update checks go to GitHub while **Check for updates** is on,
+or when you choose a manual check. The automatic check sends no installed version, game names or device identifiers,
+and downloads no installer. Both switches start on. Details are in
+[the privacy section](docs/security-and-privacy.md#network-game-art-and-app-updates).
 
 ## Build from source
 
