@@ -12,6 +12,7 @@ import { letGo } from './hold.js';
 import { closeDetails, detailChoice, holdChoice, markGame, move, moveDetails, openDetails, showAllGames } from './library.js';
 import { counts, narrowed, nothingSeen, padInUse } from './logic.js';
 import { wake } from './screensaver/index.js';
+import { closeNews } from './news.js';
 import { adjustSetting, backSettings, closeSettings, moveSettings, openSettings, selectSetting } from './settings.js';
 import { actionableStep, byId, els, state } from './state.js';
 
@@ -60,6 +61,10 @@ export function act(action, source) {
   if (wake(action)) return;
   if (!counts(seen, action, source, performance.now())) return;
 
+  if (state.mode === 'news') {
+    if (action === 'ok' || action === 'back') closeNews();
+    return;
+  }
   if (state.mode === 'starting') {
     const s = actionableStep();
     if (action === 'back') cancelLaunch();

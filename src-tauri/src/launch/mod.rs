@@ -20,7 +20,7 @@ use crate::win::{
 };
 use parking_lot::Mutex;
 use std::ffi::OsStr;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use watch::Watch;
@@ -28,6 +28,9 @@ use watch::Watch;
 /// Which launch is the current one, and the game being played. Tauri state.
 #[derive(Default)]
 pub struct Launcher {
+    /// Launch checks and game watchers still on their threads. Cancellation and handover can briefly leave both
+    /// `starting` and `running` empty; updates must wait for those threads to finish too.
+    active: AtomicUsize,
     /// Bumped by every launch and cancel; the checks and the watcher of a launch stop once it has moved on.
     generation: AtomicU64,
     /// The launch the player told to go ahead although Lamplit couldn't confirm a sign-in (only Steam's is certain).
@@ -41,6 +44,10 @@ pub struct Launcher {
 }
 
 impl Launcher {
+    pub fn active(&self) -> bool {
+        self.active.load(Ordering::SeqCst) != 0
+    }
+
     /// A new launch: every check or watcher of an earlier one that is still waiting stops. Returns its generation.
     fn begin(&self) -> u64 {
         self.generation.fetch_add(1, Ordering::SeqCst) + 1
@@ -128,6 +135,7 @@ impl From<Error> for Stop {
 /// the screen meanwhile, and hands it over once the game's window is up (watch.rs).
 pub fn start(app: &AppHandle, game: Game) {
     let launcher = app.state::<Launcher>();
+    launcher.active.fetch_add(1, Ordering::SeqCst);
     let generation = launcher.begin();
     launcher.starting.store(generation, Ordering::SeqCst);
     *launcher.waiting.lock() = None;
@@ -149,6 +157,7 @@ pub fn start(app: &AppHandle, game: Game) {
             }
         }
         keep_awake(false);
+        app.state::<Launcher>().active.fetch_sub(1, Ordering::SeqCst);
     });
 }
 

@@ -16,6 +16,7 @@ src-tauri/
     events.rs        every event Rust sends the page
     error.rs         the one error type, sent to the page as { kind, message }
     prefs.rs         the player's choices in Settings (prefs.json)
+    updates.rs       signed updates, waiting until play ends, and built-in release highlights
     data.rs          the data folder and the JSON files in it
     files.rs         path helpers: drive-letter checks, safe joins, atomic writes
     logging.rs       lamplit.log, supervisor.log and setup.log
@@ -34,6 +35,7 @@ src-tauri/
 ui/
   index.html, style.css
   main.js          starts the page and connects events to their handlers
+  news.js          the new version's three highlights, dismissed with Cross or Circle
   api.js           every command and event, with JSDoc types; no other file names one
   state.js         the page's state and its elements
   input.js         controller, keyboard and mouse as one set of actions
@@ -127,10 +129,42 @@ outside any store; 0.1.0's `played.json` is still read for the last-played times
 | Big Picture guard | Every 2 seconds: closes Steam's Big Picture mode if it is open. |
 | Dock news | Every second: compares the headset and the controllers with a second before, for the news the folded dock shows. |
 | Shell | Opens links and exes with ShellExecute, one at a time. |
+| Updates | Checks once 10 seconds after start if enabled and the last attempt was at least 24 hours ago. Every second, installs a verified download only when no game runs or starts and Lamplit is in front. HTTP uses Tauri's async runtime from this thread or the command's blocking worker. |
 
 A Tauri command that isn't `async` runs on the main thread, where waiting freezes the window and controller
 navigation. So every command that touches the disk, the registry, COM, HID, a socket or the process list is `async`
 and does its work on Tauri's pool for blocking work.
+
+## App updates
+
+The page calls Lamplit's own commands; it has no updater package or plugin permissions. `updates_state` is an offline
+snapshot and the `update` event brings later changes. A check returns a version or null. Automatic checks only show
+the version; choosing the Settings row downloads it and verifies its Minisign signature with the built-in public key.
+The downloaded bytes stay in memory until the player finishes playing and Lamplit is in front. Closing Lamplit
+discards a waiting download. Check and download errors leave a retry action and are logged.
+
+`launch_start` and the installer's last launch-state check share a lock. A launch counts its worker as active before
+releasing it; an install marks itself as installing before releasing it, and new launches are refused from then on.
+An update waits until every launch worker and game watcher has finished, including the gap in starting/running state
+during cancellation or handover. Summoning Lamplit over a running game does not permit installation.
+
+The updater uses NSIS passive mode, `/P /UPDATE`, with a progress bar and no clicks. Its normal `/R /ARGS --app`
+restart is disabled: that would start the app without its crash supervisor. The plugin exits with code 0 after
+starting NSIS, so the old supervisor exits too. `LAMPLIT_CLOSE` in the pre-install hook ends any remaining supervisor
+before the app. The post-install hook starts the new exe without arguments, restoring both processes even without
+a logon task. The installer keeps the existing task and player data on an update.
+
+`prefs.json` keeps `check_updates` (true by default), `update_checked_at` (the last attempted check, including failures)
+and `last_version_seen`. `updates_whats_new` records the running version and returns the three `### Highlights`
+bullets from its `## <version> - <date>` section of the changelog embedded in the exe. The first recorded version,
+the same version and a section without exactly three highlights return null. The page waits for browsing before
+showing the card, and Cross or Circle dismisses it without launching a game.
+
+Unsigned CI builds keep `bundle.createUpdaterArtifacts` false. The release workflow overrides it to true, supplies
+the updater signing secrets and asks tauri-action to upload `latest.json`. A draft release is not served by GitHub's
+`releases/latest` endpoint; the player sees it only after publication.
+
+## Controller input
 
 Controller presses reach the page as `pad` events only while Lamplit's window is in front, and the dock's page as
 `dock-pad` events only while the dock is open, so a game never moves the menu behind it. Holding PS, or View and
@@ -316,6 +350,11 @@ message is written for the player, and the page shows it.
 | `controller_turn_off` | `id` | Nothing |
 | `controller_kind` | | The kind of controller used last (`dualsense`, `playstation`, `xbox`, `other`), or `null` before any was |
 | `prefs_state` | | The prefs |
+| `updates_state` | | `{ phase, version, error }`, without a network request |
+| `updates_check` | | A newer version or `null`; also works when automatic checks are off |
+| `updates_install` | | Update status after downloading and verifying; installation waits for play to end and the home screen to be in front |
+| `updates_whats_new` | | `{ version, highlights }` on the first start of a new version, or `null` |
+| `prefs_set_check_updates` | `on` | The prefs after changing automatic update checks |
 | `prefs_set_sound_follows`, `prefs_set_touchpad_mouse`, `prefs_set_steam_devtools`, `prefs_set_online_art`, `prefs_set_dock` | `on` | The prefs after the change |
 | `prefs_set_screensaver_minutes` | `minutes` (0 for never) | The prefs after the change |
 | `prefs_set_screensaver_style` | `style`: `mix`, `2d` or `3d` | The prefs after the change |
@@ -347,6 +386,7 @@ Rust sends these without being asked (`events.rs`):
 | `accessories` | `null` | The headset, a controller or a sound device changed; the page asks for the details |
 | `notice` | A short message | Something the player should know, such as where the sound went |
 | `setup` | `{ needed }` | Setup started from Settings has ended |
+| `update` | `{ phase, version, error }`; phase is `idle`, `checking`, `current`, `available`, `downloading`, `ready`, `installing` or `error` | An automatic or manual check, download, or waiting install changes state |
 | `dock` | `{ mode }`: `open`, `closed`, or `status` with `icon`, `text` and `warn` | The dock opens, folds away, or shows news |
 | `dock-pad` | The same steps as `pad`, and `ok-up` when Cross is let go | A controller press, while the dock is open |
 

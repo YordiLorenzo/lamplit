@@ -54,7 +54,7 @@ let askedAt = -Infinity;
 let warmed = { input: NaN, games: /** @type {unknown} */ (null) };
 
 /** Lamplit is in front and no game runs. */
-const allowed = () => !state.running && !document.hidden && document.hasFocus();
+const allowed = () => state.mode !== 'news' && !state.running && !document.hidden && document.hasFocus();
 const minutes = () => state.prefs?.screensaver_minutes ?? SAVER_DEFAULT.minutes;
 
 /**

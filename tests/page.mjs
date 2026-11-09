@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rust } from './contract.mjs';
-import { values } from './fixtures.mjs';
+import { ipc, values } from './fixtures.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const pageOrigin = 'http://tauri.localhost';
@@ -25,7 +25,7 @@ export const commands = Object.fromEntries(rust().defined);
 // in the test.
 // earlyGames: a 'games' event brings this list while the answer to library_games (`games`) is still on its way.
 // padKind: the kind of controller Rust says was used last, before the page listened.
-const fakeTauri = ({ games, running = null, launchError = null, earlyGames = null, padKind = null }) => `
+const fakeTauri = ({ games, running = null, launchError = null, earlyGames = null, padKind = null, update = { phase: 'idle', version: null, error: null }, news = null }) => `
   const commands = ${JSON.stringify(commands)};
   const values = ${JSON.stringify(values)};
   const sent = {
@@ -36,6 +36,7 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
     'pad-kind': (kind) => values.pad_kind.includes(kind),
     'launch-step': (step) => values.step_state.includes(step.state),
     stores: (list) => list.every((s) => values.account.includes(s.account)),
+    update: (status) => values.update_phase.includes(status.phase),
   };
   window.__calls = [];
   window.__pending = 0;
@@ -45,11 +46,24 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
   window.addEventListener('error', (e) => window.__errors.push(String(e.message)));
   document.addEventListener('securitypolicyviolation', (e) =>
     window.__errors.push('CSP blocked ' + e.blockedURI + ' (' + e.violatedDirective + ')'));
+  let updateState = ${JSON.stringify(update)};
   const replies = {
     library_games: ${JSON.stringify(games)},
     launch_running: ${JSON.stringify(running)},
     stores_status: [],
     controller_kind: ${JSON.stringify(padKind)},
+    updates_state: () => updateState,
+    updates_whats_new: ${JSON.stringify(news)},
+    updates_check: () => {
+      window.__emit('update', { phase: updateState.version ? 'available' : 'current', version: updateState.version, error: null });
+      return updateState.version;
+    },
+    updates_install: () => {
+      if (!updateState.version) throw { kind: 'player', message: 'Check for an update first.' };
+      window.__emit('update', { ...updateState, phase: 'ready' });
+      return updateState;
+    },
+    prefs_set_check_updates: ({ on }) => ({ ...${JSON.stringify(ipc('prefs'))}, check_updates: on }),
   };
   const early = ${JSON.stringify(earlyGames)};
   window.__TAURI__ = {
@@ -82,6 +96,7 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
   };
   window.__emit = (name, payload) => {
     if (sent[name] && !sent[name](payload)) throw new Error('Rust never sends this ' + name + ': ' + JSON.stringify(payload));
+    if (name === 'update') updateState = structuredClone(payload);
     (window.__listeners[name] ?? []).forEach((cb) => cb({ payload: structuredClone(payload) }));
   };
 `;

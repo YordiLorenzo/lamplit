@@ -482,6 +482,7 @@ export const SECTIONS = [
   { key: 'stores', title: 'Stores', icon: 'i-store' },
   { key: 'screensaver', title: 'Screensaver', icon: 'i-screensaver' },
   { key: 'system', title: 'System', icon: 'i-system' },
+  { key: 'updates', title: 'Check for updates', icon: 'i-restart' },
   { key: 'add', title: 'Add a game', icon: 'i-add' },
   { key: 'hidden', title: 'Hidden games', icon: 'i-eye-off' },
   { key: 'power', title: 'Power', icon: 'i-power' },
@@ -576,6 +577,7 @@ export const visibleSections = (state) =>
  */
 export function sectionSummary(key, state) {
   const { sound, accessories: acc } = state;
+  if (key === 'updates') return [state.update.phase === 'idle' ? 'Check' : updateRow(state.update).label ?? ''];
   if (key === 'sound') {
     const out = sound?.outputs.find((d) => d.default);
     if (!out) return ['…'];
@@ -703,6 +705,9 @@ export function sectionRows(key, state) {
     if (state.setup?.needed) rows.push({ kind: 'setup', label: 'First-time setup (asks Windows once)', value: 'Needed', tone: 'warn' });
     rows.push({ kind: 'onlineart', label: "Find art online (sends game names to Steam's store)", value: onOff(prefs?.online_art) });
     rows.push({ label: 'Display', value: state.display ?? 'Unknown' });
+  } else if (key === 'updates') {
+    rows.push(updateRow(state.update));
+    rows.push({ kind: 'checkupdates', label: 'Check for updates', value: onOff(prefs?.check_updates ?? true), note: 'Automatically, at most once a day after start' });
   } else if (key === 'hidden') {
     for (const g of hiddenGames(state)) rows.push({ kind: 'unhide', id: g.id, store: g.store, label: g.name, value: 'Show' });
     // The section stays open when its last game is shown again.
@@ -716,6 +721,21 @@ export function sectionRows(key, state) {
     }
   }
   return rows;
+}
+
+/** The row stays focusable during work, so progress doesn't move the controller to the switch below it.
+ * @param {import('./api.js').Update} update @returns {Row}
+ */
+export function updateRow(update) {
+  const { phase, version, error } = update;
+  const name = `Lamplit ${version}`;
+  if (phase === 'checking') return { kind: 'update', label: 'Checking for updates…', value: '' };
+  if (phase === 'downloading') return { kind: 'update', label: `Downloading ${name}…`, value: '' };
+  if (phase === 'ready') return { kind: 'update', label: `${name} installs when you're done playing`, value: 'Ready' };
+  if (phase === 'installing') return { kind: 'update', label: `Installing ${name}…`, value: 'Lamplit will restart' };
+  if (phase === 'error') return { kind: 'update', label: error ?? 'Update failed', value: 'Try again', tone: 'warn' };
+  if (version) return { kind: 'update', label: `${name} is available`, value: 'Download and install' };
+  return { kind: 'update', label: phase === 'current' ? 'Lamplit is up to date' : 'Check for updates', value: 'Check' };
 }
 
 /** What a focusable row is about, unchanged when the rows around it change. @param {Row} row */

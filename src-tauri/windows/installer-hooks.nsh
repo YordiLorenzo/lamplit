@@ -22,6 +22,14 @@
   !insertmacro LAMPLIT_CLOSE
 !macroend
 
+; The updater disables Tauri's /R restart, which preserves --app and loses the supervisor. Once the new files
+; are in place, start without arguments so the supervisor comes back too. This needs no logon task or mouse.
+!macro NSIS_HOOK_POSTINSTALL
+  ${If} $UpdateMode = 1
+    nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" ""
+  ${EndIf}
+!macroend
+
 !macro NSIS_HOOK_PREUNINSTALL
   !insertmacro LAMPLIT_CLOSE
 !macroend

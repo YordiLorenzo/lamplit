@@ -67,6 +67,12 @@ function renderSettings() {
   renderStatus();
 }
 
+/** @param {import('./api.js').Update} update */
+export function setUpdate(update) {
+  state.update = update;
+  if (state.mode === 'settings') renderSettings();
+}
+
 // ---------- the plate ----------
 
 /**
@@ -329,7 +335,24 @@ async function adjustScreensaver(dir) {
 }
 
 /** The rows that switch one of the player's prefs. */
-const PREF_ROWS = ['follows', 'touchmouse', 'steamport', 'onlineart', 'dock', 'saverafter'];
+const PREF_ROWS = ['follows', 'touchmouse', 'steamport', 'onlineart', 'dock', 'saverafter', 'checkupdates'];
+let updateBusy = false;
+
+async function chooseUpdate() {
+  if (updateBusy || ['checking', 'downloading', 'ready', 'installing'].includes(state.update.phase)) return;
+  updateBusy = true;
+  try {
+    if (!state.update.version) {
+      const version = await api.updatesCheck();
+      if (!version) return;
+    }
+    // Only this player action downloads. The automatic check merely changes the row.
+    await api.updatesInstall();
+  } finally {
+    updateBusy = false;
+    setUpdate(await api.updatesState());
+  }
+}
 /** What each row of Settings > Power calls. */
 const POWER = { sleep: api.powerSleep, restart: api.powerRestart, shutdown: api.powerShutDown };
 
@@ -386,6 +409,10 @@ export async function selectSetting() {
       toast(state.prefs.steam_devtools ? "Steam's DevTools port opens when Steam next starts." : "Steam's DevTools port closes when Steam next starts.");
     } else if (row.kind === 'onlineart') {
       state.prefs = await api.prefsSetOnlineArt(!state.prefs?.online_art);
+    } else if (row.kind === 'checkupdates') {
+      state.prefs = await api.prefsSetCheckUpdates(!(state.prefs?.check_updates ?? true));
+    } else if (row.kind === 'update') {
+      await chooseUpdate();
     } else if (row.kind === 'dock') {
       state.prefs = await api.prefsSetDock(!state.prefs?.dock);
     } else if (row.kind === 'padoff') {

@@ -80,6 +80,10 @@ export const els = {
   settingsFace: $('settingsFace'),
   settingsTitle: $('settingsTitle'),
   settingsList: $('settingsList'),
+  news: $('news'),
+  newsVersion: $('newsVersion'),
+  newsList: $('newsList'),
+  newsClose: $('newsClose'),
   find: $('find'),
   findPlate: $('findPlate'),
   findKeys: $('findKeys'),
@@ -108,7 +112,7 @@ export const state = {
   findFocus: 'a',
   /** Find's store list is open, grown up out of its chip */
   findList: false,
-  /** @type {'browse' | 'starting' | 'details' | 'settings' | 'find' | 'add'} details: a game's menu (library.js) */
+  /** @type {'browse' | 'starting' | 'details' | 'settings' | 'find' | 'add' | 'news'} details: a game's menu (library.js) */
   mode: 'browse',
   /** whether the library has come in yet, so an empty row means no games found */
   loaded: false,
@@ -186,6 +190,8 @@ export const state = {
   accessories: null,
   /** @type {import('./api.js').Prefs | null} */
   prefs: null,
+  /** @type {import('./api.js').Update} */
+  update: { phase: 'idle', version: null, error: null },
   /** @type {string | null} e.g. "3840 × 2160 at 120 Hz" */
   display: null,
   /**

@@ -9,7 +9,7 @@ use tauri::{AppHandle, Manager};
 
 const FILE: &str = "prefs.json";
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Prefs {
     /// Sound follows the headset and controller headphones (accessories.rs).
@@ -27,6 +27,12 @@ pub struct Prefs {
     pub screensaver_minutes: u32,
     /// Holding PS over a game opens the dock (dock/) rather than the home screen.
     pub dock: bool,
+    /// Automatic GitHub update checks; a manual check works even when this is off.
+    pub check_updates: bool,
+    /// Unix seconds of the last check attempt, including a failed one, so restarts don't keep asking GitHub.
+    pub update_checked_at: u64,
+    /// Empty on a fresh install, which shows no What's new card.
+    pub last_version_seen: String,
 }
 
 impl Default for Prefs {
@@ -38,6 +44,9 @@ impl Default for Prefs {
             online_art: true,
             screensaver_minutes: 5,
             dock: true,
+            check_updates: true,
+            update_checked_at: 0,
+            last_version_seen: String::new(),
         }
     }
 }
@@ -50,14 +59,14 @@ pub fn load() -> PrefsState {
 }
 
 pub fn get(app: &AppHandle) -> Prefs {
-    *app.state::<PrefsState>().0.lock()
+    app.state::<PrefsState>().0.lock().clone()
 }
 
 /// Saves a change, then makes it.
 pub fn change(app: &AppHandle, change: impl FnOnce(&mut Prefs)) -> Result<()> {
     let state = app.state::<PrefsState>();
     let mut prefs = state.0.lock();
-    let mut changed = *prefs;
+    let mut changed = prefs.clone();
     change(&mut changed);
     data::save(FILE, &changed)?;
     *prefs = changed;

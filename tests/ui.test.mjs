@@ -500,7 +500,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('c');
   await idle(page);
   let v = await view();
-  check('settings open on the list of sections, Power last', v.open && v.title === 'Settings' && v.rows.length === 9 && v.rows[8].startsWith('Power'), JSON.stringify(v.rows));
+  check('settings open on the list of sections, Power last', v.open && v.title === 'Settings' && v.rows.length === 10 && v.rows.at(-1).startsWith('Power'), JSON.stringify(v.rows));
   check('section summaries say what is going on', v.rows[0].includes('PRO X 2 headset · 45%') && v.rows[1].includes('On · 80% · charging') && v.rows[2].includes('2 connected · 65%, medium') && v.rows[4].includes('EA app: sign in'), JSON.stringify(v.rows));
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
@@ -4439,6 +4439,80 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     live: getComputedStyle(document.querySelector('.hero.on')).visibility,
   }));
   check('a display change as the copy is drawn drops it, and the live stage stays', resized.stage === null && resized.copy === 0 && resized.live === 'visible', JSON.stringify(resized));
+  await close(page);
+}
+
+// Updates only download after a player action. Rust owns the game/foreground gate; these are its real payloads.
+{
+  const page = await open({ games: [game(1)], update: ipc('update') });
+  const calls = (cmd) => page.evaluate((name) => window.__calls.filter(([c]) => c === name).length, cmd);
+  await idle(page);
+  check('a startup update result never downloads or checks from the page', await calls('updates_install') === 0 && await calls('updates_check') === 0);
+  await emit(page, 'pad', 'triangle');
+  await settled(page);
+  await page.locator('#settingsList .row').filter({ hasText: 'Check for updates' }).click();
+  await settled(page);
+  check('the found update names its version and action', (await page.locator('#settingsList').textContent()).includes('Lamplit 0.4.1 is availableDownload and install'));
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('choosing the update downloads once and shows the deferred install', await calls('updates_install') === 1 && (await page.locator('#settingsList').textContent()).includes("installs when you're done playing"));
+  await emit(page, 'pad', 'ok');
+  check('Cross on a ready download cannot start it again', await calls('updates_install') === 1);
+  await page.screenshot({ path: path.join(shots, 'update-ready.png') });
+  await emit(page, 'update', like(ipc('update'), { phase: 'installing' }));
+  check('installation says Lamplit will restart', (await page.locator('#settingsList').textContent()).includes('Lamplit will restart'));
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1)] });
+  await emit(page, 'pad', 'triangle');
+  await settled(page);
+  await page.locator('#settingsList .row').filter({ hasText: 'Check for updates' }).click();
+  await settled(page);
+  await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('automatic update checks can be switched off', await page.evaluate(() => window.__calls.some(([cmd, args]) => cmd === 'prefs_set_check_updates' && args.on === false)));
+  await emit(page, 'pad', 'up');
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('manual check still works with automatic checks off', (await page.locator('#settingsList').textContent()).includes('Lamplit is up to date') && await page.evaluate(() => !window.__calls.some(([cmd]) => cmd === 'updates_install')));
+  await page.evaluate(() => {
+    window.__settings = {
+      updates_check: async () => {
+        window.__emit('update', { phase: 'available', version: '0.4.1', error: null });
+        return '0.4.1';
+      },
+      updates_install: async () => {
+        window.__emit('update', { phase: 'error', version: '0.4.1', error: "Couldn't download or verify the update. Try again." });
+        throw { kind: 'player', message: "Couldn't download or verify the update. Try again." };
+      },
+    };
+  });
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('a failed signature or download is shown and can be retried', (await page.locator('#settingsList').textContent()).includes("Couldn't download or verify") && (await page.locator('#settingsList').textContent()).includes('Try again'));
+  await page.evaluate(() => { delete window.__settings.updates_install; });
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('retrying a download keeps the chosen version', (await page.locator('#settingsList').textContent()).includes("Lamplit 0.4.1 installs when you're done playing"));
+  await close(page);
+}
+for (const dismiss of ['ok', 'back']) {
+  const page = await open({ games: [game(1)], news: ipc('whats-new') });
+  await until(page, () => !document.getElementById('news').hidden);
+  check(`What's new has exactly three built-in highlights (${dismiss})`, await page.locator('#newsList li').count() === 3 && (await page.locator('#newsVersion').textContent()) === 'Lamplit 0.4.1');
+  await emit(page, 'pad', 'triangle');
+  check('the card holds input away from Settings and games', await page.evaluate(() => !document.getElementById('settings').classList.contains('on') && !window.__calls.some(([cmd]) => cmd === 'launch_start')));
+  if (dismiss === 'ok') await page.screenshot({ path: path.join(shots, 'whats-new.png') });
+  await emit(page, 'pad', dismiss);
+  check(`${dismiss} dismisses What's new without starting a game`, await page.evaluate(() => document.getElementById('news').hidden && !window.__calls.some(([cmd]) => cmd === 'launch_start')));
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1)], news: null });
+  await idle(page);
+  check('a fresh install or version without highlights shows no card', await page.evaluate(() => document.getElementById('news').hidden));
   await close(page);
 }
 

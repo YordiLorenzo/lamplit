@@ -9,7 +9,8 @@ import { mountIcons } from './icons.js';
 import { onPlay, onStep, onSummoned } from './launch.js';
 import { layout, onArt, setGames } from './library.js';
 import { startScreensaver, wake } from './screensaver/index.js';
-import { refreshAccessories, setSetup, setStores } from './settings.js';
+import { refreshAccessories, setSetup, setStores, setUpdate } from './settings.js';
+import { showNews } from './news.js';
 import { nameSprings } from './springs.js';
 import { steady } from './steady.js';
 import { readStatus, startStatus } from './status.js';
@@ -90,6 +91,7 @@ async function init() {
   startStatus();
   let heardGames = false;
   let heardKind = false;
+  let heardUpdate = false;
   await Promise.all([
     api.onGames((games) => {
       heardGames = true;
@@ -119,6 +121,10 @@ async function init() {
     }),
     api.onNotice(toast),
     api.onSetup(setSetup),
+    api.onUpdate((update) => {
+      heardUpdate = true;
+      setUpdate(update);
+    }),
   ]);
   const [list, running, stores, kind, prefs] = await Promise.all([
     api.libraryGames(),
@@ -135,6 +141,9 @@ async function init() {
   if (list && !heardGames) setGames(list);
   // The controllers were read before the page listened; a "pad-kind" event since is newer than this answer.
   if (kind && !heardKind) setPadKind(kind);
+  // These don't hold up the library if the prefs file can't be written for What's new.
+  api.updatesState().then((update) => { if (!heardUpdate) setUpdate(update); }).catch(() => {});
+  api.updatesWhatsNew().then(showNews).catch((e) => toast(e.message, { warn: true }));
   api.log.info(`ready ${Math.round(performance.now())} ms after the page started, ${list?.length ?? 'no'} games yet`);
 }
 
