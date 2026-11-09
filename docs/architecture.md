@@ -113,6 +113,18 @@ outside any store; 0.1.0's `played.json` is still read for the last-played times
 (the settings quiet mode replaced), plus the logs. WebView2 keeps its profile in
 `%LOCALAPPDATA%\io.github.yordilorenzo.lamplit`.
 
+`prefs.json` also keeps the interface sound level (`off`, `quiet` or `normal`, the default) and each first-minute
+hint's shown-start count and completion. A hint counts only when its screen is reached, at most once per app
+process, and stops after three starts or its action. Opening a game's menu completes its hint; a `summoned` event
+with a running game or the dock opening completes the return hint. A WebView profile reset leaves this state intact.
+Both pages read the sound level at start and follow `interface-sounds` events; Quiet uses one third of Normal's gain.
+The home page caches the art's accent and brightness by its URL, and applies a finished sample only if that art is
+still focused, so Change art also changes the screen's colours.
+
+Settings > Power > Exit to Windows uses the same hold as Restart and Shut down, then calls Tauri's `exit(0)`.
+That successful exit closes both windows and ends the supervisor, as Alt+F4 on the home window does. It leaves
+running games and Windows settings as they are.
+
 ## Inside the app
 
 `lib.rs` loads the prefs, starts the first library scan and these threads:
@@ -318,9 +330,12 @@ message is written for the player, and the page shows it.
 | `prefs_state` | | The prefs |
 | `prefs_set_sound_follows`, `prefs_set_touchpad_mouse`, `prefs_set_steam_devtools`, `prefs_set_online_art`, `prefs_set_dock` | `on` | The prefs after the change |
 | `prefs_set_screensaver_minutes` | `minutes` (0 for never) | The prefs after the change |
-| `prefs_set_screensaver_style` | `style`: `mix`, `2d` or `3d` | The prefs after the change |
+| `prefs_set_interface_sounds` | `level`: `off`, `quiet` or `normal` | The prefs after the change; both pages hear the new level |
+| `prefs_hint_shown` | `name`: `game_menu` or `return_home` | Whether to show it; counts this start once |
+| `prefs_hint_done` | `name`: `game_menu` or `return_home` | Nothing; the hint stays dismissed |
 | `power_sleep` | | Nothing, once the PC has woken up again |
 | `power_restart`, `power_shut_down` | | Nothing, once Windows has started to restart or shut down |
+| `app_exit` | | Exits Lamplit with code 0, which also ends its supervisor |
 | `display_mode` | | The screen's mode, such as `3840 × 2160 at 120 Hz` |
 | `dock_state` | | The game the dock is over: `{ id, name, art, started, responding, force_close }`, or `null` |
 | `dock_resume` | | Nothing; the dock folds and the game is in front again |
@@ -349,6 +364,7 @@ Rust sends these without being asked (`events.rs`):
 | `setup` | `{ needed }` | Setup started from Settings has ended |
 | `dock` | `{ mode }`: `open`, `closed`, or `status` with `icon`, `text` and `warn` | The dock opens, folds away, or shows news |
 | `dock-pad` | The same steps as `pad`, and `ok-up` when Cross is let go | A controller press, while the dock is open |
+| `interface-sounds` | `off`, `quiet` or `normal` | Settings saved a new interface sound level; both pages apply it |
 
 ## Keeping the two sides in step
 

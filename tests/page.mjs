@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rust } from './contract.mjs';
-import { values } from './fixtures.mjs';
+import { ipc, values } from './fixtures.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const pageOrigin = 'http://tauri.localhost';
@@ -25,7 +25,7 @@ export const commands = Object.fromEntries(rust().defined);
 // in the test.
 // earlyGames: a 'games' event brings this list while the answer to library_games (`games`) is still on its way.
 // padKind: the kind of controller Rust says was used last, before the page listened.
-const fakeTauri = ({ games, running = null, launchError = null, earlyGames = null, padKind = null }) => `
+const fakeTauri = ({ games, running = null, launchError = null, earlyGames = null, padKind = null, prefs = ipc('prefs') }) => `
   const commands = ${JSON.stringify(commands)};
   const values = ${JSON.stringify(values)};
   const sent = {
@@ -42,6 +42,8 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
   window.__logs = [];
   window.__listeners = {};
   window.__errors = [];
+  window.__prefs = ${JSON.stringify(prefs)};
+  const shownHints = new Set();
   window.addEventListener('error', (e) => window.__errors.push(String(e.message)));
   document.addEventListener('securitypolicyviolation', (e) =>
     window.__errors.push('CSP blocked ' + e.blockedURI + ' (' + e.violatedDirective + ')'));
@@ -50,6 +52,27 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
     launch_running: ${JSON.stringify(running)},
     stores_status: [],
     controller_kind: ${JSON.stringify(padKind)},
+    prefs_state: () => window.__prefs,
+    prefs_set_interface_sounds: ({ level }) => {
+      if (!['off', 'quiet', 'normal'].includes(level)) throw { kind: 'player', message: 'Choose Off, Quiet or Normal for interface sounds.' };
+      window.__prefs.interface_sounds = level;
+      window.__emit('interface-sounds', level);
+      return window.__prefs;
+    },
+    prefs_hint_shown: ({ name }) => {
+      const hint = window.__prefs.hints[name];
+      if (!hint) throw { kind: 'player', message: 'That hint is not available.' };
+      if (hint.done || (hint.starts >= 3 && !shownHints.has(name))) return false;
+      if (!shownHints.has(name)) hint.starts++;
+      shownHints.add(name);
+      return true;
+    },
+    prefs_hint_done: ({ name }) => {
+      const hint = window.__prefs.hints[name];
+      if (!hint) throw { kind: 'player', message: 'That hint is not available.' };
+      hint.done = true;
+    },
+    app_exit: () => { window.__exited = true; },
   };
   const early = ${JSON.stringify(earlyGames)};
   window.__TAURI__ = {

@@ -2,7 +2,7 @@
 // Starts the page: listens to Rust's events, then fetches what happened before the page was ready.
 
 import * as api from './api.js';
-import { setPadKind, toast } from './hints.js';
+import { finishHint, setPadKind, toast } from './hints.js';
 import { meter } from './frames.js';
 import { act } from './input.js';
 import { mountIcons } from './icons.js';
@@ -10,6 +10,7 @@ import { onPlay, onStep, onSummoned } from './launch.js';
 import { layout, onArt, setGames } from './library.js';
 import { startScreensaver, wake } from './screensaver/index.js';
 import { refreshAccessories, setSetup, setStores } from './settings.js';
+import { startSounds } from './sounds.js';
 import { nameSprings } from './springs.js';
 import { steady } from './steady.js';
 import { readStatus, startStatus } from './status.js';
@@ -91,6 +92,7 @@ async function init() {
   let heardGames = false;
   let heardKind = false;
   await Promise.all([
+    startSounds(),
     api.onGames((games) => {
       heardGames = true;
       setGames(games);
@@ -103,6 +105,7 @@ async function init() {
     }),
     api.onPlay(onPlay),
     api.onSummoned((runningId) => {
+      if (runningId) finishHint('return_home');
       // Holding PS comes as a summon rather than a press; over the screensaver it only ends it, as any first press
       // does. What Rust says runs still counts.
       if (wake('summon')) state.running = runningId;
@@ -110,6 +113,9 @@ async function init() {
         onSummoned(runningId);
         if (runningId && state.mode !== 'starting') arrive();
       }
+    }),
+    api.onDock((show) => {
+      if (show.mode === 'open') finishHint('return_home');
     }),
     api.onLaunchStep(onStep),
     api.onStores(setStores),

@@ -161,10 +161,16 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {Controller[]} controllers
  */
 
+/** @typedef {'off' | 'quiet' | 'normal'} InterfaceSounds */
+/** @typedef {'game_menu' | 'return_home'} FirstHint */
+/** @typedef {{ starts: number, done: boolean }} HintProgress */
+
 /**
  * The player's choices on the Settings screen.
  * @typedef {object} Prefs
  * @property {boolean} sound_follows  sound follows the headset and controller headphones
+ * @property {InterfaceSounds} interface_sounds
+ * @property {Record<FirstHint, HintProgress>} hints
  * @property {boolean} touchpad_mouse
  * @property {boolean} steam_devtools  Lamplit opens Steam's DevTools port (the PS button guard and Steam's pop-ups)
  * @property {boolean} online_art  art comes from Steam's store too
@@ -359,6 +365,12 @@ export const controllerKind = () => call('controller_kind');
 export const prefsState = () => call('prefs_state');
 /** @param {boolean} on @returns {Promise<Prefs>} */
 export const prefsSetSoundFollows = (on) => call('prefs_set_sound_follows', { on });
+/** @param {InterfaceSounds} level @returns {Promise<Prefs>} */
+export const prefsSetInterfaceSounds = (level) => call('prefs_set_interface_sounds', { level });
+/** Counts this start once; false after three starts or completing the hint. @param {FirstHint} name @returns {Promise<boolean>} */
+export const prefsHintShown = (name) => call('prefs_hint_shown', { name });
+/** @param {FirstHint} name @returns {Promise<void>} */
+export const prefsHintDone = (name) => call('prefs_hint_done', { name });
 /** @param {boolean} on @returns {Promise<Prefs>} */
 export const prefsSetTouchpadMouse = (on) => call('prefs_set_touchpad_mouse', { on });
 /** Steam opens its DevTools port from its next start, or doesn't. @param {boolean} on @returns {Promise<Prefs>} */
@@ -375,6 +387,8 @@ export const powerSleep = () => call('power_sleep');
 export const powerRestart = () => call('power_restart');
 /** @returns {Promise<void>} once Windows has started to shut down */
 export const powerShutDown = () => call('power_shut_down');
+/** Closes Lamplit and its supervisor. @returns {Promise<void>} */
+export const appExit = () => call('app_exit');
 /** @returns {Promise<string | null>} e.g. "3840 × 2160 at 120 Hz" */
 export const displayMode = () => call('display_mode');
 
@@ -410,6 +424,8 @@ export const onLaunchStep = (handle) => on('launch-step', handle);
 export const onStores = (handle) => on('stores', handle);
 /** The headset, a controller or the sound device changed; accessoriesState and soundState have the news. @param {() => void} handle */
 export const onAccessories = (handle) => on('accessories', handle);
+/** @param {(level: InterfaceSounds) => void} handle */
+export const onInterfaceSounds = (handle) => on('interface-sounds', handle);
 /** A short message for the player. @param {(text: string) => void} handle */
 export const onNotice = (handle) => on('notice', handle);
 /** Setup started from Settings has ended. @param {(setup: Setup) => void} handle */

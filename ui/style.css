@@ -1052,7 +1052,7 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
   color: var(--ink-dim);
 }
 #hint span { display: inline-flex; align-items: center; gap: 1vh; }
-:is(#hint, #steps .chip) b {
+:is(#hint, #steps .chip, #firstHint) b {
   display: inline-grid;
   place-items: center;
   width: 3.2vh;
@@ -1063,9 +1063,9 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
   font-weight: 700;
   line-height: 1;
 }
-:is(#hint, #steps .chip) b svg { width: 2vh; height: 2vh; }
+:is(#hint, #steps .chip, #firstHint) b svg { width: 2vh; height: 2vh; }
 /* The symbol as text, for screen readers: the drawn shape shows instead. */
-:is(#hint, #steps .chip) b i { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+:is(#hint, #steps .chip, #firstHint) b i { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 :is(#hint, #steps .chip) b.cross { color: #8fb0ff; }
 :is(#hint, #steps .chip) b.circle { color: #ff7a7a; }
 :is(#hint, #steps .chip) b.options { color: var(--ink); }
@@ -1101,6 +1101,19 @@ body:has(#settings.on) #toast { top: var(--status-top); right: calc(var(--safe-x
 body:has(#settings.on #add.on) #toast { right: calc(var(--safe-x) + 46vw + 2vh); }
 /* The line keeps the height of a pill, so one coming doesn't move what narrows the row. */
 #filters { min-height: 5.6vh; }
+
+/* Above the row and away from the status capsule. Panels hide it before their cover or menu lifts. */
+#firstHint {
+  --u: .85vh;
+  position: fixed;
+  top: calc(var(--status-top) + var(--status-h) + var(--plate-inset) + 8vh);
+  right: calc(var(--safe-x) + var(--plate-inset));
+  max-width: 46vw;
+  z-index: 5;
+  pointer-events: none;
+}
+#firstHint[hidden] { display: none; }
+#firstHint .text { display: flex; align-items: center; gap: .7vh; }
 
 /* Reduce Motion: Settings, Find, Add a game and the messages fade in place for 150 ms rather than sliding. The faces of
    Settings' plate fade where they are in the same 150 ms, one out and then the other in, so their titles never show

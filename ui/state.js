@@ -94,6 +94,7 @@ export const els = {
   toast: $('toast'),
   gameNews: $('gameNews'),
   hint: $('hint'),
+  firstHint: $('firstHint'),
 };
 
 export const state = {
@@ -168,7 +169,7 @@ export const state = {
   heroLayer: 0,
   /** @type {string | null} */
   heroKey: null,
-  /** @type {Map<string, { rgb: number[], light: number }>} accent colour and brightness per game, sampled from its art */
+  /** @type {Map<string, { rgb: number[], light: number }>} accent colour and brightness per art URL */
   accents: new Map(),
   /** @type {LaunchStep[]} checks of the launch in progress */
   steps: [],
