@@ -50,6 +50,17 @@ const FACES = {
 export const buttonFace = (kind, button) =>
   FACES[kind === 'dualsense' || kind === 'playstation' ? 'playstation' : 'xbox'][button];
 
+/**
+ * How to come back from a game with the controller in use. A DualShock 4 and the other controllers read through
+ * Windows.Gaming.Input reach Lamplit only while it is in front (devices/pad/other.rs), so their hold can't.
+ * @param {PadKind} kind
+ */
+export function returnHint(kind) {
+  if (kind === 'dualsense') return 'Hold PS to come back from a game';
+  if (kind === 'xbox') return 'Hold View and Menu to come back from a game';
+  return 'Press Alt+Tab to come back from a game';
+}
+
 // ---------- the controller and the keyboard ----------
 
 /** How long a mirrored key and the pad's own press can be apart and still be one press. */
@@ -482,19 +493,21 @@ export const SECTIONS = [
   { key: 'stores', title: 'Stores', icon: 'i-store' },
   { key: 'screensaver', title: 'Screensaver', icon: 'i-screensaver' },
   { key: 'system', title: 'System', icon: 'i-system' },
+  { key: 'updates', title: 'Check for updates', icon: 'i-restart' },
   { key: 'add', title: 'Add a game', icon: 'i-add' },
   { key: 'hidden', title: 'Hidden games', icon: 'i-eye-off' },
   { key: 'power', title: 'Power', icon: 'i-power' },
 ];
 /**
  * The rows of Settings > Power. Sleep can be undone with any button, so one press does it; Restart and Shut down are
- * held, and close a game that runs, which stays open while the PC sleeps.
+ * held, and close a game that runs, which stays open while the PC sleeps or Lamplit exits.
  * @type {{ id: string, label: string, icon: import('./icons.js').IconId, hold: string, note: string }[]}
  */
 const POWER = [
   { id: 'sleep', label: 'Sleep', icon: 'i-sleep', hold: '', note: '' },
   { id: 'restart', label: 'Restart', icon: 'i-restart', hold: 'Hold to restart', note: 'Restarts the PC' },
   { id: 'shutdown', label: 'Shut down', icon: 'i-power', hold: 'Hold to shut down', note: 'Turns the PC off' },
+  { id: 'exit', label: 'Exit to Windows', icon: 'i-home', hold: 'Hold to exit', note: 'Closes Lamplit' },
 ];
 /** The auto-off times the headset offers, in minutes; 0 is never. */
 const AUTO_OFF = [0, 5, 10, 15, 20, 30, 60];
@@ -508,6 +521,15 @@ const ACCOUNT = {
 };
 /** @param {boolean | null | undefined} v */
 const onOff = (v) => (v ? 'On' : 'Off');
+
+/** @type {Record<import('./api.js').InterfaceSounds, string>} */
+const SOUND_LEVELS = { off: 'Off', quiet: 'Quiet', normal: 'Normal' };
+
+/** @param {import('./api.js').InterfaceSounds} level @param {number} dir */
+export function stepInterfaceSounds(level, dir) {
+  const levels = /** @type {import('./api.js').InterfaceSounds[]} */ (Object.keys(SOUND_LEVELS));
+  return levels[Math.max(0, Math.min(levels.length - 1, levels.indexOf(level) + dir))];
+}
 
 /** The screensaver's settings until Rust's prefs are in, as prefs.rs has them. */
 export const SAVER_DEFAULT = /** @type {const} */ ({ minutes: 5 });
@@ -576,6 +598,7 @@ export const visibleSections = (state) =>
  */
 export function sectionSummary(key, state) {
   const { sound, accessories: acc } = state;
+  if (key === 'updates') return [state.update.phase === 'idle' ? 'Check' : updateRow(state.update).label ?? ''];
   if (key === 'sound') {
     const out = sound?.outputs.find((d) => d.default);
     if (!out) return ['…'];
@@ -616,13 +639,13 @@ export function sectionSummary(key, state) {
     const n = hiddenGames(state).length;
     return [n === 1 ? '1 game' : `${n} games`];
   }
-  if (key === 'power') return ['Sleep, restart, shut down'];
+  if (key === 'power') return ['Sleep, restart, shut down, exit'];
   if (key === 'screensaver') {
     const minutes = state.prefs?.screensaver_minutes ?? SAVER_DEFAULT.minutes;
     return [minutes ? `After ${minutes} min` : 'Off'];
   }
   if (key === 'add') return ['A program or an exe on this PC'];
-  return state.setup?.needed ? ['Setup needed', 'warn'] : [state.display ?? ''];
+  return state.restore.running ? ['Restoring changes…'] : [state.display ?? ''];
 }
 
 /**
@@ -636,7 +659,8 @@ export function sectionRows(key, state) {
   const rows = [];
   const { sound, accessories: acc, prefs } = state;
   if (key === 'sound') {
-    if (!sound) return [{ label: 'Sound devices', value: 'Not available' }];
+    const interfaceSounds = { kind: 'interfacesounds', adjust: true, label: 'Interface sounds', value: SOUND_LEVELS[prefs?.interface_sounds ?? 'normal'] };
+    if (!sound) return [interfaceSounds, { label: 'Sound devices', value: 'Not available' }];
     rows.push({ heading: 'Output' });
     for (const d of sound.outputs) rows.push({ kind: 'device', id: d.id, label: d.name, value: d.default ? 'In use' : '', tone: 'good' });
     rows.push({ kind: 'volume', adjust: true, label: 'Volume', value: sound.muted ? 'Muted' : `${sound.volume ?? '?'}%` });
@@ -646,6 +670,7 @@ export function sectionRows(key, state) {
     rows.push({ kind: 'micmute', label: 'Mute microphone', value: onOff(sound.mic_muted) });
     rows.push({ heading: 'Automatic' });
     rows.push({ kind: 'follows', label: 'Sound follows the headset and controller headphones', value: onOff(prefs?.sound_follows) });
+    rows.push(interfaceSounds);
   } else if (key === 'headset') {
     const h = acc?.headset;
     rows.push({ heading: 'Logitech PRO X 2 LIGHTSPEED' });
@@ -691,6 +716,7 @@ export function sectionRows(key, state) {
     }
     if (!rows.length) rows.push({ label: 'No store apps found', value: '' });
     if (state.stores.get('steam')?.installed) {
+      rows.push({ kind: 'steamguide', label: 'Keep the Guide button for Lamplit', note: 'Keeps Guide Button Focuses Steam off in Steam.', value: onOff(prefs?.steam_guide ?? true) });
       rows.push({ heading: "Steam's DevTools port" });
       rows.push({ kind: 'steamport', label: 'Open it (PS button guard, Steam pop-ups in quiet mode)', value: onOff(prefs?.steam_devtools) });
       rows.push({ label: 'While it is open, any program on this PC can control Steam', value: '' });
@@ -700,9 +726,22 @@ export function sectionRows(key, state) {
     rows.push({ kind: 'savernow', label: 'Show it now', value: '' });
     rows.push({ label: 'Starts while Lamplit is in front and no game runs. Any button ends it.', value: '' });
   } else if (key === 'system') {
-    if (state.setup?.needed) rows.push({ kind: 'setup', label: 'First-time setup (asks Windows once)', value: 'Needed', tone: 'warn' });
+    rows.push({ kind: 'startup', label: 'Start when I sign in', value: state.startup ? onOff(state.startup.enabled) : 'Unknown', note: 'Older installations may ask for admin rights when switched off.' });
+    rows.push({ kind: 'setup', label: "Repair Steam's background service", note: 'Stops Steam asking for admin rights.', value: '' });
     rows.push({ kind: 'onlineart', label: "Find art online (sends game names to Steam's store)", value: onOff(prefs?.online_art) });
     rows.push({ label: 'Display', value: state.display ?? 'Unknown' });
+    rows.push({ kind: 'report', label: 'Save a report', value: 'Preview before saving' });
+    rows.push({ kind: 'restore', label: "Restore Lamplit's changes", value: state.restore.running ? 'Restoring…' : '', icon: 'i-restart', hold: 'Hold to restore', note: 'Restores the settings Lamplit changed and turns its automatic changes off.' });
+    if (state.restore.running || state.restore.steps.length || state.restore.error) {
+      rows.push({ heading: state.restore.running ? 'Restoring changes…' : 'Restore report' });
+      for (const step of state.restore.steps) {
+        rows.push({ kind: 'restorestep', id: step.name, label: step.name, note: step.message, value: step.restored ? 'Restored' : 'Needs attention', tone: step.restored ? 'good' : 'warn' });
+      }
+      if (state.restore.error) rows.push({ kind: 'restorestep', id: 'error', label: 'Restore did not finish', note: state.restore.error, value: '', tone: 'warn' });
+    }
+  } else if (key === 'updates') {
+    rows.push(updateRow(state.update));
+    rows.push({ kind: 'checkupdates', label: 'Check by itself', value: onOff(prefs?.check_updates ?? true), note: 'At most once a day, after Lamplit starts' });
   } else if (key === 'hidden') {
     for (const g of hiddenGames(state)) rows.push({ kind: 'unhide', id: g.id, store: g.store, label: g.name, value: 'Show' });
     // The section stays open when its last game is shown again.
@@ -711,11 +750,26 @@ export function sectionRows(key, state) {
     // What a held row does shows before the press: a running game that would close is named.
     const running = state.all.find((g) => g.id === state.running);
     for (const p of POWER) {
-      const note = p.hold && running ? `${running.name} is running and will close` : p.note;
+      const note = (p.id === 'restart' || p.id === 'shutdown') && running ? `${running.name} is running and will close` : p.note;
       rows.push({ kind: 'power', id: p.id, label: p.label, value: '', icon: p.icon, ...(p.hold ? { hold: p.hold } : {}), ...(note ? { note } : {}) });
     }
   }
   return rows;
+}
+
+/** The row stays focusable during work, so progress doesn't move the controller to the switch below it.
+ * @param {import('./api.js').Update} update @returns {Row}
+ */
+export function updateRow(update) {
+  const { phase, version, error } = update;
+  const name = `Lamplit ${version}`;
+  if (phase === 'checking') return { kind: 'update', label: 'Checking for updates…', value: '' };
+  if (phase === 'downloading') return { kind: 'update', label: `Downloading ${name}…`, value: '' };
+  if (phase === 'ready') return { kind: 'update', label: `${name} installs when you're done playing`, value: 'Ready' };
+  if (phase === 'installing') return { kind: 'update', label: `Installing ${name}…`, value: 'Lamplit will restart' };
+  if (phase === 'error') return { kind: 'update', label: error ?? 'Update failed', value: 'Try again', tone: 'warn' };
+  if (version) return { kind: 'update', label: `${name} is available`, value: 'Download and install' };
+  return { kind: 'update', label: phase === 'current' ? 'Lamplit is up to date' : 'Check for updates', value: 'Check' };
 }
 
 /** What a focusable row is about, unchanged when the rows around it change. @param {Row} row */

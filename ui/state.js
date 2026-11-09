@@ -76,10 +76,18 @@ export const els = {
   addList: $('addList'),
   addName: $('addName'),
   addKeys: $('addKeys'),
+  report: $('report'),
+  reportText: $('reportText'),
+  reportSave: /** @type {HTMLButtonElement} */ ($('reportSave')),
+  reportBack: $('reportBack'),
   settings: $('settings'),
   settingsFace: $('settingsFace'),
   settingsTitle: $('settingsTitle'),
   settingsList: $('settingsList'),
+  news: $('news'),
+  newsVersion: $('newsVersion'),
+  newsList: $('newsList'),
+  newsClose: $('newsClose'),
   find: $('find'),
   findPlate: $('findPlate'),
   findKeys: $('findKeys'),
@@ -94,6 +102,7 @@ export const els = {
   toast: $('toast'),
   gameNews: $('gameNews'),
   hint: $('hint'),
+  firstHint: $('firstHint'),
 };
 
 export const state = {
@@ -108,8 +117,9 @@ export const state = {
   findFocus: 'a',
   /** Find's store list is open, grown up out of its chip */
   findList: false,
-  /** @type {'browse' | 'starting' | 'details' | 'settings' | 'find' | 'add'} details: a game's menu (library.js) */
+  /** @type {'browse' | 'starting' | 'details' | 'settings' | 'find' | 'add' | 'report' | 'news'} details: a game's menu (library.js) */
   mode: 'browse',
+  report: { text: '', saving: false },
   /** whether the library has come in yet, so an empty row means no games found */
   loaded: false,
   /** the focused choice in a game's menu (logic.js detailChoices) */
@@ -168,7 +178,7 @@ export const state = {
   heroLayer: 0,
   /** @type {string | null} */
   heroKey: null,
-  /** @type {Map<string, { rgb: number[], light: number }>} accent colour and brightness per game, sampled from its art */
+  /** @type {Map<string, { rgb: number[], light: number }>} accent colour and brightness per art URL */
   accents: new Map(),
   /** @type {LaunchStep[]} checks of the launch in progress */
   steps: [],
@@ -178,14 +188,22 @@ export const state = {
   overlays: { nvidia_overlay: false, nvidia_stats: null },
   /** @type {import('./api.js').Quiet | null} */
   quiet: null,
-  /** @type {import('./api.js').Setup | null} */
-  setup: null,
+  /** @type {import('./api.js').Startup | null} */
+  startup: null,
+  restore: {
+    running: false,
+    /** @type {import('./api.js').RestoreStep[]} */
+    steps: [],
+    error: '',
+  },
   /** @type {import('./api.js').Sound | null} */
   sound: null,
   /** @type {import('./api.js').Accessories | null} */
   accessories: null,
   /** @type {import('./api.js').Prefs | null} */
   prefs: null,
+  /** @type {import('./api.js').Update} */
+  update: { phase: 'idle', version: null, error: null },
   /** @type {string | null} e.g. "3840 × 2160 at 120 Hz" */
   display: null,
   /**

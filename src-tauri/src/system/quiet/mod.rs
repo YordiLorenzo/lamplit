@@ -102,14 +102,11 @@ fn save_record(saved: &Saved) -> Result<()> {
     data::save(RECORD_FILE, saved)
 }
 
-/// Saves the record, or removes it once quiet mode is off and nothing is left to put back. Afterwards, so a failure
-/// is only logged: the record on disk still holds everything to put back.
-fn save_or_remove_record(saved: &Saved) {
+/// Saves the record, or removes it once quiet mode is off and nothing is left to put back. A failure leaves the
+/// previous record on disk, with every original still available.
+fn save_or_remove_record(saved: &Saved) -> Result<()> {
     let done = !saved.wanted && saved.registry.is_empty() && saved.ubisoft.is_empty() && saved.steam.is_empty();
-    let kept = if done { data::remove(RECORD_FILE).map_err(Error::from) } else { save_record(saved) };
-    if let Err(e) = kept {
-        log::warn!("quiet mode: can't update {RECORD_FILE}: {e}");
-    }
+    if done { data::remove(RECORD_FILE).map_err(Into::into) } else { save_record(saved) }
 }
 
 fn read_dword(key: &str, name: &str) -> Option<u32> {
@@ -187,13 +184,19 @@ pub fn set(on: bool) -> Report {
             }
         }
     } else {
+        // Upkeep must not reapply quiet mode after a crash during restoration.
+        if let Err(e) = save_record(&saved) {
+            return Report { notes: vec![format!("Couldn't switch quiet mode off: {e}")], ..state() };
+        }
         notes.extend(restore_registry(&mut saved));
     }
     notes.extend(sync_apps(&mut saved));
     if saved.steam_quiet != saved.wanted {
         notes.extend(devtools::closed_port_note());
     }
-    save_or_remove_record(&saved);
+    if let Err(e) = save_or_remove_record(&saved) {
+        notes.push(format!("Couldn't update quiet mode's restore record: {e}"));
+    }
     let report = Report { notes, ..state() };
     log::info!("quiet mode {}: now {:?} {:?}", if on { "on" } else { "off" }, report.state, report.notes);
     report
@@ -213,23 +216,35 @@ fn restore_registry(saved: &mut Saved) -> Vec<String> {
 }
 
 /// Brings Ubisoft Connect's and Steam's settings to what the player asked for, as far as they allow right now. Once
-/// quiet mode is off and an app's settings are back, its part of the record goes. A closed Steam gets no note.
+/// quiet mode is off and an app's settings are back, its part of the record goes. A restore that must wait says why.
 fn sync_apps(saved: &mut Saved) -> Vec<String> {
     let mut notes = Vec::new();
-    if !saved.ubisoft.is_empty() && saved.ubisoft_quiet != saved.wanted {
+    if !saved.ubisoft.is_empty() && (!saved.wanted || !saved.ubisoft_quiet) {
         match ubisoft::apply(saved.wanted, &saved.ubisoft) {
-            Ok(()) => saved.ubisoft_quiet = saved.wanted,
+            Ok(()) => {
+                saved.ubisoft_quiet = saved.wanted;
+                if !saved.wanted {
+                    saved.ubisoft.clear();
+                }
+            }
             Err(e) => notes.push(e.to_string()),
         }
     }
-    if !saved.wanted && !saved.ubisoft_quiet {
-        saved.ubisoft.clear();
-    }
-    if !saved.steam.is_empty() && saved.steam_quiet != saved.wanted && write_steam(saved).is_ok() {
-        saved.steam_quiet = saved.wanted;
-    }
-    if !saved.wanted && !saved.steam_quiet {
-        saved.steam.clear();
+    if !saved.steam.is_empty() && (!saved.wanted || !saved.steam_quiet) {
+        match write_steam(saved) {
+            Ok(()) => {
+                saved.steam_quiet = saved.wanted;
+                if !saved.wanted {
+                    saved.steam.clear();
+                }
+            }
+            Err(e) => {
+                log::info!("quiet mode: Steam settings must wait: {e}");
+                if !saved.wanted {
+                    notes.push(devtools::restore_note());
+                }
+            }
+        }
     }
     notes
 }
@@ -251,7 +266,35 @@ fn write_steam(saved: &Saved) -> Result<()> {
         .iter()
         .filter_map(|s| saved.steam.get(s.name).map(|before| (s.field, saved.wanted || before.unwrap_or(false))))
         .collect();
-    devtools::write_settings(&fields)
+    devtools::write_settings(&fields)?;
+    let actual = devtools::read_settings(&STEAM_TOASTS.map(|s| s.name))?;
+    if STEAM_TOASTS.iter().zip(actual).any(|(setting, value)| {
+        saved
+            .steam
+            .get(setting.name)
+            .is_some_and(|before| value.unwrap_or(false) != (saved.wanted || before.unwrap_or(false)))
+    }) {
+        return Err(Error::Internal("Steam hasn't applied its notification settings yet".into()));
+    }
+    Ok(())
+}
+
+pub fn steam_pending() -> Result<bool> {
+    Ok(load()?.is_some_and(|saved| !saved.steam.is_empty()))
+}
+
+/// Restoration is complete only when every original is back and the record has gone.
+pub fn restore() -> Result<String> {
+    let report = set(false);
+    if !report.notes.is_empty() {
+        return Err(Error::Player(report.notes.join(" ")));
+    }
+    if load()?.is_some() {
+        return Err(Error::Player(
+            "Some quiet mode settings are still waiting. Open Steam and close Ubisoft Connect, then try again.".into(),
+        ));
+    }
+    Ok("Quiet mode is off. Saved Windows and app settings restored.".into())
 }
 
 /// Finishes what had to wait: Steam's toasts once Steam runs, Ubisoft's settings once Ubisoft Connect is closed,
@@ -270,7 +313,9 @@ pub fn catch_up() {
     }
     sync_apps(&mut saved);
     if saved != before {
-        save_or_remove_record(&saved);
+        if let Err(e) = save_or_remove_record(&saved) {
+            log::warn!("quiet mode: can't update {RECORD_FILE}: {e}");
+        }
         log::info!(
             "quiet mode: caught up with what had waited (Ubisoft quiet {}, Steam quiet {})",
             saved.ubisoft_quiet,

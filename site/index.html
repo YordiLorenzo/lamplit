@@ -309,7 +309,7 @@
           <h3 id="quiet-title">No pop-ups over your game</h3>
           <p>Quiet mode keeps Windows, Game Bar, Ubisoft Connect and Steam pop-ups off the screen. Switch it off and every setting goes back.</p>
           <ul class="ticks">
-            <li>Big Picture stays closed, and Steam's window is minimised after a game.</li>
+            <li>With <strong>Keep the Guide button for Lamplit</strong> on, Big Picture stays closed. Steam's window is minimised after a game.</li>
           </ul>
         </div>
         <figure class="shot">
@@ -329,7 +329,7 @@
           <h3 id="controller-title">Navigate with your controller</h3>
           <p>DualSense, Xbox and other controllers, several at once. The button hints match the controller in your hands, and Steam and your games still see it as before.</p>
           <ul class="ticks">
-            <li>Every controller's battery, and Turn off for a DualSense on Bluetooth.</li>
+            <li>Controller batteries where available, and Turn off for a DualSense on Bluetooth.</li>
             <li>The DualSense touchpad as a mouse, for store apps and Windows dialogs.</li>
             <li>A keyboard and mouse work too.</li>
           </ul>
@@ -412,12 +412,12 @@
             <p class="small">If Edge holds the download: in its <strong>...</strong> menu choose <strong>Keep</strong>, <strong>Show more</strong>, <strong>Keep anyway</strong>. With Smart App Control on, Windows blocks the installer.</p>
           </li>
           <li class="step">
-            <h3>Run the one-time setup</h3>
-            <p>Open Settings (Triangle), go to <strong>System</strong> and choose <strong>First-time setup</strong>. Answer the Windows prompt with a mouse or keyboard.</p>
-            <p class="small">After that, Lamplit starts when you sign in, and Steam stops asking for admin rights.</p>
+            <h3>Start with Windows</h3>
+            <p>Open Settings (Triangle), go to <strong>System</strong> and switch on <strong>Start when I sign in</strong>. No admin prompt.</p>
+            <p class="small"><strong>Repair Steam's background service</strong> is a separate step. It asks Windows once for admin rights.</p>
           </li>
         </ol>
-        <p class="after-steps">To update, run the new installer; your settings and art stay. See <a class="text-link" href="https://github.com/YordiLorenzo/lamplit/blob/main/docs/security-and-privacy.md">what Lamplit changes on your PC</a> and how to undo it.</p>
+        <p class="after-steps">Update from <strong>Settings &gt; Check for updates</strong>, or run the new installer; your settings and art stay. See <a class="text-link" href="https://github.com/YordiLorenzo/lamplit/blob/main/docs/security-and-privacy.md">what Lamplit changes on your PC</a> and how to undo it.</p>
       </div>
     </section>
 
@@ -450,11 +450,11 @@
           </details>
           <details>
             <summary>Does it send anything online?</summary>
-            <p>Only requests for game art to Steam's store, while <strong>Find art online</strong> is on: game names, Steam app ids and your country. No accounts, no telemetry.</p>
+            <p>Game art requests go to Steam's store: game names, Steam app ids and your country. Update checks go to GitHub. You can switch off online art and automatic update checks in Settings. No accounts, no telemetry.</p>
           </details>
           <details>
             <summary>How do I remove it?</summary>
-            <p>First switch off <strong>Quiet mode</strong> and <strong>Steam's DevTools port</strong> in Settings: the uninstaller can't undo those. Then uninstall Lamplit from <strong>Settings &gt; Apps &gt; Installed apps</strong> in Windows.</p>
+            <p>Uninstall Lamplit from <strong>Settings &gt; Apps &gt; Installed apps</strong> in Windows. The uninstaller first restores quiet mode and Steam settings and removes the sign-in task. If anything needs attention, it keeps the saved settings and says what to do.</p>
           </details>
         </div>
       </div>
@@ -464,7 +464,7 @@
       <div class="wrap narrow center">
         <img class="closing-icon" src="images/icon-3d-160.webp" srcset="images/icon-3d-160.webp 160w, images/icon-3d-320.webp 320w" sizes="120px" width="120" height="120" loading="lazy" decoding="async" alt="">
         <h2 id="closing-title">Put your games on the TV</h2>
-        <p class="lead">Free for Windows 10 and 11. Install it, run the setup once, and pick up the controller.</p>
+        <p class="lead">Free for Windows 10 and 11. Install it and pick up the controller.</p>
         <div class="actions">
           <a class="btn btn-primary" href="https://github.com/YordiLorenzo/lamplit/releases/latest/download/Lamplit-setup.exe">
             <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>

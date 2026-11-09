@@ -6,13 +6,13 @@
 // on Bluetooth into its enhanced mode, which breaks DirectInput games. SDL loads the RawGameController statics alone at
 // start for the same reason (SDL_windows_gaming_input.c).
 //
-// Controllers read another way are left out: the DualSense (over HID), Xbox-style ones (XInput, which reads them
-// behind a game too), and Valve's, which are Steam Input's own. A RawGameController numbers its buttons; Windows names
+// Controllers read another way are left out: the DualSense and Steam Controller (HID), Xbox-style ones (XInput,
+// which reads them behind a game too), and Steam Input's virtual gamepad. A RawGameController numbers its buttons; Windows names
 // them for the controllers it knows (GetButtonLabel), and for the rest Lamplit takes the order most DirectInput
 // controllers use, the DualShock 4's and Logitech's among them.
 
 use super::navigation::{Action, Dir, Input, Navigation};
-use super::{Battery, Connection, Controller, Kind, dualsense, xbox};
+use super::{Battery, Connection, Controller, Kind, dualsense, steam, xbox};
 use crate::devices::Charge;
 use crate::dock;
 use crate::launch::window;
@@ -23,8 +23,6 @@ use tauri::AppHandle;
 use windows::Foundation::EventHandler;
 use windows::Gaming::Input::{GameControllerButtonLabel, GameControllerSwitchPosition, RawGameController};
 use windows::System::Power::BatteryStatus;
-
-const VALVE: u16 = 0x28DE;
 
 /// The ids of the controllers Windows said went, until the next read lets go of what they held: the next look for
 /// controllers can be two seconds away, and Cross held on the dock's Close game would finish its hold meanwhile.
@@ -112,7 +110,7 @@ impl Others {
         log::info!("controller: {name} ({vendor:04X}:{product:04X}) through Windows.Gaming.Input, buttons {named}");
         let count = |n: windows::core::Result<i32>| n.ok().and_then(|n| usize::try_from(n).ok()).unwrap_or(0);
         let wireless = raw.IsWireless().unwrap_or(false);
-        let kind = if vendor == dualsense::SONY { Kind::PlayStation } else { Kind::Other };
+        let kind = kind(vendor);
         super::list(
             app,
             Controller {
@@ -211,10 +209,18 @@ fn id(raw: &RawGameController) -> windows::core::Result<String> {
     Ok(format!("wgi:{}", raw.NonRoamableId()?))
 }
 
-/// Controllers read another way, told by their USB ids alone: a DualSense over HID, and Valve's, which are Steam
-/// Input's own (its virtual controllers among them).
+/// Valve's real Triton controllers are read over HID; its virtual gamepad is excluded here and in XInput.
 fn read_elsewhere(vendor: u16, product: u16) -> bool {
-    dualsense::is(vendor, product) || vendor == VALVE
+    dualsense::is(vendor, product) || steam::is(vendor, product) || (vendor, product) == xbox::STEAM_VIRTUAL
+}
+
+fn kind(vendor: u16) -> Kind {
+    match vendor {
+        dualsense::SONY => Kind::PlayStation,
+        // The Steam Controller has the same south/east/west/north A/B/X/Y labels as Xbox.
+        steam::VALVE => Kind::Xbox,
+        _ => Kind::Other,
+    }
 }
 
 /// Which button index is which. None for a button the controller doesn't have, or Windows doesn't name.
@@ -421,6 +427,22 @@ mod tests {
         assert!(!read_elsewhere(dualsense::SONY, 0x09CC));
         assert!(!read_elsewhere(0x057E, 0x2009));
         assert!(!read_elsewhere(0x2DC8, 0x3106));
+    }
+
+    #[test]
+    fn valves_known_hid_controllers_and_virtual_gamepad_are_left_out() {
+        // SDL 3.4.20: Triton USB, BLE, Proteus and Nereid receivers.
+        for product in [0x1302, 0x1303, 0x1304, 0x1305] {
+            assert!(steam::is(steam::VALVE, product));
+            assert!(read_elsewhere(steam::VALVE, product));
+        }
+        assert!(read_elsewhere(steam::VALVE, 0x11FF));
+        assert!(!steam::is(steam::VALVE, 0x11FF));
+        assert!(!read_elsewhere(steam::VALVE, 0x9999));
+        assert!(!read_elsewhere(0x1234, 0x11FF));
+        assert_eq!(kind(steam::VALVE), Kind::Xbox);
+        assert_eq!(kind(dualsense::SONY), Kind::PlayStation);
+        assert_eq!(kind(0x057E), Kind::Other);
     }
 
     /// The buttons Windows names for an Xbox-style controller, in an order unlike DirectInput's.

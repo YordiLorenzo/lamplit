@@ -3,7 +3,7 @@
 // cover (lift.js).
 
 import { assetUrl, dockCloseGame, dockState, libraryRemoveGame, librarySetFavourite, librarySetHidden } from './api.js';
-import { showHints, toast } from './hints.js';
+import { finishHint, showHints, toast } from './hints.js';
 import { hold, holdRing, letGo } from './hold.js';
 import { backToGame } from './launch.js';
 import { face, lift, lower, settle, showSheet } from './lift.js';
@@ -81,17 +81,18 @@ function setHero(g) {
     stageChanged();
   };
   if (!url) {
-    applyAccent(state.accents.get(g.id));
+    applyAccent(undefined);
     show();
     return;
   }
-  const accent = state.accents.get(g.id);
+  const accent = state.accents.get(url);
   if (accent) applyAccent(accent);
   else {
     sampleAccent(url).then(
       (look) => {
-        state.accents.set(g.id, look);
-        if (focused()?.id === g.id) applyAccent(look);
+        state.accents.set(url, look);
+        const current = focused();
+        if (current && fileUrl(current.art.hero || current.art.portrait) === url) applyAccent(look);
       },
       () => {}
     );
@@ -143,7 +144,8 @@ export function showInfo() {
   els.played.textContent = playedText(g.last_played);
   const time = playTimeText(g.play_minutes);
   els.playtime.textContent = time && `${time} played`;
-  if (state.accents.has(g.id)) applyAccent(state.accents.get(g.id));
+  const url = fileUrl(g.art.hero || g.art.portrait);
+  if (url && state.accents.has(url)) applyAccent(state.accents.get(url));
   clearTimeout(heroTimer);
   heroTimer = setTimeout(() => setHero(g), 140);
   showHints();
@@ -152,6 +154,7 @@ export function showInfo() {
 /** The focused game's menu: its cover lifts, with the details and the choices beside it. */
 export function openDetails() {
   const g = focused();
+  finishHint('game_menu');
   els.dName.textContent = g.name;
   // Lamplit counts from 0.2.0 on, so a game played before has no time of its own, and the line leaves it out.
   const [store, played, time = ''] = metaParts(g, g.manual ? 'Added by hand' : storeName(g.store));

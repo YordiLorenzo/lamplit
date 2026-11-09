@@ -1,14 +1,35 @@
 // @ts-check
 // Short interface sounds made with Web Audio, so there are no sound files.
 
+import * as api from './api.js';
+
 /** @type {AudioContext | null} */
 let ctx = null;
+// Silent until the saved choice is in, so an early press cannot ignore Off.
+let volume = 0;
+
+/** @param {import('./api.js').InterfaceSounds} level */
+export function setSoundLevel(level) {
+  volume = { off: 0, quiet: 1 / 3, normal: 1 }[level];
+}
+
+/** Each WebView reads the saved level and follows later changes, including while the dock is hidden. */
+export async function startSounds() {
+  let changed = false;
+  await api.onInterfaceSounds((level) => {
+    changed = true;
+    setSoundLevel(level);
+  });
+  const prefs = await api.prefsState();
+  if (!changed) setSoundLevel(prefs.interface_sounds);
+}
 
 /**
  * @param {number} freq
  * @param {{ at?: number, dur?: number, vol?: number, type?: OscillatorType, to?: number | null }} [shape]
  */
 function tone(freq, { at = 0, dur = 0.06, vol = 0.04, type = 'sine', to = null } = {}) {
+  if (!volume) return;
   ctx ??= new AudioContext();
   if (ctx.state === 'suspended') ctx.resume();
   const t = ctx.currentTime + at;
@@ -18,7 +39,7 @@ function tone(freq, { at = 0, dur = 0.06, vol = 0.04, type = 'sine', to = null }
   osc.frequency.setValueAtTime(freq, t);
   if (to) osc.frequency.exponentialRampToValueAtTime(to, t + dur);
   gain.gain.setValueAtTime(0.0001, t);
-  gain.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+  gain.gain.exponentialRampToValueAtTime(vol * volume, t + 0.008);
   gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   osc.connect(gain).connect(ctx.destination);
   osc.start(t);

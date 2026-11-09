@@ -471,7 +471,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
     stores_status: [ipc('stores')[1]],
     overlay_state: like(ipc('overlays'), { nvidia_stats: false }),
     quiet_state: like(ipc('quiet'), { state: known('quiet_state', 'on'), active: true, notes: [] }),
-    setup_state: like(ipc('setup'), { needed: false }),
+    startup_state: like(ipc('startup'), { enabled: false }),
     sound: like(sound, {
       outputs: [device('tv', 'TV (Living Room TV)', 'tv', false), device('hs', 'PRO X 2 headset', 'headset', true)],
       inputs: [device('mic', 'PRO X 2 headset', 'headset', true)],
@@ -500,7 +500,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('c');
   await idle(page);
   let v = await view();
-  check('settings open on the list of sections, Power last', v.open && v.title === 'Settings' && v.rows.length === 9 && v.rows[8].startsWith('Power'), JSON.stringify(v.rows));
+  check('settings open on the list of sections, Power last', v.open && v.title === 'Settings' && v.rows.length === 10 && v.rows.at(-1).startsWith('Power'), JSON.stringify(v.rows));
   check('section summaries say what is going on', v.rows[0].includes('PRO X 2 headset · 45%') && v.rows[1].includes('On · 80% · charging') && v.rows[2].includes('2 connected · 65%, medium') && v.rows[4].includes('EA app: sign in'), JSON.stringify(v.rows));
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
@@ -767,7 +767,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   const page = await open({ games: [game(1)] });
   await page.evaluate((data) => {
     const s = (window.__settings = { ...data, stores_status: data.stores, display_mode: '1920 × 1080 at 60 Hz' });
-    for (const [cmd, key] of [['sound_state', 'sound'], ['accessories_state', 'accessories'], ['prefs_state', 'prefs'], ['quiet_state', 'quiet'], ['overlay_state', 'overlays'], ['setup_state', 'setup']]) {
+    for (const [cmd, key] of [['sound_state', 'sound'], ['accessories_state', 'accessories'], ['prefs_state', 'prefs'], ['quiet_state', 'quiet'], ['overlay_state', 'overlays'], ['startup_state', 'startup']]) {
       s[cmd] = () => s[key];
     }
     s.sound_set_mute = ({ mic, muted }) => {
@@ -776,10 +776,11 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
     // NVIDIA's log said nothing within 2 s: what a page that flips its own value would never show.
     s.overlay_toggle_stats = () => null;
     s.quiet_set = ({ on }) => (s.quiet = { state: on ? 'on' : 'off', active: on, notes: on ? [] : ['Close Ubisoft Connect so Lamplit can restore its settings.'] });
-    for (const pref of ['sound_follows', 'steam_devtools', 'online_art']) {
+    s.startup_set = ({ on }) => (s.startup = { enabled: on });
+    for (const pref of ['sound_follows', 'steam_devtools', 'steam_guide', 'online_art']) {
       s[`prefs_set_${pref}`] = ({ on }) => ((s.prefs[pref] = on), s.prefs);
     }
-  }, { sound: ipc('sound'), accessories: ipc('accessories'), prefs: ipc('prefs'), quiet: ipc('quiet'), overlays: ipc('overlays'), setup: ipc('setup'), stores: ipc('stores') });
+  }, { sound: ipc('sound'), accessories: ipc('accessories'), prefs: ipc('prefs'), quiet: ipc('quiet'), overlays: ipc('overlays'), startup: ipc('startup'), stores: ipc('stores') });
   const view = () =>
     page.evaluate(() => ({
       rows: [...document.querySelectorAll('#settingsList .row')].map((r) => r.textContent),
@@ -854,20 +855,138 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   sent = await press('Open it');
   v = await view();
   check("Steam's DevTools port switches on and says when", JSON.stringify(sent[0]) === '["prefs_set_steam_devtools",{"on":true}]' && v.focus?.endsWith('On') && v.toast.includes('next starts'), `${JSON.stringify(sent)} ${v.focus} ${v.toast}`);
+  sent = await press('Keep the Guide button');
+  v = await view();
+  check('the Steam Guide preference switches off', JSON.stringify(sent[0]) === '["prefs_set_steam_guide",{"on":false}]' && v.focus?.endsWith('Off'), `${JSON.stringify(sent)} ${v.focus}`);
   await section('System');
+  sent = await press('Start when I sign in');
+  v = await view();
+  check('startup switches off and shows the saved state', JSON.stringify(sent[0]) === '["startup_set",{"on":false}]' && v.focus?.endsWith('Off'), `${JSON.stringify(sent)} ${v.focus}`);
+  await page.evaluate((error) => {
+    window.__settings.startup_set = () => { throw error; };
+  }, like(ipc('error'), { message: 'Startup could not be changed.' }));
+  sent = await press('Start when I sign in');
+  v = await view();
+  check('a failed startup switch reads back the actual state', sent.some((c) => c[0] === 'startup_state') && v.focus?.endsWith('Off') && v.toast.includes('could not be changed'), `${JSON.stringify(sent)} ${v.focus}`);
   sent = await press('Find art online');
   v = await view();
   check('Find art online switches off', JSON.stringify(sent[0]) === '["prefs_set_online_art",{"on":false}]' && v.focus?.endsWith('Off'), `${JSON.stringify(sent)} ${v.focus}`);
-  sent = await press('First-time setup');
+  sent = await press("Repair Steam's background service");
   v = await view();
-  check('setup asks for the Windows prompt', sent[0]?.[0] === 'setup_start' && v.toast.includes('Windows prompt'), `${JSON.stringify(sent)} ${v.toast}`);
-  await page.evaluate((setup) => {
-    window.__settings.setup = setup;
-    window.__emit('setup', setup);
-    window.__emit('notice', 'Setup is done.');
-  }, like(ipc('setup'), { needed: false }));
+  check('Steam service repair asks for the Windows prompt', sent[0]?.[0] === 'setup_start' && v.toast.includes('Windows prompt'), `${JSON.stringify(sent)} ${v.toast}`);
+  await emit(page, 'notice', 'Steam service repair is done.');
   v = await view();
-  check('setup that ended takes its row away and says so', !v.rows.some((r) => r.startsWith('First-time setup')) && v.toast === 'Setup is done.', `${JSON.stringify(v.rows)} ${v.toast}`);
+  check('Steam repair stays available without setup nags', v.rows.some((r) => r.startsWith("Repair Steam's background service")) && !v.rows.some((r) => r.includes('Setup needed')) && v.toast === 'Steam service repair is done.', `${JSON.stringify(v.rows)} ${v.toast}`);
+  await close(page);
+}
+
+// Restore is held to confirm, streams a report, and keeps that report after navigating away.
+{
+  const page = await open({ games: [game(1)], clock: true });
+  await page.evaluate((data) => {
+    const s = (window.__settings = { ...data, stores_status: data.stores });
+    for (const key of ['prefs', 'quiet', 'startup']) s[`${key}_state`] = () => s[key];
+    s.startup_state = () => new Promise((resolve) => (window.__readStartup = resolve));
+    s.startup_set = ({ on }) => new Promise((resolve) => (window.__setStartup = () => resolve(s.startup = { enabled: on })));
+    s.restore_changes = () => new Promise((resolve) => (window.__finishRestore = (steps) => {
+      s.prefs = { ...s.prefs, steam_guide: false, steam_devtools: false };
+      s.quiet = { ...s.quiet, active: false, state: 'off' };
+      s.startup = { enabled: false };
+      resolve(steps);
+    }));
+  }, { prefs: ipc('prefs'), quiet: ipc('quiet'), startup: ipc('startup'), stores: ipc('stores') });
+  const row = (label) => page.locator('#settingsList .row').filter({ has: page.locator('.label', { hasText: label }) }).first();
+  const view = () => page.evaluate(() => ({
+    text: document.getElementById('settingsList').textContent,
+    calls: window.__calls.map((c) => c[0]),
+    disabled: [...document.querySelectorAll('#settingsList .row[aria-disabled="true"]')].map((r) => r.textContent),
+    focus: document.querySelector('#settingsList .row.focus')?.textContent ?? '',
+  }));
+  await page.keyboard.press('c');
+  await row('System').click();
+  check('startup is unknown until its state has been read', (await row('Start when I sign in').textContent()).endsWith('Unknown'));
+  await page.evaluate(() => {
+    window.__readStartup(window.__settings.startup);
+    window.__settings.startup_state = () => window.__settings.startup;
+  });
+  await idle(page);
+  check('startup reflects the enabled state from Rust', (await row('Start when I sign in').textContent()).endsWith('On'));
+  await settled(page);
+  await holdClock(page);
+  // A switch already in progress has to finish before a restore can begin.
+  await row('Start when I sign in').dispatchEvent('click');
+  await row("Restore Lamplit's changes").dispatchEvent('pointerdown');
+  await page.clock.runFor(1000);
+  let v = await view();
+  check('restore waits for an earlier Settings change', !v.calls.includes('restore_changes'), JSON.stringify(v.calls));
+  await page.evaluate(() => window.__setStartup());
+  await idle(page);
+  await row("Restore Lamplit's changes").dispatchEvent('pointerdown');
+  await page.clock.runFor(300);
+  await page.evaluate(() => window.dispatchEvent(new Event('pointerup')));
+  await page.clock.runFor(1000);
+  check('letting go early never restores changes', !(await view()).calls.includes('restore_changes'));
+  await row("Restore Lamplit's changes").dispatchEvent('pointerdown');
+  await page.clock.runFor(1000);
+  v = await view();
+  check('a full hold starts restore and disables conflicting System actions', v.calls.filter((c) => c === 'restore_changes').length === 1 && v.disabled.length === 5 && v.text.includes('Restoring…'), JSON.stringify(v));
+  const from = v.calls.length;
+  await row("Restore Lamplit's changes").dispatchEvent('pointerdown');
+  await page.clock.runFor(1000);
+  await row('Start when I sign in').dispatchEvent('click');
+  await row("Repair Steam's background service").dispatchEvent('click');
+  await emit(page, 'restore-step', ipc('restore-step'));
+  v = await view();
+  check('restore streams the actionable report without duplicate or conflicting calls', v.calls.length === from && v.text.includes('Close Ubisoft Connect, then try again.') && v.text.includes('Needs attention'), JSON.stringify(v));
+  await page.keyboard.press('Escape');
+  await page.clock.runFor(500);
+  await row('Stores').dispatchEvent('click');
+  await page.clock.runFor(500);
+  await row('Keep the Guide button').dispatchEvent('click');
+  await row('Open it').dispatchEvent('click');
+  v = await view();
+  check('navigation stays available while Steam switches stay blocked', v.calls.length === from && v.disabled.some((text) => text.startsWith('Keep the Guide button')), JSON.stringify(v));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Enter');
+  check('a game cannot start while restore changes its store settings', !(await view()).calls.includes('launch_start'));
+  const done = [ipc('restore-step'), ...["Steam's Guide button", "Steam's DevTools port", 'Start when I sign in'].map((name) => like(ipc('restore-step'), { name, restored: true, message: 'Restored.' }))];
+  await page.evaluate((steps) => window.__finishRestore(steps), done);
+  await idle(page);
+  await page.clock.resume();
+  await page.keyboard.press('c');
+  await idle(page);
+  await row('System').click();
+  v = await view();
+  check('the final report survives closing Settings and startup is read back', v.text.includes('Restore report') && v.text.includes('Close Ubisoft Connect, then try again.') && (await row('Start when I sign in').textContent()).endsWith('Off') && v.disabled.length === 0, JSON.stringify(v));
+  // Down past the System rows (Save a report among them) to the last line of the restore report.
+  for (let i = 0; i < 8; i++) await page.keyboard.press('ArrowDown');
+  await settled(page);
+  const reportVisible = await page.evaluate(() => {
+    const row = document.querySelector('#settingsList .row.focus');
+    const bounds = row.getBoundingClientRect();
+    const list = document.getElementById('settingsList').getBoundingClientRect();
+    return { text: row.textContent, visible: bounds.top >= list.top - 1 && bounds.bottom <= list.bottom + 1 && bounds.bottom <= innerHeight };
+  });
+  check('the final restore line stays reachable and readable at 1080p', reportVisible.visible && reportVisible.text.includes('Start when I sign in') && reportVisible.text.endsWith('Restored'), JSON.stringify(reportVisible));
+  await page.screenshot({ path: path.join(shots, 'restore-report.png') });
+  await page.keyboard.press('Escape');
+  await row('Stores').click();
+  check('Steam Guide shows its actual state after restore', (await row('Keep the Guide button').textContent()).endsWith('Off'));
+  await page.keyboard.press('Escape');
+  await row('Overlay and pop-ups').click();
+  check('Quiet mode shows its actual state after restore', (await row('Quiet mode').textContent()).endsWith('Off'));
+  await page.keyboard.press('Escape');
+  await row('System').click();
+  await page.evaluate((error) => {
+    window.__settings.restore_changes = () => { throw error; };
+  }, like(ipc('error'), { message: 'Restore could not finish. Try again.' }));
+  await holdClock(page);
+  await row("Restore Lamplit's changes").dispatchEvent('pointerdown');
+  await page.clock.runFor(1000);
+  await idle(page);
+  v = await view();
+  check('a failed restore keeps its error in System and allows another attempt', v.text.includes('Restore did not finish') && v.text.includes('Restore could not finish. Try again.') && !v.disabled.length, JSON.stringify(v));
   await close(page);
 }
 
@@ -1069,8 +1188,8 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   };
   await powerSection();
   let v = await view();
-  check('Power offers sleep, restart and shut down', JSON.stringify(v.rows) === '["Sleep","Restart","Shut down"]' && v.focus === 'Sleep', JSON.stringify(v.rows));
-  check('... restart and shut down say before the press that the running game will close', JSON.stringify(v.notes) === '["","Racer is running and will close","Racer is running and will close"]', JSON.stringify(v.notes));
+  check('Power offers sleep, restart, shut down and exit', JSON.stringify(v.rows) === '["Sleep","Restart","Shut down","Exit to Windows"]' && v.focus === 'Sleep', JSON.stringify(v.rows));
+  check('... only restart and shut down say the running game will close', JSON.stringify(v.notes) === '["","Racer is running and will close","Racer is running and will close","Closes Lamplit"]', JSON.stringify(v.notes));
   await page.keyboard.press('ArrowDown');
   v = await view();
   check('... and the hint says to hold', v.hint.includes('Hold to restart'), v.hint);
@@ -4439,6 +4558,327 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     live: getComputedStyle(document.querySelector('.hero.on')).visibility,
   }));
   check('a display change as the copy is drawn drops it, and the live stage stays', resized.stage === null && resized.copy === 0 && resized.live === 'visible', JSON.stringify(resized));
+  await close(page);
+}
+
+// 56. Interface sound levels affect the actual Web Audio gain, on both pages, and persist through Settings.
+{
+  const listen = `
+    window.__peaks = [];
+    const createGain = AudioContext.prototype.createGain;
+    AudioContext.prototype.createGain = function () {
+      const gain = createGain.call(this);
+      const ramp = gain.gain.exponentialRampToValueAtTime.bind(gain.gain);
+      gain.gain.exponentialRampToValueAtTime = (value, time) => {
+        if (value > 0.0001) window.__peaks.push(value);
+        return ramp(value, time);
+      };
+      return gain;
+    };
+  `;
+  const peak = (page) => page.evaluate(async () => {
+    window.__peaks = [];
+    (await import('/sounds.js')).sfx.move();
+    return window.__peaks;
+  });
+  const page = await open({ games: [game(1)], init: listen });
+  const normal = await peak(page);
+  await emit(page, 'pad', 'triangle');
+  await idle(page);
+  await emit(page, 'pad', 'ok');
+  await emit(page, 'pad', 'left');
+  await idle(page);
+  const quiet = await peak(page);
+  check('Normal and Quiet use the saved gain, Quiet one third as loud', normal.length === 1 && quiet.length === 1 && Math.abs(normal[0] / quiet[0] - 3) < 0.001, JSON.stringify({ normal, quiet }));
+  await emit(page, 'pad', 'left');
+  await idle(page);
+  check('Off creates no interface tone', (await peak(page)).length === 0);
+  const saved = await page.evaluate(() => ({ level: window.__prefs.interface_sounds, row: document.querySelector('#settingsList .row.focus').textContent }));
+  check('Settings saves Off and shows it on the row', saved.level === 'off' && saved.row === 'Interface soundsOff', JSON.stringify(saved));
+  await emit(page, 'pad', 'right');
+  await idle(page);
+  await emit(page, 'pad', 'right');
+  await idle(page);
+  check('the row steps back to Normal', JSON.stringify(await peak(page)) === JSON.stringify(normal));
+  await close(page);
+
+  const dock = await open({ file: 'dock.html', games: [], prefs: { ...ipc('prefs'), interface_sounds: 'quiet' }, init: listen });
+  check('the dock starts at the saved Quiet level', JSON.stringify(await peak(dock)) === JSON.stringify(quiet));
+  await emit(dock, 'interface-sounds', 'off');
+  check('the hidden dock follows a change to Off', (await peak(dock)).length === 0);
+  await emit(dock, 'interface-sounds', 'normal');
+  check('the dock follows a change to Normal', JSON.stringify(await peak(dock)) === JSON.stringify(normal));
+  await close(dock);
+}
+
+// 57. Each first-minute pill goes after its action and stays gone with the saved prefs on a fresh page.
+{
+  const hint = (page) => page.evaluate(() => {
+    const el = document.getElementById('firstHint');
+    return { shown: !el.hidden, text: el.textContent, button: el.querySelector('b')?.className, name: el.dataset.hint };
+  });
+  const page = await open({ games: [game(1)] });
+  await idle(page);
+  const first = await hint(page);
+  check('a new player sees the game menu pill with the controller button', first.shown && first.name === 'game_menu' && first.button === 'options' && first.text.includes("open a game's menu"), JSON.stringify(first));
+  const place = await page.evaluate(() => {
+    const pill = document.getElementById('firstHint').getBoundingClientRect();
+    const cover = document.querySelector('.cover.focus').getBoundingClientRect();
+    return { clear: pill.bottom < cover.top, pointer: getComputedStyle(document.getElementById('firstHint')).pointerEvents };
+  });
+  check('the pill neither covers the focused cover nor takes input', place.clear && place.pointer === 'none', JSON.stringify(place));
+  await emit(page, 'pad', 'menu');
+  await idle(page);
+  check('opening the game menu dismisses its pill', !(await hint(page)).shown && await page.evaluate(() => window.__prefs.hints.game_menu.done));
+  const saved = await page.evaluate(() => window.__prefs);
+  await close(page);
+  const again = await open({ games: [game(1)], prefs: saved });
+  await idle(again);
+  check('the game menu hint stays gone on a fresh page', !(await hint(again)).shown);
+  await close(again);
+
+  for (const kind of ['dualsense', 'xbox']) {
+    const page = await open({ games: [game(1)], padKind: kind });
+    await emit(page, 'pad', 'ok');
+    await idle(page);
+    const first = await hint(page);
+    check(`${kind}: the starting screen says how to come back`, first.shown && first.name === 'return_home' && first.text.includes(kind === 'dualsense' ? 'Hold PS' : 'Hold View and Menu'), JSON.stringify(first));
+    await running(page, 'pc:1');
+    if (kind === 'dualsense') await emit(page, 'summoned', 'pc:1');
+    else await emit(page, 'dock', { mode: 'open' });
+    await idle(page);
+    const saved = await page.evaluate(() => window.__prefs);
+    check(`${kind}: coming back completes the hint`, saved.hints.return_home.done);
+    await close(page);
+    const again = await open({ games: [game(1)], prefs: saved });
+    await emit(again, 'pad', 'ok');
+    await idle(again);
+    check(`${kind}: the return hint stays gone on the next launch`, !(await hint(again)).shown);
+    await close(again);
+  }
+
+  let prefs = ipc('prefs');
+  for (let start = 1; start <= 4; start++) {
+    const page = await open({ games: [game(1)], prefs });
+    await idle(page);
+    check(`start ${start}: game menu hint respects the three-start limit`, (await hint(page)).shown === (start <= 3));
+    await emit(page, 'pad', 'ok');
+    await idle(page);
+    check(`start ${start}: return hint respects the three-start limit`, (await hint(page)).shown === (start <= 3));
+    await emit(page, 'pad', 'back');
+    await emit(page, 'pad', 'ok');
+    await idle(page);
+    prefs = await page.evaluate(() => window.__prefs);
+    check(`start ${start}: another game launch counts no extra start`, prefs.hints.return_home.starts === Math.min(start, 3));
+    await close(page);
+  }
+}
+
+// 58. Change art samples its new URL, and an old sample that finishes later cannot repaint it.
+{
+  const look = (page) => page.evaluate(() => ['--accent', '--plate-light'].map((key) => document.documentElement.style.getPropertyValue(key)));
+  const page = await open({ games: [game(1)] });
+  await until(page, () => document.documentElement.style.getPropertyValue('--accent') !== '');
+  const before = await look(page);
+  await emit(page, 'art', { id: 'pc:1', art: { ...art[0], hero: art[0].portrait } });
+  await until(page, (old) => document.documentElement.style.getPropertyValue('--accent') !== old, before[0]);
+  const after = await look(page);
+  check('Change art updates both the accent and plate brightness', before.every((value, i) => value !== after[i]), JSON.stringify({ before, after }));
+  await close(page);
+
+  const race = await open({ games: [game(1, { noArt: true })] });
+  await race.evaluate((file) => {
+    const fetch = window.fetch;
+    window.fetch = async (...args) => {
+      const reply = await fetch(...args);
+      if (String(args[0]).includes(encodeURIComponent(file))) {
+        window.__sampleWaiting = true;
+        await new Promise((resolve) => window.__releaseSample = resolve);
+      }
+      return reply;
+    };
+  }, art[0].hero);
+  await emit(race, 'art', { id: 'pc:1', art: art[0] });
+  await until(race, () => window.__sampleWaiting);
+  await emit(race, 'art', { id: 'pc:1', art: { ...art[0], hero: art[0].portrait } });
+  await until(race, (want) => document.documentElement.style.getPropertyValue('--accent') === want, after[0]);
+  const latest = await look(race);
+  await race.evaluate(() => window.__releaseSample());
+  await until(race, async () => (await import('./state.js')).state.accents.size === 2);
+  const finished = await race.evaluate(async () => (await import('./state.js')).state.accents.size);
+  check('both samples finish, but the older one cannot replace the newer colours', finished === 2 && JSON.stringify(latest) === JSON.stringify(after) && JSON.stringify(await look(race)) === JSON.stringify(after), JSON.stringify({ finished, latest, expected: after, actual: await look(race) }));
+  await emit(race, 'art', { id: 'pc:1', art: noArt });
+  await until(race, () => document.documentElement.style.getPropertyValue('--plate-light') === '0');
+  check('removing art restores the default accent and dark plate', JSON.stringify(await look(race)) === '["140 170 255","0"]');
+  await close(race);
+}
+
+// 59. Exit to Windows uses the existing hold, and releasing early never exits.
+{
+  const page = await open({ games: [game(1)], running: 'pc:1', clock: true });
+  await emit(page, 'pad', 'triangle');
+  await idle(page);
+  for (let i = 0; i < 10; i++) await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  for (let i = 0; i < 3; i++) await emit(page, 'pad', 'down');
+  check('Exit to Windows names Lamplit as what closes', (await page.locator('#settingsList .row.focus').textContent()) === 'Exit to WindowsCloses Lamplit');
+  await holdClock(page);
+  await emit(page, 'pad', 'ok');
+  await page.clock.runFor(300);
+  await emit(page, 'pad', 'ok-up');
+  await page.clock.runFor(1200);
+  check('letting go of Exit to Windows early does nothing', !(await page.evaluate(() => window.__exited)));
+  await emit(page, 'pad', 'ok');
+  await page.clock.runFor(1500);
+  await emit(page, 'pad', 'ok-up');
+  const exit = await page.evaluate(() => ({ exited: window.__exited, calls: window.__calls.filter(([name]) => name === 'app_exit').length }));
+  check('holding Exit to Windows calls the clean exit exactly once', exit.exited && exit.calls === 1, JSON.stringify(exit));
+  await close(page);
+}
+
+// Save a report: the whole preview scrolls with the pad, and Save writes exactly what was shown.
+{
+  const page = await open({ games: [game(1)] });
+  const preview = ipc('report') + Array.from({ length: 50 }, (_, i) => `2026-11-09 15:30:00.000 WARN  test warning ${i}\n`).join('');
+  await page.evaluate((text) => { window.__settings = { report_preview: text }; }, preview);
+  const openReport = async () => {
+    await page.locator('#settingsList .row').filter({ hasText: 'Save a report' }).click();
+    await idle(page);
+    await settled(page);
+  };
+  await page.keyboard.press('c');
+  await idle(page);
+  await page.locator('#settingsList .row').filter({ hasText: 'System' }).click();
+  await openReport();
+  check('report preview contains the full text and Save and Back hints',
+    await page.locator('#reportText').textContent() === preview && /Save.*Back/.test(await page.locator('#hint').textContent()));
+  await emit(page, 'pad', 'down');
+  check('d-pad scrolls the report without moving the Settings rows',
+    await page.locator('#reportText').evaluate((el) => el.scrollTop > 0));
+  for (let i = 0; i < 20; i++) await emit(page, 'pad', 'r1');
+  check('the last report line can be reached', await page.locator('#reportText').evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 1));
+  await page.screenshot({ path: path.join(shots, 'report.png') });
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  check('Back returns to Save a report without saving',
+    !(await state(page)).calls.includes('report_save') && (await page.locator('#settingsList .row.focus').textContent()).startsWith('Save a report'));
+  await openReport();
+  check('opening a report again starts at its first line', await page.locator('#reportText').evaluate((el) => el.scrollTop === 0));
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('Save writes the exact preview and names its Downloads file',
+    await page.evaluate((text) => window.__calls.find(([cmd]) => cmd === 'report_save')?.[1].text === text, preview)
+      && (await state(page)).toast.includes(`${ipc('report-saved')} is in Downloads.`));
+  await close(page);
+}
+
+// A failed or slow report stays controllable; no save happens before a preview, and stale replies cannot replace it.
+{
+  const page = await open({ games: [game(1)] });
+  await page.evaluate(() => {
+    window.__settings = { report_preview: () => new Promise((resolve) => { window.__reportReply = resolve; }) };
+  });
+  await page.keyboard.press('c');
+  await idle(page);
+  await page.locator('#settingsList .row').filter({ hasText: 'System' }).click();
+  await page.locator('#settingsList .row').filter({ hasText: 'Save a report' }).click();
+  await emit(page, 'pad', 'ok');
+  check('Save is disabled until the report is ready', await page.locator('#reportSave').isDisabled() && !(await state(page)).calls.includes('report_save'));
+  await emit(page, 'pad', 'back');
+  await page.evaluate(() => { window.__settings.report_preview = 'new preview'; });
+  await settled(page);
+  await page.locator('#settingsList .row').filter({ hasText: 'Save a report' }).click();
+  await page.evaluate(() => window.__reportReply('old preview'));
+  await idle(page);
+  check('an old preview reply does not replace a newer preview', await page.locator('#reportText').textContent() === 'new preview');
+  await page.evaluate(() => { window.__settings.report_save = () => { throw { kind: 'player', message: 'Downloads is full.' }; }; });
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('a save failure keeps the preview and allows a retry', await page.locator('#reportText').textContent() === 'new preview'
+    && !(await page.locator('#reportSave').isDisabled()) && (await state(page)).toast.includes('Downloads is full.'));
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  await page.evaluate(() => { window.__settings.report_preview = () => { throw { kind: 'player', message: 'Try again after the scan.' }; }; });
+  await page.locator('#settingsList .row').filter({ hasText: 'Save a report' }).click();
+  await idle(page);
+  check('a preview failure explains what happened and has no Save action', await page.locator('#reportSave').isDisabled()
+    && (await page.locator('#reportText').textContent()).includes('Try again after the scan.')
+    && !(await page.locator('#hint').textContent()).includes('Save'));
+  await emit(page, 'pad', 'back');
+  await close(page);
+}
+
+// Updates only download after a player action. Rust owns the game/foreground gate; these are its real payloads.
+{
+  const page = await open({ games: [game(1)], update: ipc('update') });
+  const calls = (cmd) => page.evaluate((name) => window.__calls.filter(([c]) => c === name).length, cmd);
+  await idle(page);
+  check('a startup update result never downloads or checks from the page', await calls('updates_install') === 0 && await calls('updates_check') === 0);
+  await emit(page, 'pad', 'triangle');
+  await settled(page);
+  await page.locator('#settingsList .row').filter({ hasText: 'Check for updates' }).click();
+  await settled(page);
+  check('the found update names its version and action', (await page.locator('#settingsList').textContent()).includes('Lamplit 0.4.1 is availableDownload and install'));
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('choosing the update downloads once and shows the deferred install', await calls('updates_install') === 1 && (await page.locator('#settingsList').textContent()).includes("installs when you're done playing"));
+  await emit(page, 'pad', 'ok');
+  check('Cross on a ready download cannot start it again', await calls('updates_install') === 1);
+  await page.screenshot({ path: path.join(shots, 'update-ready.png') });
+  await emit(page, 'update', like(ipc('update'), { phase: 'installing' }));
+  check('installation says Lamplit will restart', (await page.locator('#settingsList').textContent()).includes('Lamplit will restart'));
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1)] });
+  await emit(page, 'pad', 'triangle');
+  await settled(page);
+  await page.locator('#settingsList .row').filter({ hasText: 'Check for updates' }).click();
+  await settled(page);
+  await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('automatic update checks can be switched off', await page.evaluate(() => window.__calls.some(([cmd, args]) => cmd === 'prefs_set_check_updates' && args.on === false)));
+  await emit(page, 'pad', 'up');
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('manual check still works with automatic checks off', (await page.locator('#settingsList').textContent()).includes('Lamplit is up to date') && await page.evaluate(() => !window.__calls.some(([cmd]) => cmd === 'updates_install')));
+  await page.evaluate(() => {
+    window.__settings = {
+      updates_check: async () => {
+        window.__emit('update', { phase: 'available', version: '0.4.1', error: null });
+        return '0.4.1';
+      },
+      updates_install: async () => {
+        window.__emit('update', { phase: 'error', version: '0.4.1', error: "Couldn't download or verify the update. Try again." });
+        throw { kind: 'player', message: "Couldn't download or verify the update. Try again." };
+      },
+    };
+  });
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('a failed signature or download is shown and can be retried', (await page.locator('#settingsList').textContent()).includes("Couldn't download or verify") && (await page.locator('#settingsList').textContent()).includes('Try again'));
+  await page.evaluate(() => { delete window.__settings.updates_install; });
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('retrying a download keeps the chosen version', (await page.locator('#settingsList').textContent()).includes("Lamplit 0.4.1 installs when you're done playing"));
+  await close(page);
+}
+for (const dismiss of ['ok', 'back']) {
+  const page = await open({ games: [game(1)], news: ipc('whats-new') });
+  await until(page, () => !document.getElementById('news').hidden);
+  check(`What's new has exactly three built-in highlights (${dismiss})`, await page.locator('#newsList li').count() === 3 && (await page.locator('#newsVersion').textContent()) === 'Lamplit 0.4.1');
+  await emit(page, 'pad', 'triangle');
+  check('the card holds input away from Settings and games', await page.evaluate(() => !document.getElementById('settings').classList.contains('on') && !window.__calls.some(([cmd]) => cmd === 'launch_start')));
+  if (dismiss === 'ok') await page.screenshot({ path: path.join(shots, 'whats-new.png') });
+  await emit(page, 'pad', dismiss);
+  check(`${dismiss} dismisses What's new without starting a game`, await page.evaluate(() => document.getElementById('news').hidden && !window.__calls.some(([cmd]) => cmd === 'launch_start')));
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1)], news: null });
+  await idle(page);
+  check('a fresh install or version without highlights shows no card', await page.evaluate(() => document.getElementById('news').hidden));
   await close(page);
 }
 

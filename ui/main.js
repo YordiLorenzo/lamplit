@@ -2,14 +2,16 @@
 // Starts the page: listens to Rust's events, then fetches what happened before the page was ready.
 
 import * as api from './api.js';
-import { setPadKind, toast } from './hints.js';
+import { finishHint, setPadKind, toast } from './hints.js';
 import { meter } from './frames.js';
 import { act } from './input.js';
 import { mountIcons } from './icons.js';
 import { onPlay, onStep, onSummoned } from './launch.js';
 import { layout, onArt, setGames } from './library.js';
 import { startScreensaver, wake } from './screensaver/index.js';
-import { refreshAccessories, setSetup, setStores } from './settings.js';
+import { refreshAccessories, setRestoreStep, setStores, setUpdate } from './settings.js';
+import { showNews } from './news.js';
+import { startSounds } from './sounds.js';
 import { nameSprings } from './springs.js';
 import { steady } from './steady.js';
 import { readStatus, startStatus } from './status.js';
@@ -90,7 +92,9 @@ async function init() {
   startStatus();
   let heardGames = false;
   let heardKind = false;
+  let heardUpdate = false;
   await Promise.all([
+    startSounds(),
     api.onGames((games) => {
       heardGames = true;
       setGames(games);
@@ -103,6 +107,7 @@ async function init() {
     }),
     api.onPlay(onPlay),
     api.onSummoned((runningId) => {
+      if (runningId) finishHint('return_home');
       // Holding PS comes as a summon rather than a press; over the screensaver it only ends it, as any first press
       // does. What Rust says runs still counts.
       if (wake('summon')) state.running = runningId;
@@ -111,6 +116,9 @@ async function init() {
         if (runningId && state.mode !== 'starting') arrive();
       }
     }),
+    api.onDock((show) => {
+      if (show.mode === 'open') finishHint('return_home');
+    }),
     api.onLaunchStep(onStep),
     api.onStores(setStores),
     api.onAccessories(() => {
@@ -118,7 +126,11 @@ async function init() {
       readStatus();
     }),
     api.onNotice(toast),
-    api.onSetup(setSetup),
+    api.onUpdate((update) => {
+      heardUpdate = true;
+      setUpdate(update);
+    }),
+    api.onRestoreStep(setRestoreStep),
   ]);
   const [list, running, stores, kind, prefs] = await Promise.all([
     api.libraryGames(),
@@ -135,6 +147,9 @@ async function init() {
   if (list && !heardGames) setGames(list);
   // The controllers were read before the page listened; a "pad-kind" event since is newer than this answer.
   if (kind && !heardKind) setPadKind(kind);
+  // These don't hold up the library if the prefs file can't be written for What's new.
+  api.updatesState().then((update) => { if (!heardUpdate) setUpdate(update); }).catch(() => {});
+  api.updatesWhatsNew().then(showNews).catch((e) => toast(e.message, { warn: true }));
   api.log.info(`ready ${Math.round(performance.now())} ms after the page started, ${list?.length ?? 'no'} games yet`);
 }
 

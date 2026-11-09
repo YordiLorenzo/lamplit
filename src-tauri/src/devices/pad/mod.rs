@@ -1,8 +1,9 @@
-// Controllers, any number of them, three ways, all read only, so Steam and the games see them as before:
+// Controllers, any number of them, all read only, so Steam and the games see them as before:
 // - The DualSense over HID, USB and Bluetooth: no feature reports, no lightbar or rumble, so the controller's mode
 //   stays whatever Steam or the game set. The same reports carry the battery and the headphone jack, which the
 //   Settings screen shows; a Bluetooth controller can be turned off by dropping its Bluetooth link, as SpecialK does.
 //   dualsense.rs reads the reports, trackpad.rs turns the touchpad into a mouse.
+// - Steam Controller (2026) over its vendor HID collection (steam.rs), without changing lizard mode.
 // - Xbox controllers, and others that work like one, through XInput (xbox.rs).
 // - Any other controller Windows knows, through Windows.Gaming.Input (other.rs).
 // navigation.rs turns what each says into steps for the page.
@@ -11,6 +12,7 @@ mod dualsense;
 mod gestures;
 mod navigation;
 mod other;
+mod steam;
 mod trackpad;
 mod xbox;
 
@@ -52,7 +54,7 @@ pub enum Kind {
     DualSense,
     /// Another Sony controller (a DualShock 4), through Windows.Gaming.Input.
     PlayStation,
-    /// An Xbox controller, or one that works like one, through XInput.
+    /// Xbox-style button labels: XInput controllers and the Steam Controller.
     Xbox,
     /// Any other controller, through Windows.Gaming.Input.
     Other,
@@ -99,7 +101,7 @@ pub enum Level {
 
 #[derive(Clone, Serialize)]
 pub struct Controller {
-    /// A DualSense's HID path, which the UI hands back to turn it off; `xinput:<slot>` or `wgi:<Windows' id>` for
+    /// A HID path (also used to turn a Bluetooth DualSense off); `xinput:<slot>` or `wgi:<Windows' id>` for
     /// the others.
     pub id: String,
     pub kind: Kind,
@@ -148,7 +150,6 @@ pub fn start(app: AppHandle) {
     let polled = app.clone();
     std::thread::spawn(move || poll(&polled));
     std::thread::spawn(move || {
-        let connected = app.state::<Controllers>();
         let api = match HidApi::new() {
             Ok(api) => api,
             Err(e) => {
@@ -160,23 +161,36 @@ pub fn start(app: AppHandle) {
         log::info!("controller: {} HID devices, {pads} DualSense connected", api.device_list().count());
         // Shared with the readers, which reopen their controller through it.
         let api = Arc::new(Mutex::new(api));
+        // An empty receiver slot has an open reader but no controller to show in Settings yet.
+        let reading = Arc::new(Mutex::new(HashSet::new()));
         // Paths that failed to open, so one that keeps failing is logged once.
         let mut failed: HashSet<CString> = HashSet::new();
         loop {
-            let mut sony = api.lock();
-            // Only Sony's devices: listing every HID device would ask each one for its names every two seconds.
-            if let Err(e) = sony.reset_devices().and_then(|()| sony.add_devices(dualsense::SONY, 0)) {
+            let mut hid = api.lock();
+            // Only Sony and Valve: asking every HID device for its names every two seconds is slow.
+            if let Err(e) = hid.reset_devices().and_then(|()| hid.add_devices(dualsense::SONY, 0)) {
                 log::warn!("controller: device scan failed: {e}");
             }
-            for info in sony.device_list().filter(|d| dualsense::is(d.vendor_id(), d.product_id())) {
+            if let Err(e) = hid.add_devices(steam::VALVE, 0) {
+                log::warn!("controller: Steam Controller scan failed: {e}");
+            }
+            for info in hid.device_list().filter(|d| {
+                dualsense::is(d.vendor_id(), d.product_id())
+                    || steam::collection(d.vendor_id(), d.product_id(), d.usage_page(), d.usage())
+            }) {
                 let path = info.path();
-                if connected.0.lock().contains_key(path.to_string_lossy().as_ref()) {
+                if reading.lock().contains(path) {
                     continue;
                 }
-                match info.open_device(&sony) {
+                match info.open_device(&hid) {
                     Ok(dev) => {
                         failed.remove(path);
-                        attach(&app, &api, info, dev);
+                        reading.lock().insert(path.to_owned());
+                        if steam::is(info.vendor_id(), info.product_id()) {
+                            attach_steam(&app, &reading, info, dev);
+                        } else {
+                            attach(&app, &api, &reading, info, dev);
+                        }
                     }
                     Err(e) => {
                         if failed.insert(path.to_owned()) {
@@ -185,7 +199,7 @@ pub fn start(app: AppHandle) {
                     }
                 }
             }
-            drop(sony);
+            drop(hid);
             std::thread::sleep(LOOK_EVERY);
         }
     });
@@ -193,7 +207,13 @@ pub fn start(app: AppHandle) {
 
 /// Lists a controller that was just opened and reads it on a thread of its own. Once it is gone it leaves the list,
 /// and the sound moves on if it went to the controller's headphones.
-fn attach(app: &AppHandle, api: &Arc<Mutex<HidApi>>, info: &DeviceInfo, dev: HidDevice) {
+fn attach(
+    app: &AppHandle,
+    api: &Arc<Mutex<HidApi>>,
+    reading: &Arc<Mutex<HashSet<CString>>>,
+    info: &DeviceInfo,
+    dev: HidDevice,
+) {
     let path = info.path().to_owned();
     let id = path.to_string_lossy().into_owned();
     let bluetooth = matches!(info.bus_type(), BusType::Bluetooth) || id.to_lowercase().contains(BLUETOOTH_HID_SERVICE);
@@ -210,10 +230,29 @@ fn attach(app: &AppHandle, api: &Arc<Mutex<HidApi>>, info: &DeviceInfo, dev: Hid
             address: dualsense::address(info.serial_number()),
         },
     );
-    let (app, api) = (app.clone(), api.clone());
+    let (app, api, reading) = (app.clone(), api.clone(), reading.clone());
     std::thread::spawn(move || {
         read(dev, &api, &path, bluetooth, &id, &app);
         unlist(&app, &id);
+        reading.lock().remove(&path);
+    });
+}
+
+fn attach_steam(app: &AppHandle, reading: &Arc<Mutex<HashSet<CString>>>, info: &DeviceInfo, dev: HidDevice) {
+    let path = info.path().to_owned();
+    let controller = Controller {
+        id: path.to_string_lossy().into_owned(),
+        kind: Kind::Xbox,
+        name: "Steam Controller".into(),
+        connection: steam::connection(info.product_id()),
+        battery: None,
+        headphones: None,
+        address: None,
+    };
+    let (app, reading) = (app.clone(), reading.clone());
+    std::thread::spawn(move || {
+        steam::read(&dev, &controller, &app);
+        reading.lock().remove(&path);
     });
 }
 

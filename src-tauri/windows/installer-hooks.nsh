@@ -1,9 +1,8 @@
 ; Lamplit's additions to the NSIS installer that Tauri builds (bundle > windows > nsis > installerHooks in
 ; tauri.conf.json). $UpdateMode, $PassiveMode and $DeleteAppDataCheckboxState come from Tauri's installer template.
 ;
-; `lamplit.exe --setup` registers the logon task lamplit-<the account's SID> and records that it did in setup.json in
-; Lamplit's data folder, %LOCALAPPDATA%\lamplit. The default install folder, %LOCALAPPDATA%\Lamplit, is that same
-; folder.
+; The default install folder and the data folder, %LOCALAPPDATA%\lamplit, are the same folder.
+Var LamplitRestoreResult
 
 ; Lamplit runs as two processes of the same lamplit.exe: a supervisor that restarts the app after a crash, and the app.
 ; Tauri's check that runs next closes them through Windows' Restart Manager, which failed on that pair ("Failed to kill
@@ -22,33 +21,46 @@
   !insertmacro LAMPLIT_CLOSE
 !macroend
 
-!macro NSIS_HOOK_PREUNINSTALL
-  !insertmacro LAMPLIT_CLOSE
+; The updater disables Tauri's /R restart, which preserves --app and loses the supervisor. Once the new files
+; are in place, start without arguments so the supervisor comes back too. This needs no logon task or mouse.
+!macro NSIS_HOOK_POSTINSTALL
+  ${If} $UpdateMode = 1
+    nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" ""
+  ${EndIf}
 !macroend
 
-; After the files are gone, so an uninstall that stops early changes nothing.
-!macro NSIS_HOOK_POSTUNINSTALL
-  ; An update (/UPDATE), or a newer installer that runs this uninstaller in place before it installs again, keeps the
-  ; task: the new lamplit.exe lands where the old one was. Any other uninstall removes the task and the setup record,
-  ; so a Lamplit installed again asks for setup again.
+!macro NSIS_HOOK_PREUNINSTALL
+  !insertmacro LAMPLIT_CLOSE
+  StrCpy $LamplitRestoreResult "skipped"
+  ; Updates and reinstalls in place keep the account's settings and sign-in task.
   ${If} $UpdateMode <> 1
   ${AndIf} $EXEDIR != $INSTDIR
-    ; Setup registers the task with admin rights, so this account can usually only read it, and deleting it takes
-    ; Windows' admin prompt. A silent or passive uninstall doesn't stop for that prompt and leaves the task.
+    ; Only deletion of a legacy task that returns Access denied may show an admin prompt.
     ${If} ${Silent}
     ${OrIf} $PassiveMode = 1
-      StrCpy $1 "$$false"
+      StrCpy $1 "--no-prompt"
     ${Else}
-      StrCpy $1 "$$true"
+      StrCpy $1 ""
     ${EndIf}
-    nsExec::ExecToLog `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$ask = $1; $$name = 'lamplit-' + [Security.Principal.WindowsIdentity]::GetCurrent().User.Value; if (-not (Get-ScheduledTask -TaskPath '\' -TaskName $$name -ErrorAction SilentlyContinue)) { exit }; try { Unregister-ScheduledTask -TaskPath '\' -TaskName $$name -Confirm:$$false -ErrorAction Stop; exit } catch {}; if ($$ask) { try { Start-Process schtasks.exe '/Delete', '/TN', $$name, '/F' -Verb RunAs -WindowStyle Hidden -Wait } catch {} }; if (Get-ScheduledTask -TaskPath '\' -TaskName $$name -ErrorAction SilentlyContinue) { 'The logon task ' + $$name + ' is still there: delete it in Task Scheduler.' }"`
-    Pop $0
-    Delete "$LOCALAPPDATA\lamplit\setup.json"
+    ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --restore $1' $LamplitRestoreResult
+    ${If} $LamplitRestoreResult != 0
+      ; Both Tauri's template and the hook below see this, so pending originals survive Delete application data.
+      StrCpy $DeleteAppDataCheckboxState 0
+      DetailPrint "Some settings could not be restored. Saved originals and restore.log remain in $LOCALAPPDATA\lamplit."
+      ${IfNot} ${Silent}
+      ${AndIf} $PassiveMode <> 1
+        MessageBox MB_OK|MB_ICONEXCLAMATION "Some settings are still waiting. Your saved originals are kept in $LOCALAPPDATA\lamplit. Read restore.log, then run Lamplit again and choose Restore Lamplit's changes."
+      ${EndIf}
+    ${EndIf}
   ${EndIf}
+!macroend
 
+!macro NSIS_HOOK_POSTUNINSTALL
   ; "Delete the application data" removes the WebView's folder, named after the identifier, and Lamplit's own.
   ${If} $DeleteAppDataCheckboxState = 1
   ${AndIf} $UpdateMode <> 1
+  ${AndIf} $EXEDIR != $INSTDIR
+  ${AndIf} $LamplitRestoreResult = 0
     RMDir /r "$LOCALAPPDATA\lamplit"
   ${EndIf}
 !macroend

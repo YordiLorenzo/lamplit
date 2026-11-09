@@ -139,7 +139,8 @@ pub fn scan(app: &AppHandle) {
 
 fn find_games(app: &AppHandle) {
     let started = Instant::now();
-    let mut games = discover::discover_all(app.state::<UserData>().manual_games());
+    let previous = app.state::<Library>().games().unwrap_or_default();
+    let mut games = discover::discover_all(app.state::<UserData>().manual_games(), &previous);
     if let Err(e) = art::open_folders_to_page(app) {
         log::warn!("art: the page can't load art: {e}");
     }

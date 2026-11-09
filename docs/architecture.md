@@ -9,23 +9,25 @@ The page is built into lamplit.exe, so the exe runs without any other files.
 ```text
 src-tauri/
   src/
-    main.rs          which of Lamplit's processes this is: supervisor, app or setup
+    main.rs          supervisor, app, Steam repair, restore, or legacy task removal
     supervisor.rs    restarts the app after a crash
     lib.rs           starts the app: its state, its commands, its background threads
     commands.rs      every command the page calls
     events.rs        every event Rust sends the page
     error.rs         the one error type, sent to the page as { kind, message }
     prefs.rs         the player's choices in Settings (prefs.json)
+    updates.rs       signed updates, waiting until play ends, and built-in release highlights
     data.rs          the data folder and the JSON files in it
     files.rs         path helpers: drive-letter checks, safe joins, atomic writes
-    logging.rs       lamplit.log, supervisor.log and setup.log
+    logging.rs       lamplit.log, supervisor.log, setup.log and restore.log
+    report.rs        the local report: selected system facts, redacted warnings, and a plain-text file in Downloads
     library/         the game list: discovery, sorting, art and the art the player chose, favourites, hidden
                      games, play time, and games added by hand
     stores/          one file per store app; loose.rs finds games outside any store
     launch/          starting a game, watching it, handing the screen over to it, and Lamplit's own window
     dock/            the in-game dock: its window over a game, the news it shows, closing the game
     devices/         controllers (pad/), the headset, sound devices, where the sound goes
-    system/          quiet mode, NVIDIA's overlay, first-time setup, sleep, restart and shut down
+    system/          quiet mode, NVIDIA's overlay, sign-in task, repair, restore, sleep, restart and shut down
     win/             the calls into Windows, and the only place unsafe code is allowed
   capabilities/default.json   what the page may call
   capabilities/dock.json      the same for the in-game dock's page
@@ -34,6 +36,7 @@ src-tauri/
 ui/
   index.html, style.css
   main.js          starts the page and connects events to their handlers
+  news.js          the new version's three highlights, dismissed with Cross or Circle
   api.js           every command and event, with JSDoc types; no other file names one
   state.js         the page's state and its elements
   input.js         controller, keyboard and mouse as one set of actions
@@ -51,7 +54,8 @@ ui/
                    there, the on-screen keyboard grows up out of the field and the store list out of its chip
   launch.js        the starting screen: the launch's steps with the shared icons, and on the step the player can
                    act on a chip with what ✕ does there (Show the window, Open Steam)
-  settings.js      the Settings panel, a plate with two faces, Settings and Add a game, that grows down out of the
+  report.js        Save a report, a face of Settings: a scrollable preview, saved unchanged to Downloads
+  settings.js      the Settings panel, a plate with Settings, Add a game and Save a report faces, growing out of the
                    status capsule; its height follows what it holds, and sections are pushed inside it
   status.js        the status capsule, top right: batteries, volume, quiet mode and the time
   morph.js         one plate changing shape, for both pages: its clip and place spring between boxes on screen
@@ -73,8 +77,8 @@ ui/
   pill.js          the pill a short message shows in, with its icon in a round badge: the dock's news and the
                    home screen's messages
   logic.js         pure functions (the cover row's search and order, the Settings rows), tested in Node
-  hints.js         the button hints, and short messages as pills: one about a game on the line above the row,
-                   naming the game, any other at the top right under the clock
+  hints.js         the button hints, the two introductory hints, and short messages as pills: one about a game on
+                   the line above the row, naming the game, any other at the top right under the clock
   sounds.js        interface sounds made with Web Audio
   screensaver/     the screensaver: when it shows and what ends it (index.js), the show and the games' art it loads
                    (saver.js), the WebGL2 renderer with its particles, the scenes' shaders, palettes from the game art,
@@ -93,13 +97,15 @@ scripts/restart.ps1  puts a new build in place during development
 
 ## Processes
 
-lamplit.exe runs as one of three processes. `main.rs` picks one from the command line:
+`main.rs` picks the process mode from the command line:
 
 | Started as | Process | What it does | Log |
 | --- | --- | --- | --- |
 | `lamplit.exe` (the logon task, the Start menu) | Supervisor | Starts the app as a child process and starts it again when it exits with an error, at most 5 times in 2 minutes. Ends when the app ends cleanly, which is how Lamplit closes. | `supervisor.log` |
 | `lamplit.exe --app` | App | The window and everything below. | `lamplit.log` |
-| `lamplit.exe --setup [--for <SID>]` | Setup | First-time setup, with admin rights. Settings starts it through Windows' admin prompt and passes its own account's SID, so the logon task is made for that account even when an administrator answers the prompt. | `setup.log` |
+| `lamplit.exe --setup` | Steam repair | Repairs Steam's background service with Valve's signed executable, with admin rights. Creates no sign-in task or setup record. | `setup.log` |
+| `lamplit.exe --restore [--no-prompt]` | Restore | Runs the same restore as Settings, without a window or Upkeep. Refuses while the app is running. Exits with 1 when any step is pending. `--no-prompt` leaves a legacy task that needs elevation. | `restore.log` |
+| `lamplit.exe --remove-startup --for <SID>` | Legacy task removal | Deletes only `lamplit-<SID>`. The normal app starts this helper through the admin prompt only after Scheduler denies deletion. Passing the original SID keeps another administrator's account separate. | `setup.log` |
 
 The supervisor and the app each hold a named mutex (`Local\lamplit-supervisor`, `Local\lamplit-app`). A second
 Lamplit brings the first one's window forward and exits. Task Scheduler only restarts a task that fails to start, not
@@ -109,33 +115,120 @@ Lamplit keeps its files in the data folder, `%LOCALAPPDATA%\lamplit`: `prefs.jso
 favourite, hidden, when it was last played, how long Lamplit saw it run, the art the player chose, and for a game
 added by hand its name and exe, or that it was removed again, which keeps it off the row when a scan finds its exe
 outside any store; 0.1.0's `played.json` is still read for the last-played times), `art.json` and
-`art\<steam appid>\` (art lookups and downloads), `setup.json` (setup is done, for which exe) and `quiet-saved.json`
-(the settings quiet mode replaced), plus the logs. WebView2 keeps its profile in
+`art\<steam appid>\` (art lookups and downloads), `quiet-saved.json` (the settings quiet mode replaced),
+`steam-saved.json` (Steam's Guide setting and DevTools flag originals, plus a pending restore), and
+`sound-return.json` (separate output and microphone return endpoints and the last default each was routed
+through), plus the logs. Old `setup.json` files no longer determine startup state. WebView2 keeps its profile in
 `%LOCALAPPDATA%\io.github.yordilorenzo.lamplit`.
+
+`prefs.json` also keeps the interface sound level (`off`, `quiet` or `normal`, the default) and each introductory
+hint's shown-start count and completion. A hint counts only when its screen is reached, at most once per app
+process, and stops after three starts or its action. Opening a game's menu completes its hint; a `summoned` event
+with a running game or the dock opening completes the return hint. A WebView profile reset leaves this state intact.
+Both pages read the sound level at start and follow `interface-sounds` events; Quiet uses one third of Normal's gain.
+The home page caches the art's accent and brightness by its URL, and applies a finished sample only if that art is
+still focused, so Change art also changes the screen's colours.
+
+Settings > Power > Exit to Windows uses the same hold as Restart and Shut down, then calls Tauri's `exit(0)`.
+That successful exit closes both windows and ends the supervisor, as Alt+F4 on the home window does. It leaves
+running games and Windows settings as they are.
+
+`data.rs` saves JSON atomically and keeps the previous valid content beside it as `<name>.bak`. A file that no
+longer parses is copied to `<name>.damaged` (replacing the older damaged copy). The loader restores a valid backup
+atomically and logs the recovery; without one, `load_or_default` callers use their defaults. The invalid primary
+also stays until replaced, so quiet mode's strict loader continues to refuse changes without a good restore record.
+Removing a completed quiet-mode or Steam restore record also removes its backup, so it cannot be restored by a
+later read. Damaged copies stay in the data folder.
 
 ## Inside the app
 
-`lib.rs` loads the prefs, starts the first library scan and these threads:
+`lib.rs` loads the prefs and sound return records, starts the first library scan and these threads:
 
 | Thread | Does |
 | --- | --- |
-| Library scan | Reads every store side by side, then games outside any store, then art on disk, then missing art online. Runs at start and when the page asks (each time Lamplit comes forward), at most every 30 seconds. |
+| Library scan | Reads every store side by side, then games outside any store, then art on disk, then missing art online. A store read that fails is logged and keeps that store's games from the previous scan; an empty successful read removes them. The first scan has nothing to keep. Runs at start and when the page asks (each time Lamplit comes forward), at most every 30 seconds. |
 | Headset | Looks for the PRO X 2 receiver every 10 seconds and owns it while it is plugged in. |
-| Controllers | Looks for DualSense controllers every 2 seconds and reads each one on a thread of its own. |
+| Controllers | Looks for DualSense and 2026 Steam Controller HID collections every 2 seconds and reads each on a thread of its own. An empty Steam receiver slot is listed only once input arrives. |
 | Other controllers | Reads XInput and Windows.Gaming.Input every 15 ms while one of their controllers is connected, and looks for new ones every 2 seconds. |
-| Upkeep | Every 10 seconds: Steam's DevTools port and PS button setting, and quiet-mode changes that had to wait. |
-| Big Picture guard | Every 2 seconds: closes Steam's Big Picture mode if it is open. |
+| Upkeep | Every 10 seconds: Steam's port and Guide setting while their prefs are on, then pending quiet-mode and Steam restores, and pending sound returns once an endpoint comes back. |
+| Big Picture guard | Every 2 seconds: closes Steam's Big Picture mode while `steam_guide` is on. |
 | Dock news | Every second: compares the headset and the controllers with a second before, for the news the folded dock shows. |
 | Shell | Opens links and exes with ShellExecute, one at a time. |
+| Updates | Checks once 10 seconds after start if enabled and the last attempt was at least 24 hours ago. Every second, installs a verified download only when no game runs or starts and Lamplit is in front. HTTP uses Tauri's async runtime from this thread or the command's blocking worker. |
+
+A malformed per-game manifest is logged and skipped without hiding other games. Optional detail files, such as
+Steam play minutes, never fail a store scan. An unreadable installed-games list or a file I/O error keeps that
+store's previous games; a missing file counts as absent.
 
 A Tauri command that isn't `async` runs on the main thread, where waiting freezes the window and controller
 navigation. So every command that touches the disk, the registry, COM, HID, a socket or the process list is `async`
 and does its work on Tauri's pool for blocking work.
 
+## App updates
+
+The page calls Lamplit's own commands; it has no updater package or plugin permissions. `updates_state` is an offline
+snapshot and the `update` event brings later changes. A check returns a version or null. Automatic checks only show
+the version. The Settings action checks if no version is known, then downloads any newer version and verifies its
+Minisign signature with the built-in public key.
+The downloaded bytes stay in memory until the player finishes playing and Lamplit is in front. Closing Lamplit
+discards a waiting download. Check and download errors leave a retry action and are logged.
+
+`launch_start` and the installer's last launch-state check share a lock. A launch counts its worker as active before
+releasing it; an install marks itself as installing before releasing it, and new launches are refused from then on.
+An update waits until every launch worker and game watcher has finished, including the gap in starting/running state
+during cancellation or handover. Summoning Lamplit over a running game does not permit installation.
+
+The updater uses NSIS passive mode, `/P /UPDATE`, with a progress bar and no clicks. Its normal `/R /ARGS --app`
+restart is disabled: that would start the app without its crash supervisor. The plugin exits with code 0 after
+starting NSIS, so the old supervisor exits too. `LAMPLIT_CLOSE` in the pre-install hook ends any remaining supervisor
+before the app. The post-install hook starts the new exe without arguments, restoring both processes even without
+a logon task. The installer keeps the existing task and player data on an update.
+
+`prefs.json` keeps `check_updates` (true by default), `update_checked_at` (the last attempted check, including failures)
+and `last_version_seen`. `updates_whats_new` records the running version and returns the three `### Highlights`
+bullets from its `## <version> - <date>` section of the changelog embedded in the exe. The first recorded version,
+the same version and a section without exactly three highlights return null. The page waits for browsing before
+showing the card, and Cross or Circle dismisses it without launching a game.
+
+Unsigned CI builds keep `bundle.createUpdaterArtifacts` false. The release workflow overrides it to true, supplies
+the updater signing secrets and asks tauri-action to upload `latest.json`. A draft release is not served by GitHub's
+`releases/latest` endpoint; the player sees it only after publication.
+
+## Controller input
+
 Controller presses reach the page as `pad` events only while Lamplit's window is in front, and the dock's page as
 `dock-pad` events only while the dock is open, so a game never moves the menu behind it. Holding PS, or View and
 Menu, is the exception: over a running game it opens the dock, and anywhere else it brings Lamplit forward. Each kind of
 controller is read into the same buttons, by position (south is Cross or A), so navigation doesn't care which it is.
+
+## Sound routing
+
+`devices/accessories.rs` serialises automatic sound moves and explicit device choices under one lock. It saves changed
+return records through `data::save`; an output and a microphone have independent records. Pending returns survive
+missing endpoints and automatic fallback moves. Choosing a device in Settings cancels the pending return in that
+direction. Automatic moves still use `win/audio.rs::move_default`, which preserves a separate communications device.
+
+## Epic's two launchers
+
+`stores/epic.rs` reads the legacy `.item` manifests in
+`%ProgramData%\Epic\EpicGamesLauncher\Data\Manifests` and the Preview's
+`%LOCALAPPDATA%\com.epicgames.eglv2\installations.jsonl`. The latter is a journal: the last record for an
+`installationId` wins, and a deletion record removes it. Only completed Windows games with an existing local
+folder are listed. DLC and Unreal Engine installs are skipped. Names come from the Preview's local
+`cache\prod\catalog-cache.json`, or the install folder when no title is cached. A migrated game keeps its
+`epic:<app name>` id. With a launcher installed, only its records are used, so stale files from migration or
+rollback cannot bring back removed games. With neither launcher installed, both sources are listed, with duplicate
+ids merged, so Play can explain that Epic needs installing.
+
+The `com.epicgames.launcher` protocol registration selects the exe to start, show and wait for. Only the legacy
+`Portal\Binaries\Win32` path is redirected to its Win64 sibling; the Preview's registered path is used directly.
+Process checks compare that full exe path, so they need no window title or helper-process name. Without a usable
+registration, discovery tries the Preview's default install folder, then the existing legacy default.
+
+Saved sign-in detection follows that selected launcher. The legacy launcher uses its `RememberMe` INI section;
+the Preview uses the presence of a non-empty encrypted `auth\access-token-prod.dpapi` file, without reading it.
+The account cache alone only records past logins. These are local hints, not proof that Epic still accepts the
+session; the existing Try anyway action remains available. [Sources and Windows verification limits](epic-launcher.md).
 
 ## How a launch works
 
@@ -283,6 +376,41 @@ the dock folds 450 ms in all the same. Back to game is the reverse: the home pag
 asks Rust to bring the game forward (`launch_resume`), and drops the veil once its window has lost the foreground
 (`ui/launch.js` backToGame).
 
+## Startup, Steam repair and restore
+
+`system/startup.rs` registers the existing interactive, least-privilege logon XML for the current SID without
+elevation. Startup stays off on a fresh install until the player switches it on. In 0.3 it was enabled only after
+the player chose setup. `win/task.rs` reads Scheduler's enabled state, enabled logon trigger and executable action;
+a missing, disabled or moved task reads as off. There is no setup-needed state.
+
+Deletion first calls `ITaskFolder::DeleteTask` without elevation. On `E_ACCESSDENIED`, the task's security
+descriptor is read into the log, and only deletion may retry with elevation. A new registration or update never
+elevates. Microsoft's [task security documentation](https://learn.microsoft.com/en-us/windows/win32/taskschd/security-contexts-for-running-tasks)
+permits own-user interactive registration; the task's DACL, not its run level, controls updates and deletion.
+Legacy permissions need verification on Windows with both same-account and other-administrator setup.
+
+`system/setup.rs` now only runs the signed Valve service repair. It emits a `notice` when the elevated process ends.
+The Settings command opens the admin prompt; `lamplit.exe --setup` itself refuses to run without admin rights.
+
+`system/restore.rs` runs four steps and emits each `restore-step`: quiet mode, Steam's Guide button, Steam's DevTools
+flag, then the sign-in task. It saves `steam_devtools = false` and `steam_guide = false` first. The switches,
+Upkeep, the Big Picture guard and restore share `CHANGES`, so they cannot apply old choices during restoration.
+Quiet mode saves its off intent before changing anything. Steam originals are written before a change and retained
+until Steam confirms restoration. The DevTools flag waits for Steam's notification and Guide settings, since they
+may still need its port. Failed registry, Ubisoft, Steam and flag restores keep their records and retry through
+Upkeep; explicit Steam opt-in cancels its pending restore while preserving originals for another restore.
+
+Releases before 0.4 saved quiet mode's originals but not Steam's Guide setting or DevTools flag. Restore reports the
+missing Guide original. If the port pref was on and a flag has no saved original, the player must check it and
+remove it manually only if Lamplit created it. This includes an unchanged flag that predated Lamplit's port switch.
+It stays pending rather than deleting a possibly pre-existing flag.
+
+The uninstaller closes Lamplit and runs `--restore` before removing the exe, except for `/UPDATE` or a reinstall
+in place (`$EXEDIR == $INSTDIR`). Silent and passive uninstalls pass `--no-prompt`. A failed or pending restore
+disables application-data deletion, preserving the records and `restore.log` even if that checkbox was selected.
+Settings uses `hold.js` for confirmation and retains a scrollable report; other Settings changes and new game
+launches wait until restoration finishes.
+
 ## Commands
 
 The page calls these with `invoke` (wrapped in `ui/api.js`). Tauri hands the page's camelCase argument keys to the
@@ -305,10 +433,12 @@ message is written for the player, and the page shows it.
 | `overlay_toggle_stats` | | Whether the stats show now, or `null` when the overlay doesn't say |
 | `quiet_state` | | Quiet mode: `on`, `off` or `partly`, and notes for the player |
 | `quiet_set` | `on` | The same report, after the change |
-| `setup_state` | | Whether setup is needed |
-| `setup_start` | | Nothing, once the admin prompt is answered; a `setup` event follows |
+| `startup_state` | | `{ enabled }`, read from Task Scheduler |
+| `startup_set` | `on` | The same state after registering or deleting the sign-in task |
+| `setup_start` | | Nothing, once the Steam repair admin prompt is answered; a `notice` follows |
+| `restore_changes` | | Every result as `{ name, restored, message }`; each also arrives as `restore-step` |
 | `sound_state` | | Outputs, microphones, volume and mute |
-| `sound_set_default` | `id` | The sound state after the change |
+| `sound_set_default` | `id` | The sound state after the change; cancels that direction's pending return |
 | `sound_change_volume` | `delta` | The new volume |
 | `sound_set_mute` | `mic`, `muted` | Nothing |
 | `accessories_state` | | The headset and the controllers |
@@ -316,12 +446,22 @@ message is written for the player, and the page shows it.
 | `controller_turn_off` | `id` | Nothing |
 | `controller_kind` | | The kind of controller used last (`dualsense`, `playstation`, `xbox`, `other`), or `null` before any was |
 | `prefs_state` | | The prefs |
-| `prefs_set_sound_follows`, `prefs_set_touchpad_mouse`, `prefs_set_steam_devtools`, `prefs_set_online_art`, `prefs_set_dock` | `on` | The prefs after the change |
+| `updates_state` | | `{ phase, version, error }`, without a network request |
+| `updates_check` | | A newer version or `null`; also works when automatic checks are off |
+| `updates_install` | | Update status after downloading and verifying; installation waits for play to end and the home screen to be in front |
+| `updates_whats_new` | | `{ version, highlights }` on the first start of a new version, or `null` |
+| `prefs_set_check_updates` | `on` | The prefs after changing automatic update checks |
+| `prefs_set_sound_follows`, `prefs_set_touchpad_mouse`, `prefs_set_steam_devtools`, `prefs_set_steam_guide`, `prefs_set_online_art`, `prefs_set_dock` | `on` | The prefs after the change |
 | `prefs_set_screensaver_minutes` | `minutes` (0 for never) | The prefs after the change |
-| `prefs_set_screensaver_style` | `style`: `mix`, `2d` or `3d` | The prefs after the change |
+| `prefs_set_interface_sounds` | `level`: `off`, `quiet` or `normal` | The prefs after the change; both pages hear the new level |
+| `prefs_hint_shown` | `name`: `game_menu` or `return_home` | Whether to show it; counts this start once |
+| `prefs_hint_done` | `name`: `game_menu` or `return_home` | Nothing; the hint stays dismissed |
 | `power_sleep` | | Nothing, once the PC has woken up again |
 | `power_restart`, `power_shut_down` | | Nothing, once Windows has started to restart or shut down |
+| `app_exit` | | Exits Lamplit with code 0, which also ends its supervisor |
 | `display_mode` | | The screen's mode, such as `3840 × 2160 at 120 Hz` |
+| `report_preview` | | Plain text with selected system facts and prefs, and the last 50 warnings and errors; paths, account and device names are removed, and current library game names become ids |
+| `report_save` | `text` (the preview) | The saved file's name, in the account's Downloads known folder |
 | `dock_state` | | The game the dock is over: `{ id, name, art, started, responding, force_close }`, or `null` |
 | `dock_resume` | | Nothing; the dock folds and the game is in front again |
 | `dock_home` | | Nothing; the home screen comes forward and the dock goes |
@@ -329,6 +469,13 @@ message is written for the player, and the page shows it.
 | `dock_glass` | `island`: `{ x, y, width, height, radius }` in the window's pixels, or `null` | Whether real glass is under the island now |
 | `dock_glass_fold` | `fold`: `{ to, ms, curve, after, fade, drop }`, the pill and the spring the page folds the island with | Nothing; Rust squeezes the real glass the same way |
 | `dock_close_game` | `force` | Nothing, once Windows has the request; the game's end follows as after any game |
+
+Report commands run on the blocking pool. The preview reads the current library and prefs, cached accessories,
+Windows display and version information, sound endpoints, store status and `lamplit.log`. The library must have
+finished its first scan so game names can be removed. Only selected fields enter the report; device names and ids
+do not. Log redaction replaces paths, account and library game names, and device identifiers. Save writes the exact
+preview the player saw, using `SHGetKnownFolderPath(FOLDERID_Downloads)` and `create_new`; another save in the same
+minute gets a numbered suffix. These commands send no network requests and emit no new events.
 
 ## Events
 
@@ -346,9 +493,11 @@ Rust sends these without being asked (`events.rs`):
 | `stores` | Every store app's status | After each library scan |
 | `accessories` | `null` | The headset, a controller or a sound device changed; the page asks for the details |
 | `notice` | A short message | Something the player should know, such as where the sound went |
-| `setup` | `{ needed }` | Setup started from Settings has ended |
+| `update` | `{ phase, version, error }`; phase is `idle`, `checking`, `current`, `available`, `downloading`, `ready`, `installing` or `error` | An automatic or manual check, download, or waiting install changes state |
+| `restore-step` | `{ name, restored, message }` | One restoration step has finished or must wait |
 | `dock` | `{ mode }`: `open`, `closed`, or `status` with `icon`, `text` and `warn` | The dock opens, folds away, or shows news |
 | `dock-pad` | The same steps as `pad`, and `ok-up` when Cross is let go | A controller press, while the dock is open |
+| `interface-sounds` | `off`, `quiet` or `normal` | Settings saved a new interface sound level; both pages apply it |
 
 ## Keeping the two sides in step
 

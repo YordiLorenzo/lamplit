@@ -1,8 +1,17 @@
 {
   "sound_follows": true,
+  "interface_sounds": "normal",
+  "hints": {
+    "game_menu": { "starts": 0, "done": false },
+    "return_home": { "starts": 0, "done": false }
+  },
   "touchpad_mouse": false,
   "steam_devtools": false,
+  "steam_guide": true,
   "online_art": true,
   "screensaver_minutes": 5,
-  "dock": true
+  "dock": true,
+  "check_updates": true,
+  "update_checked_at": 0,
+  "last_version_seen": ""
 }

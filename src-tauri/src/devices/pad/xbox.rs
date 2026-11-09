@@ -25,7 +25,7 @@ pub const MICROSOFT: u16 = 0x045E;
 /// controllers below it are DirectInput controllers, which XInput can't read.
 const FIRST_XBOX: u16 = 0x0200;
 /// Steam Input's virtual controller: Valve's vendor id, as SDL tells it apart.
-const STEAM_VIRTUAL: (u16, u16) = (0x28DE, 0x11FF);
+pub const STEAM_VIRTUAL: (u16, u16) = (0x28DE, 0x11FF);
 
 /// What is in each of XInput's slots.
 #[derive(Default)]

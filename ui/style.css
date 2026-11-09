@@ -779,7 +779,7 @@ body.launching .cover.focus { scale: 1.1; }
   transition: opacity 160ms ease 100ms, translate var(--tap-ms) var(--tap);
 }
 #settingsFace { width: var(--narrow); }
-#settings:has(#add.on) #settingsFace {
+#settings:has(#add.on, #report.on) #settingsFace {
   opacity: 0;
   translate: -6vw 0;
   pointer-events: none;
@@ -835,6 +835,7 @@ body:has(#settings.on) #empty { opacity: 0; }
 .row .value.good { color: #7be09a; }
 .row.focus { background: rgb(255 255 255 / .12); box-shadow: inset 0 0 0 .25vh #fff; }
 .row.info { color: var(--ink-dim); }
+.row[aria-disabled="true"] { opacity: .5; }
 .row.adjust.focus .value { color: var(--ink); }
 .row.adjust.focus .value::before { content: '‹  '; color: var(--ink-dim); }
 .row.adjust.focus .value::after { content: '  ›'; color: var(--ink-dim); }
@@ -1012,14 +1013,14 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
 
 /* ---------- add a game (add.js) ---------- */
 
-#add {
+#add, #report {
   width: var(--wide);
   opacity: 0;
   translate: 6vw 0;
   pointer-events: none;
   transition: opacity 120ms ease, translate var(--tap-ms) var(--tap);
 }
-#add.on { opacity: 1; translate: 0; pointer-events: auto; transition: opacity 160ms ease 100ms, translate var(--tap-ms) var(--tap); }
+#add.on, #report.on { opacity: 1; translate: 0; pointer-events: auto; transition: opacity 160ms ease 100ms, translate var(--tap-ms) var(--tap); }
 #addPath { margin: -1.6vh 0 2.2vh; font-size: 2vh; color: var(--ink-dim); overflow-wrap: anywhere; }
 #addList {
   display: grid;
@@ -1039,8 +1040,52 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
 #add.naming #addKeys { display: grid; }
 #addName { white-space: pre-wrap; overflow-wrap: anywhere; }
 
+#report { height: var(--plate-max); }
+#report p { font-size: 2vh; color: var(--ink-dim); margin: -1vh 0 2vh; }
+#reportText {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 1.8vh/1.6 ui-monospace, Consolas, monospace;
+  padding: .6vh;
+  user-select: text;
+}
+.report-actions { display: flex; gap: 1vh; margin-top: 2vh; }
+.report-actions button { color: var(--ink); background: rgb(255 255 255 / .06); font-family: inherit; cursor: pointer; border: 0; }
+.report-actions button:disabled { opacity: .45; cursor: default; }
+
 /* ---------- hints and messages ---------- */
 
+#news:not([hidden]) {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  background: #07060bd9;
+}
+#news section {
+  width: min(76vw, 110vh);
+  padding: 5vh;
+  border-radius: 3vh;
+  background: var(--plate-fill);
+  box-shadow: var(--plate-shadow);
+}
+#newsVersion { color: var(--ink-dim); margin: 0 0 1vh; font-size: 2.2vh; }
+#news h2 { font-size: 4.5vh; margin: 0; }
+#newsList { padding-left: 3vh; margin: 3vh 0; font-size: 2.6vh; line-height: 1.5; }
+#newsList li + li { margin-top: 1.5vh; }
+#newsClose {
+  color: var(--ink);
+  background: #ffffff18;
+  border: .2vh solid var(--ink);
+  border-radius: 1vh;
+  padding: 1.2vh 3vh;
+  font: inherit;
+  font-size: 2.5vh;
+}
 #hint {
   position: fixed;
   right: var(--safe-x);
@@ -1052,7 +1097,7 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
   color: var(--ink-dim);
 }
 #hint span { display: inline-flex; align-items: center; gap: 1vh; }
-:is(#hint, #steps .chip) b {
+:is(#hint, #steps .chip, #firstHint) b {
   display: inline-grid;
   place-items: center;
   width: 3.2vh;
@@ -1063,9 +1108,9 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
   font-weight: 700;
   line-height: 1;
 }
-:is(#hint, #steps .chip) b svg { width: 2vh; height: 2vh; }
+:is(#hint, #steps .chip, #firstHint) b svg { width: 2vh; height: 2vh; }
 /* The symbol as text, for screen readers: the drawn shape shows instead. */
-:is(#hint, #steps .chip) b i { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+:is(#hint, #steps .chip, #firstHint) b i { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 :is(#hint, #steps .chip) b.cross { color: #8fb0ff; }
 :is(#hint, #steps .chip) b.circle { color: #ff7a7a; }
 :is(#hint, #steps .chip) b.options { color: var(--ink); }
@@ -1098,9 +1143,22 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
   translate: 0 -1vh;
 }
 body:has(#settings.on) #toast { top: var(--status-top); right: calc(var(--safe-x) + 38vw + 2vh); }
-body:has(#settings.on #add.on) #toast { right: calc(var(--safe-x) + 46vw + 2vh); }
+body:has(#settings.on :is(#add.on, #report.on)) #toast { right: calc(var(--safe-x) + 46vw + 2vh); }
 /* The line keeps the height of a pill, so one coming doesn't move what narrows the row. */
 #filters { min-height: 5.6vh; }
+
+/* Above the row and away from the status capsule. Panels hide it before their cover or menu lifts. */
+#firstHint {
+  --u: .85vh;
+  position: fixed;
+  top: calc(var(--status-top) + var(--status-h) + var(--plate-inset) + 8vh);
+  right: calc(var(--safe-x) + var(--plate-inset));
+  max-width: 46vw;
+  z-index: 5;
+  pointer-events: none;
+}
+#firstHint[hidden] { display: none; }
+#firstHint .text { display: flex; align-items: center; gap: .7vh; }
 
 /* Reduce Motion: Settings, Find, Add a game and the messages fade in place for 150 ms rather than sliding. The faces of
    Settings' plate fade where they are in the same 150 ms, one out and then the other in, so their titles never show
@@ -1108,8 +1166,8 @@ body:has(#settings.on #add.on) #toast { right: calc(var(--safe-x) + 46vw + 2vh);
    eased curve rather than a spring, and the end of the row doesn't bump (library.js move). */
 @media (prefers-reduced-motion: reduce) {
   .panel, .panel.on, #settings, #settings.on, #settings.grown { transform: none; transition: opacity var(--fade-ms) ease; }
-  .face, #add, #settings:has(#add.on) #settingsFace { translate: none; transition: opacity calc(var(--fade-ms) / 2) ease; }
-  #settingsFace, #add.on, #settings.grown #add.on {
+  .face, #add, #report, #settings:has(#add.on, #report.on) #settingsFace { translate: none; transition: opacity calc(var(--fade-ms) / 2) ease; }
+  #settingsFace, #add.on, #report.on, #settings.grown #add.on {
     translate: none;
     transition: opacity calc(var(--fade-ms) / 2) ease calc(var(--fade-ms) / 2);
   }

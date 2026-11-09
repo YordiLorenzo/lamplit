@@ -31,6 +31,14 @@ test('the page listens to exactly the events Rust sends', () => {
   assert.deepEqual(sorted(p.events), sorted(r.events));
 });
 
+test('startup and restore replace the first-time setup contract', () => {
+  const names = p.calls.map((c) => c.cmd);
+  for (const command of ['startup_state', 'startup_set', 'restore_changes', 'setup_start', 'prefs_set_steam_guide']) assert.ok(names.includes(command), command);
+  assert.ok(!names.includes('setup_state'));
+  assert.ok(p.events.includes('restore-step'));
+  assert.ok(!p.events.includes('setup'));
+});
+
 test("the page's types allow exactly the values Rust sends", () => {
   const types = {
     step_state: 'LaunchStep.state',
@@ -44,6 +52,7 @@ test("the page's types allow exactly the values Rust sends", () => {
     entry_kind: 'FolderEntry.kind',
     dock_icon: 'DockIcon',
     dock_release: 'DockRelease',
+    update_phase: 'Update.phase',
   };
   for (const [kind, type] of Object.entries(types)) assert.deepEqual(sorted(pageValues(type)), sorted(values[kind]), type);
 });

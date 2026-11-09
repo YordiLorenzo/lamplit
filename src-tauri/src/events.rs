@@ -4,7 +4,8 @@ use crate::devices::pad;
 use crate::dock;
 use crate::library::{Art, Game};
 use crate::stores::{self, Store};
-use crate::system::setup;
+use crate::system::restore;
+use crate::updates;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
@@ -30,10 +31,14 @@ pub enum Event<'a> {
     Stores(Vec<stores::Status>),
     /// The headset, a controller or the sound device changed; the page asks for accessories_state and sound_state.
     Accessories,
+    /// Both pages play interface sounds at the level saved in Settings.
+    InterfaceSounds(crate::prefs::InterfaceSounds),
     /// A short message for the player.
     Notice(String),
-    /// Setup started from Settings has ended: whether it is still needed.
-    Setup(setup::Status),
+    /// A check, download or deferred install changed state.
+    Update(updates::Status),
+    /// One restoration result, kept on the Settings page while later steps run.
+    RestoreStep(restore::Step),
     /// A controller press for the dock while the dock is in front: "left", "ok", "back" and so on, or Cross let go.
     DockPad(&'a str),
     /// The dock opens over the game, folds away, or shows news for a moment.
@@ -91,8 +96,10 @@ impl Event<'_> {
             Event::LaunchStep(_) => "launch-step",
             Event::Stores(_) => "stores",
             Event::Accessories => "accessories",
+            Event::InterfaceSounds(_) => "interface-sounds",
             Event::Notice(_) => "notice",
-            Event::Setup(_) => "setup",
+            Event::Update(_) => "update",
+            Event::RestoreStep(_) => "restore-step",
             Event::DockPad(_) => "dock-pad",
             Event::Dock(_) => "dock",
         }
@@ -136,8 +143,17 @@ mod tests {
         let label = "Sign in to EA app";
         let step = LaunchStep { id, key: "store:ea", state: StepState::Block, label, store: Some(Store::Ea) };
         assert_eq!(payload(&Event::LaunchStep(step)), ipc_fixture!("launch-step"));
-        assert_eq!(payload(&Event::Setup(setup::Status { needed: true })), ipc_fixture!("setup"));
+        let step = restore::Step {
+            name: "Quiet mode".into(),
+            restored: false,
+            message: "Close Ubisoft Connect, then try again.".into(),
+        };
+        assert_eq!(payload(&Event::RestoreStep(step)), ipc_fixture!("restore-step"));
         assert_eq!(payload(&Event::Accessories), Value::Null);
+        assert_eq!(
+            payload(&Event::InterfaceSounds(crate::prefs::InterfaceSounds::Normal)),
+            ipc_fixture!("prefs")["interface_sounds"]
+        );
         assert_eq!(payload(&Event::Pad("ok")), json!("ok"));
         assert_eq!(payload(&Event::PadKind(pad::Kind::Xbox)), ipc_fixture!("pad-kind"));
         assert_eq!(payload(&Event::Summoned(None)), Value::Null);

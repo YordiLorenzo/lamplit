@@ -83,8 +83,7 @@
     </aside>
   </div>
 
-  <!-- Settings and Add a game share one plate (settings.js, add.js, morph.js): each is a face of it, and the plate
-       widens for Add a game. -->
+  <!-- Settings, Add a game and Save a report share one plate; its size follows the face it shows. -->
   <aside id="settings" class="panel">
     <section id="settingsFace" class="face">
       <h2 id="settingsTitle">Settings</h2>
@@ -96,6 +95,15 @@
       <div id="addList"></div>
       <div id="addField" class="field"><span id="addName" class="typed" data-placeholder="The game's name"></span></div>
       <div id="addKeys" class="keys"></div>
+    </section>
+    <section id="report" class="face" aria-labelledby="reportTitle">
+      <h2 id="reportTitle">Save a report</h2>
+      <p>Read it first. Save puts this file in Downloads. Nothing is sent.</p>
+      <pre id="reportText" tabindex="0" aria-label="Report preview"></pre>
+      <div class="report-actions">
+        <button id="reportSave" class="row focus" type="button" disabled>Save</button>
+        <button id="reportBack" class="row" type="button">Back</button>
+      </div>
     </section>
   </aside>
 
@@ -114,7 +122,16 @@
   </div>
 
   <!-- Any other message, at the top right under the clock (hints.js toast). -->
+  <div id="news" hidden>
+    <section role="dialog" aria-modal="true" aria-labelledby="newsTitle">
+      <p id="newsVersion"></p>
+      <h2 id="newsTitle">What's new</h2>
+      <ul id="newsList"></ul>
+      <button id="newsClose" type="button">Continue</button>
+    </section>
+  </div>
   <div id="toast" class="news"></div>
+  <div id="firstHint" class="news" hidden></div>
   <!-- Black between the starting screen and the game's window (launch.js handOver). -->
   <div id="arrival"></div>
   <div id="curtain"></div>

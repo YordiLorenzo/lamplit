@@ -30,12 +30,16 @@ pub fn inside(dir: &Path, rel: &str) -> Option<PathBuf> {
 /// A text file in UTF-8 or UTF-16 (with its byte order mark), as stores write them.
 pub fn read_text(path: &Path) -> Option<String> {
     let bytes = std::fs::read(path).ok()?;
+    Some(decode_text(&bytes))
+}
+
+pub fn decode_text(bytes: &[u8]) -> String {
     if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
         let units: Vec<u16> = rest.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
-        return Some(String::from_utf16_lossy(&units));
+        return String::from_utf16_lossy(&units);
     }
-    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
-    Some(String::from_utf8_lossy(bytes).into_owned())
+    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
+    String::from_utf8_lossy(bytes).into_owned()
 }
 
 /// The folders in `dir`, sorted.

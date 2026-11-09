@@ -1,5 +1,5 @@
 // Lamplit, a console-style home screen for Windows PCs on a TV. `run` starts the app; main.rs decides which of
-// Lamplit's processes this one is (the supervisor, the app or first-time setup).
+// Lamplit's processes this one is (the supervisor, the app or windowless maintenance).
 
 /// A payload's JSON as the page's tests use it (tests/ipc/<name>.json), for the tests that pin what Rust sends and
 /// takes to the same shape. Read at build time: the test binary runs on a Windows PC that may not have the repository.
@@ -23,6 +23,7 @@ mod launch;
 mod library;
 mod stores;
 mod system;
+mod updates;
 
 // What the features share: the commands and events the page sees, errors, files, the data folder, the player's prefs
 // and the log.
@@ -34,6 +35,7 @@ mod files;
 mod logging;
 mod prefs;
 mod probe;
+mod report;
 
 // The calls into Windows, the one place with unsafe code.
 #[allow(unsafe_code)]
@@ -53,7 +55,11 @@ pub use error::Error;
 // asks for, and only the exe's test binary carries that manifest.
 pub use dock::{LABEL as DOCK_LABEL, on_close_request};
 pub use logging::to_file as log_to_file;
-pub use system::setup::{FLAG as SETUP_FLAG, FOR_FLAG as SETUP_FOR_FLAG, run as setup};
+pub use system::restore::{FLAG as RESTORE_FLAG, NO_PROMPT_FLAG as RESTORE_NO_PROMPT_FLAG, headless as restore};
+pub use system::setup::{FLAG as SETUP_FLAG, run as setup};
+pub use system::startup::{
+    DELETE_FLAG as REMOVE_STARTUP_FLAG, FOR_FLAG as STARTUP_FOR_FLAG, delete_for as remove_startup,
+};
 pub use win::process::attach_parent_console;
 
 /// True when another Lamplit already runs (the one started at sign-in, say, when the player starts a second by hand);
@@ -100,11 +106,15 @@ fn first_lamplit_window() -> Option<win::window::HWND> {
 pub fn run() {
     probe::with(tauri::Builder::default())
         .plugin(logging::plugin())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updates::Updates::default())
         .manage(library::Library::default())
         .manage(launch::Launcher::default())
         .manage(devices::pad::Controllers::default())
         .invoke_handler(tauri::generate_handler![
             commands::library_games,
+            commands::report_preview,
+            commands::report_save,
             commands::library_rescan,
             commands::library_set_favourite,
             commands::library_set_hidden,
@@ -126,7 +136,9 @@ pub fn run() {
             commands::overlay_toggle_stats,
             commands::quiet_state,
             commands::quiet_set,
-            commands::setup_state,
+            commands::startup_state,
+            commands::startup_set,
+            commands::restore_changes,
             commands::setup_start,
             commands::sound_state,
             commands::sound_set_default,
@@ -137,15 +149,25 @@ pub fn run() {
             commands::controller_turn_off,
             commands::controller_kind,
             commands::prefs_state,
+            commands::updates_state,
+            commands::updates_check,
+            commands::updates_install,
+            commands::updates_whats_new,
+            commands::prefs_set_check_updates,
             commands::prefs_set_sound_follows,
+            commands::prefs_set_interface_sounds,
+            commands::prefs_hint_shown,
+            commands::prefs_hint_done,
             commands::prefs_set_touchpad_mouse,
             commands::prefs_set_steam_devtools,
+            commands::prefs_set_steam_guide,
             commands::prefs_set_online_art,
             commands::prefs_set_screensaver_minutes,
             commands::prefs_set_dock,
             commands::power_sleep,
             commands::power_restart,
             commands::power_shut_down,
+            commands::app_exit,
             commands::display_mode,
             commands::dock_state,
             commands::dock_resume,
@@ -159,6 +181,7 @@ pub fn run() {
             log::info!("Lamplit {} starting", env!("CARGO_PKG_VERSION"));
             launch::window::remember_lamplit(app.handle())?;
             app.manage(prefs::load());
+            app.manage(devices::accessories::load_sound_routing());
             app.manage(library::UserData::load());
             library::scan(app.handle());
             // The headset before the controllers: a controller's thread reads the headset's state.
@@ -166,7 +189,8 @@ pub fn run() {
             devices::pad::start(app.handle().clone());
             dock::start(app.handle());
             upkeep(app.handle().clone());
-            stores::steam::guard_big_picture();
+            updates::start(app.handle().clone());
+            stores::steam::guard_big_picture(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -179,15 +203,20 @@ pub fn run() {
 }
 
 /// Every 10 s: Steam kept in line whenever it runs, and quiet-mode changes that had to wait (for Steam to start, or
-/// for Ubisoft Connect to close). Both are a refused localhost connection or a small file read when there is
-/// nothing to do.
+/// for Ubisoft Connect to close), plus pending sound returns when an endpoint comes back.
 fn upkeep(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         let mut steam = stores::steam::devtools::Upkeep::default();
         loop {
-            stores::steam::devtools::upkeep(&mut steam, || prefs::get(&app).steam_devtools);
-            system::quiet::catch_up();
+            {
+                let _changes = system::restore::CHANGES.lock();
+                let prefs = prefs::get(&app);
+                stores::steam::devtools::upkeep(&mut steam, prefs.steam_devtools, prefs.steam_guide);
+                system::quiet::catch_up();
+                system::restore::catch_up();
+            }
             std::thread::sleep(Duration::from_secs(10));
+            devices::accessories::catch_up_sound(&app);
         }
     });
 }

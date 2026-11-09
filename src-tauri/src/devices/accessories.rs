@@ -7,11 +7,12 @@
 use super::audio::{self, Device, Flow, Kind};
 use super::headset::{self, Headset};
 use super::pad::{Controller, Controllers};
+use crate::data;
 use crate::error::Result;
 use crate::events::{self, Event};
 use crate::prefs;
 use parking_lot::Mutex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 #[derive(Serialize)]
@@ -47,25 +48,153 @@ pub fn move_sound_off_headset_found_off(app: &AppHandle) {
     }
 }
 
-/// The output and the microphone Lamplit moved the sound away from, to go back to. Holding the lock also makes moves
-/// one at a time: the headset's thread and each controller's can all ask.
-static MOVED_FROM: Mutex<[Option<String>; 2]> = Mutex::new([None, None]);
+const SOUND_FILE: &str = "sound-return.json";
+
+/// Holding this lock also serialises a player's choice with moves made by the headset and controller threads.
+pub struct SoundRouting(Mutex<Routes>);
+
+#[derive(Clone, Default, Deserialize, PartialEq, Serialize)]
+#[serde(default)]
+struct Routes {
+    output: Route,
+    input: Route,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+struct Route {
+    back_to: Option<String>,
+    /// The last default Lamplit set or saw after it disappeared. A different default while this one is still
+    /// available is the player's newer choice, not permission to restore the old one.
+    via: Option<String>,
+}
+
+pub fn load_sound_routing() -> SoundRouting {
+    SoundRouting(Mutex::new(data::load_or_default(SOUND_FILE)))
+}
+
+impl Routes {
+    fn save_if_changed(&self, before: &Self) {
+        if self != before
+            && let Err(e) = data::save(SOUND_FILE, self)
+        {
+            log::warn!("sound: couldn't save the return devices: {e}");
+        }
+    }
+
+    fn chosen(&mut self, sound: &audio::Sound, id: &str) {
+        for (devices, route) in [(&sound.outputs, &mut self.output), (&sound.inputs, &mut self.input)] {
+            if devices.iter().any(|d| d.id == id) {
+                *route = Route::default();
+            }
+        }
+    }
+}
+
+impl Route {
+    /// Windows also changes defaults when an endpoint disappears. Keep the return record through that, but let
+    /// a newer choice win when the previous default is still available.
+    fn observe(&mut self, devices: &[Device]) -> bool {
+        let Some(default) = devices.iter().find(|d| d.default) else { return false };
+        if self.back_to.is_none() {
+            return false;
+        }
+        let changed = self.via.as_deref() != Some(&default.id);
+        let via_there = devices.iter().any(|d| Some(d.id.as_str()) == self.via.as_deref());
+        if self.back_to.as_deref() == Some(&default.id) {
+            // Back where it came from, so the return is done. While the device it went to is still there, someone
+            // chose this and nothing else moves; with that device gone, Windows put it back by itself, and an
+            // accessory still on may want the sound.
+            *self = Self::default();
+            return via_there;
+        }
+        if changed && via_there {
+            *self = Self::default();
+            return true;
+        }
+        self.via = Some(default.id.clone());
+        false
+    }
+
+    fn moved(&mut self, devices: &[Device], device: &Device, following: bool) {
+        if following && self.back_to.is_none() {
+            self.back_to = devices.iter().find(|d| d.default && !d.kind.follows()).map(|d| d.id.clone());
+        }
+        if self.back_to.as_deref() == Some(&device.id) {
+            *self = Self::default();
+        } else if self.back_to.is_some() {
+            self.via = Some(device.id.clone());
+        }
+    }
+}
+
+/// An explicit choice cancels a pending return in that direction, even when the player picks the current default.
+pub fn set_sound_default(app: &AppHandle, id: &str) -> Result<audio::Sound> {
+    let state = app.state::<SoundRouting>();
+    let mut routes = state.0.lock();
+    let sound = audio::state()?;
+    audio::set_default(id).inspect_err(|e| log::warn!("can't switch audio to {id}: {e}"))?;
+    let before = routes.clone();
+    routes.chosen(&sound, id);
+    routes.save_if_changed(&before);
+    log::info!("audio device switched to {id}");
+    audio::state()
+}
+
+/// The TV may have been off at start. Upkeep checks pending returns, without starting new moves to accessories.
+pub fn catch_up_sound(app: &AppHandle) {
+    route_sound(app, false);
+}
 
 /// Puts the sound where it belongs now (see the top of this file), when the player lets Lamplit do that. Called when
 /// the headset turns on or off and when headphones go into or out of a controller.
 pub fn settle_sound(app: &AppHandle) {
+    route_sound(app, true);
+}
+
+fn route_sound(app: &AppHandle, follow: bool) {
     if !prefs::get(app).sound_follows {
         return;
     }
-    let mut moved_from = MOVED_FROM.lock();
-    let jack = app.state::<Controllers>().list().iter().any(Controller::routes_sound);
-    let want = wanted(jack, app.state::<Headset>().status().on == Some(true));
+    let state = app.state::<SoundRouting>();
+    let mut routes = state.0.lock();
+    if !follow && routes.output.back_to.is_none() && routes.input.back_to.is_none() {
+        return;
+    }
+    let controllers = app.state::<Controllers>().list();
+    let headset = app.state::<Headset>().status();
+    let want = wanted(controllers.iter().any(Controller::routes_sound), headset.on == Some(true));
+    let mut wired = controllers
+        .iter()
+        .filter(|c| c.kind == super::pad::Kind::DualSense && c.connection == super::pad::Connection::Usb)
+        .peekable();
+    let jacks_known = wired.peek().is_some() && wired.all(|c| c.headphones.is_some());
     let Ok(sound) = audio::state() else { return };
-    let [output_from, input_from] = &mut *moved_from;
-    for (devices, from, output) in [(&sound.outputs, output_from, true), (&sound.inputs, input_from, false)] {
+    let before = routes.clone();
+    let Routes { output, input } = &mut *routes;
+    for (devices, route, output) in [(&sound.outputs, output, true), (&sound.inputs, input, false)] {
+        if route.observe(devices) {
+            continue;
+        }
+        if !follow && (want.is_some() || route.back_to.is_none()) {
+            continue;
+        }
+        // At start an accessory can still be reporting whether it is in use. Never take its sound away on that
+        // incomplete information; a later upkeep or its status report will try again.
+        if !follow
+            && devices.iter().any(|d| {
+                d.default
+                    && match d.kind {
+                        Kind::Headset => headset.receiver && headset.on.is_none(),
+                        Kind::Controller => !jacks_known,
+                        _ => false,
+                    }
+            })
+        {
+            continue;
+        }
         let what = if output { "output" } else { "microphone" };
         // A TV has no microphone to go back to.
-        let device = match pick(devices, want, from.as_deref(), output.then_some(Kind::Tv)) {
+        let device = match pick(devices, want, route.back_to.as_deref(), output.then_some(Kind::Tv)) {
             Pick::Stay => continue,
             Pick::Switch(device) => device,
             Pick::Missing => {
@@ -78,15 +207,9 @@ pub fn settle_sound(app: &AppHandle) {
                 continue;
             }
         };
-        let players_own = devices.iter().find(|d| d.default && !d.kind.follows()).map(|d| d.id.clone());
         match audio::move_default(if output { Flow::Output } else { Flow::Input }, &device.id) {
             Ok(()) => {
-                // Remember the player's own device when the sound leaves it, and forget it once back.
-                if want.is_none() {
-                    *from = None;
-                } else if players_own.is_some() {
-                    *from = players_own;
-                }
+                route.moved(devices, device, want.is_some());
                 log::info!("sound: {what} is now {}", device.windows_name);
                 // The page shows which device is in use; the news that set off this move came before it.
                 events::emit(app, Event::Accessories);
@@ -97,6 +220,7 @@ pub fn settle_sound(app: &AppHandle) {
             Err(e) => log::warn!("sound: couldn't switch to {}: {e}", device.windows_name),
         }
     }
+    routes.save_if_changed(&before);
 }
 
 /// The kind of device the sound follows to: headphones in a wired controller, else the headset while it is on.
@@ -124,17 +248,19 @@ enum Pick<'a> {
 }
 
 /// The device among `devices` (one direction) to make the default. Following (`want` Some), it is the device of that
-/// kind. Going back (None) only moves the sound off the headset or a controller, never off the player's own choice:
-/// to `back_to` (the device it was moved away from) while that is still there, else to the one `fallback` device.
+/// kind. Going back (None) restores a pending return, else only moves off an accessory. Route::observe must first
+/// discard a return superseded by the player's choice. A missing return stays recorded even after a fallback.
 fn pick<'a>(devices: &'a [Device], want: Option<Kind>, back_to: Option<&str>, fallback: Option<Kind>) -> Pick<'a> {
     let default = devices.iter().find(|d| d.default);
     let kind = match want {
         Some(kind) if default.is_some_and(|d| d.kind == kind) => return Pick::Stay,
         Some(kind) => Some(kind),
-        None if !default.is_some_and(|d| d.kind.follows()) => return Pick::Stay,
         None => {
             if let Some(device) = back_to.and_then(|id| devices.iter().find(|d| d.id == id)) {
-                return Pick::Switch(device);
+                return if device.default { Pick::Stay } else { Pick::Switch(device) };
+            }
+            if !default.is_some_and(|d| d.kind.follows()) {
+                return Pick::Stay;
             }
             fallback
         }
@@ -242,6 +368,135 @@ mod tests {
     #[test]
     fn leaves_the_players_own_choice() {
         let devices = [device("tv", Kind::Tv, false), device("soundbar", Kind::Other, true)];
-        assert_eq!(pick(&devices, None, Some("tv"), Some(Kind::Tv)), Pick::Stay);
+        assert_eq!(pick(&devices, None, None, Some(Kind::Tv)), Pick::Stay);
+    }
+
+    fn returning(back_to: &str, via: &str) -> Route {
+        Route { back_to: Some(back_to.into()), via: Some(via.into()) }
+    }
+
+    #[test]
+    fn remembers_the_soundbar_and_microphone_across_a_restart() {
+        let devices = [device("soundbar", Kind::Other, true), device("headset", Kind::Headset, false)];
+        let mut routes = Routes::default();
+        routes.output.moved(&devices, &devices[1], true);
+        routes.input = returning("desk-mic", "headset-mic");
+        let saved = serde_json::to_string(&routes).unwrap();
+        let mut loaded: Routes = serde_json::from_str(&saved).unwrap();
+        assert_eq!(loaded.output, returning("soundbar", "headset"));
+        assert_eq!(loaded.input, returning("desk-mic", "headset-mic"));
+        let after = [device("soundbar", Kind::Other, false), device("headset", Kind::Headset, true)];
+        assert!(!loaded.output.observe(&after));
+        assert_eq!(pick(&after, None, loaded.output.back_to.as_deref(), Some(Kind::Tv)), Pick::Switch(&after[0]));
+        loaded.output.moved(&after, &after[0], false);
+        assert_eq!(loaded.output, Route::default());
+        assert_eq!(loaded.input, returning("desk-mic", "headset-mic"));
+    }
+
+    #[test]
+    fn a_tv_off_at_start_can_return_later() {
+        let mut route = returning("tv", "headset");
+        let missing = [device("headset", Kind::Headset, true)];
+        assert!(!route.observe(&missing));
+        assert_eq!(pick(&missing, None, route.back_to.as_deref(), Some(Kind::Tv)), Pick::Missing);
+        assert_eq!(route, returning("tv", "headset"));
+        let back = [device("tv", Kind::Tv, false), device("headset", Kind::Headset, true)];
+        assert!(!route.observe(&back));
+        assert_eq!(pick(&back, None, route.back_to.as_deref(), Some(Kind::Tv)), Pick::Switch(&back[0]));
+    }
+
+    #[test]
+    fn a_fallback_does_not_replace_the_missing_soundbar() {
+        let mut route = returning("soundbar", "headset");
+        let devices = [device("tv", Kind::Tv, false), device("headset", Kind::Headset, true)];
+        assert_eq!(pick(&devices, None, route.back_to.as_deref(), Some(Kind::Tv)), Pick::Switch(&devices[0]));
+        route.moved(&devices, &devices[0], false);
+        assert_eq!(route, returning("soundbar", "tv"));
+        let on_tv = [device("tv", Kind::Tv, true), device("headset", Kind::Headset, false)];
+        assert!(!route.observe(&on_tv));
+        assert_eq!(pick(&on_tv, None, route.back_to.as_deref(), Some(Kind::Tv)), Pick::Stay);
+        let back = [device("tv", Kind::Tv, true), device("soundbar", Kind::Other, false)];
+        assert!(!route.observe(&back));
+        assert_eq!(pick(&back, None, route.back_to.as_deref(), Some(Kind::Tv)), Pick::Switch(&back[1]));
+    }
+
+    #[test]
+    fn windows_putting_it_back_on_the_tv_still_lets_the_headset_take_it() {
+        // TV, then controller headphones, then the headset on, then the controller goes and Windows picks the TV.
+        let mut route = returning("tv", "controller");
+        let devices = [device("tv", Kind::Tv, true), device("headset", Kind::Headset, false)];
+        assert!(!route.observe(&devices));
+        assert_eq!(route, Route::default(), "a later reconnect starts a fresh return");
+        assert_eq!(
+            pick(&devices, Some(Kind::Headset), route.back_to.as_deref(), Some(Kind::Tv)),
+            Pick::Switch(&devices[1])
+        );
+        // The player choosing the TV while the controller is still there ends the return.
+        let mut chosen = returning("tv", "controller");
+        let both = [device("tv", Kind::Tv, true), device("controller", Kind::Controller, false)];
+        assert!(chosen.observe(&both));
+        assert_eq!(chosen, Route::default());
+    }
+
+    #[test]
+    fn windows_falling_back_when_a_device_goes_keeps_the_return() {
+        let mut route = returning("soundbar", "controller");
+        assert!(!route.observe(&[]));
+        assert_eq!(route, returning("soundbar", "controller"));
+        let fallback = [device("speakers", Kind::Other, true)];
+        assert!(!route.observe(&fallback));
+        assert_eq!(route, returning("soundbar", "speakers"));
+        let back = [device("speakers", Kind::Other, true), device("soundbar", Kind::Other, false)];
+        assert!(!route.observe(&back));
+        assert_eq!(pick(&back, None, route.back_to.as_deref(), Some(Kind::Tv)), Pick::Switch(&back[1]));
+    }
+
+    #[test]
+    fn a_newer_windows_choice_wins_even_while_the_return_device_is_missing() {
+        let mut route = returning("soundbar", "headset");
+        let chosen = [device("speakers", Kind::Other, true), device("headset", Kind::Headset, false)];
+        assert!(route.observe(&chosen));
+        assert_eq!(route, Route::default());
+        let back = [device("speakers", Kind::Other, true), device("soundbar", Kind::Other, false)];
+        assert_eq!(pick(&back, None, route.back_to.as_deref(), Some(Kind::Tv)), Pick::Stay);
+        // Choosing an accessory explicitly wins too, even though it normally follows the player.
+        let mut route = returning("soundbar", "headset");
+        let chosen = [device("controller", Kind::Controller, true), device("headset", Kind::Headset, false)];
+        assert!(route.observe(&chosen));
+        assert_eq!(route, Route::default());
+    }
+
+    #[test]
+    fn choosing_the_current_device_cancels_only_that_directions_return() {
+        let sound = audio::Sound {
+            outputs: vec![device("headset", Kind::Headset, true)],
+            inputs: vec![device("headset-mic", Kind::Headset, true)],
+            volume: None,
+            muted: None,
+            mic_muted: None,
+        };
+        let mut routes = Routes { output: returning("tv", "headset"), input: returning("desk-mic", "headset-mic") };
+        routes.chosen(&sound, "headset");
+        assert_eq!(routes.output, Route::default());
+        assert_eq!(routes.input, returning("desk-mic", "headset-mic"));
+        routes.chosen(&sound, "headset-mic");
+        assert_eq!(routes.input, Route::default());
+    }
+
+    #[test]
+    fn going_from_headset_to_controller_keeps_the_original_return() {
+        let mut route = returning("soundbar", "headset");
+        let devices = [device("headset", Kind::Headset, true), device("controller", Kind::Controller, false)];
+        route.moved(&devices, &devices[1], true);
+        assert_eq!(route, returning("soundbar", "controller"));
+    }
+
+    #[test]
+    fn returning_without_lamplit_clears_the_record() {
+        // The headset went and Windows put the sound back on the TV: the return is done, and routing goes on.
+        let mut route = returning("tv", "headset");
+        assert!(!route.observe(&[device("tv", Kind::Tv, true)]));
+        assert_eq!(route, Route::default());
+        assert_eq!(serde_json::from_str::<Routes>("{}").unwrap().output, Route::default());
     }
 }

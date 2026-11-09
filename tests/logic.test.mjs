@@ -7,6 +7,7 @@ import {
   STORE_ORDER,
   batteryText,
   buttonFace,
+  returnHint,
   byName,
   byPlayed,
   counts,
@@ -31,10 +32,12 @@ import {
   sectionRows,
   sectionSummary,
   stepAutoOff,
+  stepInterfaceSounds,
   stepSaverMinutes,
   storeChoices,
   storeWarning,
   typed,
+  updateRow,
   visibleSections,
   words,
 } from '../ui/logic.js';
@@ -47,7 +50,7 @@ const store = (key, name, installed, account) =>
   like(ipc('stores')[0], { store: key, name, installed, running: false, account: known('account', account) });
 const quiet = (state, active) => like(ipc('quiet'), { state: known('quiet_state', state), active, notes: [] });
 const prefs = (changes) => like(ipc('prefs'), changes);
-const setup = (needed) => like(ipc('setup'), { needed });
+const startup = (enabled) => like(ipc('startup'), { enabled });
 const overlays = (nvidia_overlay, nvidia_stats) => like(ipc('overlays'), { nvidia_overlay, nvidia_stats });
 
 /** A Settings state with nothing loaded yet; tests fill in what they need. */
@@ -55,12 +58,14 @@ const settingsState = (extra = {}) => ({
   sound: null,
   accessories: null,
   quiet: null,
-  setup: null,
+  startup: null,
+  restore: { running: false, steps: [], error: '' },
   display: null,
   overlays: overlays(false, null),
   stores: new Map(),
   all: [],
   running: null,
+  update: { phase: 'idle', version: null, error: null },
   settings: { section: null, focus: null, idx: 0, rows: [], confirm: null },
   ...extra,
 });
@@ -72,6 +77,31 @@ const { headset: headsetBase, controllers: [controllerBase, xboxBase] } = ipc('a
 /** The headset, on battery unless `extra` says otherwise. */
 const headset = (extra = {}) =>
   like(headsetBase, { receiver: true, on: true, battery: 80, charge: known('charge', 'battery'), sidetone: 40, auto_off: 30, ...extra });
+
+describe('update rows', () => {
+  test('every backend phase has a usable row without losing focus', () => {
+    const labels = {
+      idle: 'Check for updates', checking: 'Checking for updates…', current: 'Lamplit is up to date',
+      available: 'Lamplit 0.4.1 is available', downloading: 'Downloading Lamplit 0.4.1…',
+      ready: "Lamplit 0.4.1 installs when you're done playing", installing: 'Installing Lamplit 0.4.1…',
+      error: 'Signature failed',
+    };
+    assert.deepEqual(Object.keys(labels), values.update_phase);
+    for (const phase of values.update_phase) {
+      const status = like(ipc('update'), { phase, version: ['idle', 'checking', 'current'].includes(phase) ? null : '0.4.1', error: phase === 'error' ? 'Signature failed' : null });
+      const row = updateRow(status);
+      assert.equal(row.label, labels[phase]);
+      assert.equal(rowKey(row), 'update:');
+    }
+  });
+  test('turning automatic checks off leaves the manual check and a found version visible', () => {
+    const s = settingsState({ prefs: prefs({ check_updates: false }), update: ipc('update') });
+    const rows = sectionRows('updates', s);
+    assert.equal(rows[0].value, 'Download and install');
+    assert.equal(rows[1].value, 'Off');
+    assert.match(sectionSummary('updates', s)[0], /0\.4\.1/);
+  });
+});
 
 describe('readable', () => {
   test('keeps the hue and lifts a dark colour', () => {
@@ -545,14 +575,36 @@ describe('Sound and System summaries', () => {
     assert.deepEqual(sectionSummary('sound', settingsState({ sound: muted })), ['TV · muted']);
     assert.deepEqual(sectionSummary('sound', settingsState({ sound: { ...muted, muted: false } })), ['TV · 40%']);
   });
-  test('setup that is needed warns, else the display shows', () => {
-    assert.deepEqual(sectionSummary('system', settingsState({ setup: setup(true), display: '1920 × 1080 at 60 Hz' })), ['Setup needed', 'warn']);
-    assert.deepEqual(sectionSummary('system', settingsState({ setup: setup(false), display: '1920 × 1080 at 60 Hz' })), ['1920 × 1080 at 60 Hz']);
+  test('System shows the display, with no startup nag', () => {
+    for (const enabled of [false, true]) {
+      assert.deepEqual(sectionSummary('system', settingsState({ startup: startup(enabled), display: '1920 × 1080 at 60 Hz' })), ['1920 × 1080 at 60 Hz']);
+    }
   });
-  test('System offers setup only while it is needed, and the art switch always', () => {
-    const kinds = (needed) => sectionRows('system', settingsState({ setup: setup(needed), prefs: prefs({ online_art: true }) })).map((r) => r.kind);
-    assert.deepEqual(kinds(true), ['setup', 'onlineart', undefined]);
-    assert.deepEqual(kinds(false), ['onlineart', undefined]);
+  test('System keeps startup, Steam repair, Save a report and a held restore available', () => {
+    const rows = sectionRows('system', settingsState({ prefs: prefs({ online_art: true }) }));
+    assert.deepEqual(rows.map((r) => r.kind), ['startup', 'setup', 'onlineart', undefined, 'report', 'restore']);
+    assert.equal(rows.find((r) => r.kind === 'report').label, 'Save a report');
+    assert.equal(rows[0].value, 'Unknown');
+    assert.match(rows[0].note, /Older installations/);
+    assert.equal(rows[1].label, "Repair Steam's background service");
+    assert.equal(rows.at(-1).hold, 'Hold to restore');
+    for (const enabled of [false, true]) {
+      assert.equal(sectionRows('system', settingsState({ startup: startup(enabled) }))[0].value, enabled ? 'On' : 'Off');
+    }
+  });
+  test('restore progress and partial failures stay readable and focusable in System', () => {
+    const restore = { running: true, steps: [ipc('restore-step')], error: '' };
+    assert.deepEqual(sectionSummary('system', settingsState({ restore })), ['Restoring changes…']);
+    const rows = sectionRows('system', settingsState({ restore }));
+    const report = rows.find((r) => r.kind === 'restorestep');
+    assert.equal(report.label, 'Quiet mode');
+    assert.equal(report.note, 'Close Ubisoft Connect, then try again.');
+    assert.equal(report.value, 'Needs attention');
+    assert.equal(focusIndex(rows, rowKey(report)), rows.indexOf(report));
+    restore.running = false;
+    assert.ok(sectionRows('system', settingsState({ restore })).some((r) => r.heading === 'Restore report'));
+    restore.steps[0].restored = true;
+    assert.equal(sectionRows('system', settingsState({ restore })).find((r) => r.kind === 'restorestep').value, 'Restored');
   });
 });
 
@@ -634,6 +686,13 @@ describe('Stores', () => {
     assert.ok(rows.some((r) => r.label?.includes('any program on this PC can control Steam')));
     assert.ok(!port(steam(false)).some((r) => r.kind === 'steamport'));
   });
+  test('the Steam Guide preference defaults on and follows its saved value', () => {
+    const state = withStores(store('steam', 'Steam', true, 'signed-in'));
+    const guide = (state) => sectionRows('stores', state).find((r) => r.kind === 'steamguide');
+    assert.equal(guide(state).value, 'On');
+    assert.equal(guide({ ...state, prefs: prefs({ steam_guide: false }) }).value, 'Off');
+    assert.equal(guide(withStores()), undefined);
+  });
   test('a saved sign-in or an unknown account is not called signed in', () => {
     const remembered = withStores(store('epic', 'Epic Games Launcher', true, 'remembered'));
     assert.deepEqual(sectionSummary('stores', remembered), ['1 installed']);
@@ -667,6 +726,25 @@ describe('Hidden games', () => {
     assert.deepEqual(sectionRows('hidden', settingsState()), [{ label: 'No hidden games', value: '' }]));
 });
 
+describe('Interface sounds', () => {
+  test('steps through Off, Quiet and Normal, stopping at each end', () => {
+    assert.equal(stepInterfaceSounds('normal', -1), 'quiet');
+    assert.equal(stepInterfaceSounds('quiet', -1), 'off');
+    assert.equal(stepInterfaceSounds('off', -1), 'off');
+    assert.equal(stepInterfaceSounds('off', 1), 'quiet');
+    assert.equal(stepInterfaceSounds('quiet', 1), 'normal');
+    assert.equal(stepInterfaceSounds('normal', 1), 'normal');
+  });
+  test('the row remains available without a Windows sound device', () => {
+    const row = (level) => sectionRows('sound', settingsState({ prefs: prefs({ interface_sounds: level }) }))
+      .find((r) => r.kind === 'interfacesounds');
+    for (const [level, label] of [['off', 'Off'], ['quiet', 'Quiet'], ['normal', 'Normal']]) {
+      assert.equal(row(level).value, label);
+      assert.equal(row(level).adjust, true);
+    }
+  });
+});
+
 describe('Power', () => {
   const library = [game('cp', 'Cyberpunk 2077')];
   /** The rows while `running` runs. */
@@ -677,6 +755,7 @@ describe('Power', () => {
       ['power', 'sleep', 'Sleep', 'i-sleep'],
       ['power', 'restart', 'Restart', 'i-restart'],
       ['power', 'shutdown', 'Shut down', 'i-power'],
+      ['power', 'exit', 'Exit to Windows', 'i-home'],
     ]);
   });
   test('restart and shut down are held, and say what they do before the press; sleep is one press', () => {
@@ -684,10 +763,11 @@ describe('Power', () => {
       ['sleep', null, null],
       ['restart', 'Hold to restart', 'Restarts the PC'],
       ['shutdown', 'Hold to shut down', 'Turns the PC off'],
+      ['exit', 'Hold to exit', 'Closes Lamplit'],
     ]);
   });
   test('restart and shut down name the running game that will close, before the press', () => {
-    assert.deepEqual(rows('cp').map((r) => r.note ?? null), [null, 'Cyberpunk 2077 is running and will close', 'Cyberpunk 2077 is running and will close']);
+    assert.deepEqual(rows('cp').map((r) => r.note ?? null), [null, 'Cyberpunk 2077 is running and will close', 'Cyberpunk 2077 is running and will close', 'Closes Lamplit']);
   });
 });
 
@@ -756,4 +836,12 @@ test('a press Steam mirrors as a key counts once, in either order', () => {
   assert.equal(counts(seen, 'left', 'key', 10_350 + PAD_KEEPS_MS + 1), true);
   // The mouse always counts.
   assert.equal(counts(seen, 'ok', 'mouse', 10_351), true);
+});
+
+test('the return hint names a way back that works with the controller in use', () => {
+  assert.equal(returnHint('dualsense'), 'Hold PS to come back from a game');
+  assert.equal(returnHint('xbox'), 'Hold View and Menu to come back from a game');
+  // Read only while Lamplit is in front, so no hold of theirs reaches it over a game.
+  assert.equal(returnHint('playstation'), 'Press Alt+Tab to come back from a game');
+  assert.equal(returnHint('other'), 'Press Alt+Tab to come back from a game');
 });

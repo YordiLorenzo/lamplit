@@ -18,11 +18,24 @@ pub fn loud_flags() -> Option<Vec<String>> {
 
 /// Switches the recorded flags (see `loud_flags`) off (`quiet`), or back on.
 pub fn apply(quiet: bool, ids: &[String]) -> Result<()> {
-    let Ok(text) = std::fs::read_to_string(path()) else { return Ok(()) };
+    let text = std::fs::read_to_string(path()).map_err(|e| {
+        Error::Player(format!("Couldn't read Ubisoft Connect's settings. Its saved settings are kept: {e}"))
+    })?;
     // By name: `catch_up` asks every 10 s while a change waits.
     if !stores::pids_named(&ubisoft::PROCESSES).is_empty() {
-        let verb = if quiet { "quiet it" } else { "restore its settings" };
-        return Err(Error::Player(format!("Close Ubisoft Connect so Lamplit can {verb}.")));
+        let message = if quiet {
+            "Close Ubisoft Connect so Lamplit can quiet it."
+        } else {
+            "Close Ubisoft Connect, then try again."
+        };
+        return Err(Error::Player(message.into()));
+    }
+    let present: Vec<String> =
+        flags(&text).into_iter().map(|(_, section, key, _)| format!("{section}.{key}")).collect();
+    if ids.iter().any(|id| !present.contains(id)) {
+        return Err(Error::Player(
+            "Ubisoft Connect's settings have changed. The saved settings are kept for recovery.".into(),
+        ));
     }
     let out = rewrite(&text, quiet, ids);
     write_atomic(&path(), out.as_bytes()).map_err(|e| Error::Player(format!("Couldn't write Ubisoft's settings: {e}")))

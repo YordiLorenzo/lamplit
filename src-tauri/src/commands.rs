@@ -9,17 +9,30 @@ use crate::devices::pad::{self, Controllers};
 use crate::devices::{accessories, audio};
 use crate::dock;
 use crate::error::{Error, Result};
+use crate::events::{self, Event};
 use crate::launch::{self, Launcher};
 use crate::library::{self, ArtChoice, Game, Library};
 use crate::prefs::{self, Prefs};
+use crate::report;
 use crate::stores::steam::devtools;
 use crate::stores::{self, Store};
-use crate::system::{overlay, power, quiet, setup};
+use crate::system::{overlay, power, quiet, restore, setup, startup};
+use crate::updates::{self, Updates};
 use crate::win;
 use tauri::{AppHandle, Manager, State};
 
 async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Result<T> {
     Ok(tauri::async_runtime::spawn_blocking(work).await?)
+}
+
+#[tauri::command]
+pub async fn report_preview(app: AppHandle) -> Result<String> {
+    blocking(move || report::preview(&app)).await?
+}
+
+#[tauri::command]
+pub async fn report_save(text: String) -> Result<String> {
+    blocking(move || report::save(&text)).await?
 }
 
 /// None until the first scan has finished.
@@ -86,6 +99,11 @@ pub async fn library_remove_game(app: AppHandle, id: String) -> Result<Vec<Game>
 pub fn launch_start(app: AppHandle, library: State<Library>, id: String) -> Result<()> {
     // The page's list can be older than the last scan, which may have dropped the game.
     let game = library.game(&id).ok_or_else(|| Error::Player("That game isn't installed any more.".into()))?;
+    let updates = app.state::<Updates>();
+    let installing = updates.installing.lock();
+    if *installing {
+        return Err(Error::Player("Lamplit is installing an update. It will be back shortly.".into()));
+    }
     launch::start(&app, game);
     Ok(())
 }
@@ -145,16 +163,47 @@ pub async fn quiet_state() -> Result<quiet::Report> {
 
 #[tauri::command]
 pub async fn quiet_set(on: bool) -> Result<quiet::Report> {
-    blocking(move || quiet::set(on)).await
+    blocking(move || {
+        let _changes = restore::CHANGES.lock();
+        quiet::set(on)
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn setup_state() -> Result<setup::Status> {
-    blocking(setup::status).await
+pub async fn startup_state() -> Result<startup::Status> {
+    blocking(startup::status).await?
 }
 
-/// Asks Windows for admin rights once and runs setup in a second lamplit.exe, and returns once the prompt is
-/// answered; a `setup` event follows when that process ends.
+#[tauri::command]
+pub async fn startup_set(on: bool) -> Result<startup::Status> {
+    blocking(move || {
+        let _changes = restore::CHANGES.lock();
+        startup::set(on)
+    })
+    .await?
+}
+
+#[tauri::command]
+pub async fn restore_changes(app: AppHandle) -> Result<Vec<restore::Step>> {
+    blocking(move || {
+        restore::run(
+            true,
+            || {
+                let opened_port = prefs::get(&app).steam_devtools;
+                prefs::change(&app, |p| {
+                    p.steam_devtools = false;
+                    p.steam_guide = false;
+                })?;
+                Ok(opened_port)
+            },
+            |step| events::emit(&app, Event::RestoreStep(step.clone())),
+        )
+    })
+    .await
+}
+
+/// Repairs Steam's service through Windows' admin prompt; a notice follows when that process ends.
 #[tauri::command]
 pub async fn setup_start(app: AppHandle) -> Result<()> {
     blocking(move || setup::start_elevated(app)).await?
@@ -167,13 +216,8 @@ pub async fn sound_state() -> Result<audio::Sound> {
 
 /// Makes `id` the default output or microphone, and returns the sound state that follows.
 #[tauri::command]
-pub async fn sound_set_default(id: String) -> Result<audio::Sound> {
-    blocking(move || {
-        audio::set_default(&id).inspect_err(|e| log::warn!("can't switch audio to {id}: {e}"))?;
-        log::info!("audio device switched to {id}");
-        audio::state()
-    })
-    .await?
+pub async fn sound_set_default(app: AppHandle, id: String) -> Result<audio::Sound> {
+    blocking(move || accessories::set_sound_default(&app, &id)).await?
 }
 
 /// Returns the new volume.
@@ -224,11 +268,59 @@ pub fn prefs_state(app: AppHandle) -> Prefs {
     prefs::get(&app)
 }
 
+/// Offline snapshot; automatic checks also send an update event.
+#[tauri::command]
+pub fn updates_state(app: AppHandle) -> updates::Status {
+    updates::state(&app)
+}
+
+#[tauri::command]
+pub async fn updates_check(app: AppHandle) -> Result<Option<String>> {
+    blocking(move || updates::check(&app, false)).await?
+}
+
+/// Downloads and verifies now, then waits for the game to end and Lamplit to come forward before installing.
+#[tauri::command]
+pub async fn updates_install(app: AppHandle) -> Result<updates::Status> {
+    blocking(move || updates::install(&app)).await?
+}
+
+#[tauri::command]
+pub async fn updates_whats_new(app: AppHandle) -> Result<Option<updates::News>> {
+    blocking(move || updates::whats_new(&app)).await?
+}
+
 // Each change returns the prefs that follow.
+
+#[tauri::command]
+pub async fn prefs_set_check_updates(app: AppHandle, on: bool) -> Result<Prefs> {
+    blocking(move || prefs::change(&app, |p| p.check_updates = on).map(|()| prefs::get(&app))).await?
+}
 
 #[tauri::command]
 pub async fn prefs_set_sound_follows(app: AppHandle, on: bool) -> Result<Prefs> {
     blocking(move || accessories::set_sound_follows(&app, on).map(|()| prefs::get(&app))).await?
+}
+
+#[tauri::command]
+pub async fn prefs_set_interface_sounds(app: AppHandle, level: String) -> Result<Prefs> {
+    let level = prefs::InterfaceSounds::parse(&level)?;
+    blocking(move || {
+        prefs::change(&app, |p| p.interface_sounds = level)?;
+        crate::events::emit(&app, crate::events::Event::InterfaceSounds(level));
+        Ok(prefs::get(&app))
+    })
+    .await?
+}
+
+#[tauri::command]
+pub async fn prefs_hint_shown(app: AppHandle, name: String) -> Result<bool> {
+    blocking(move || prefs::hint_shown(&app, &name)).await?
+}
+
+#[tauri::command]
+pub async fn prefs_hint_done(app: AppHandle, name: String) -> Result<()> {
+    blocking(move || prefs::hint_done(&app, &name)).await?
 }
 
 #[tauri::command]
@@ -240,7 +332,21 @@ pub async fn prefs_set_touchpad_mouse(app: AppHandle, on: bool) -> Result<Prefs>
 #[tauri::command]
 pub async fn prefs_set_steam_devtools(app: AppHandle, on: bool) -> Result<Prefs> {
     blocking(move || {
+        let _changes = restore::CHANGES.lock();
         devtools::open_from_next_start(on, || prefs::change(&app, |p| p.steam_devtools = on))?;
+        Ok(prefs::get(&app))
+    })
+    .await?
+}
+
+#[tauri::command]
+pub async fn prefs_set_steam_guide(app: AppHandle, on: bool) -> Result<Prefs> {
+    blocking(move || {
+        let _changes = restore::CHANGES.lock();
+        if on {
+            devtools::resume_changes()?;
+        }
+        prefs::change(&app, |p| p.steam_guide = on)?;
         Ok(prefs::get(&app))
     })
     .await?
@@ -323,6 +429,18 @@ pub async fn power_restart() -> Result<()> {
 #[tauri::command]
 pub async fn power_shut_down() -> Result<()> {
     blocking(power::shut_down).await?
+}
+
+/// Closes the home window, as Alt+F4 does: the dock goes with it and the app ends cleanly, so the supervisor ends too.
+/// `AppHandle::exit` from inside the page's call ended WebView2 with exit code 0xE0464645 on Windows, which the
+/// supervisor took for a crash and started Lamplit again.
+#[tauri::command]
+pub fn app_exit(app: AppHandle) {
+    if let Some(main) = app.get_webview_window("main")
+        && let Err(e) = main.close()
+    {
+        log::warn!("exit: the home window didn't close: {e}");
+    }
 }
 
 /// The screen's mode now, e.g. "3840 × 2160 at 120 Hz".

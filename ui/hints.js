@@ -2,7 +2,8 @@
 // The bottom of the screen: which buttons do what right now, named as on the controller in use; and short messages
 // for the player, as pills.
 
-import { buttonFace, detailChoices, narrowed } from './logic.js';
+import { buttonFace, detailChoices, narrowed, returnHint } from './logic.js';
+import * as api from './api.js';
 import { fillPill } from './pill.js';
 import { actionableStep, els, focused, state, storeName } from './state.js';
 
@@ -32,7 +33,9 @@ export function showHints() {
   const b = (button, label) => `<span>${buttonBadge(button)}${label}</span>`;
   const g = focused();
   let html = '';
-  if (state.mode === 'starting') {
+  if (state.mode === 'news') {
+    html = b('ok', 'Continue') + b('back', 'Close');
+  } else if (state.mode === 'starting') {
     const s = actionableStep();
     if (s) html += b('ok', stepAction(s));
     if (s?.state === 'block') html += b('triangle', 'Try anyway');
@@ -52,10 +55,15 @@ export function showHints() {
     const kind = state.add.rows.filter((r) => r.kind)[state.add.idx]?.kind;
     if (kind) html += b('ok', kind === 'exe' || kind === 'program' ? 'Choose' : 'Open');
     html += b('back', 'Back');
+  } else if (state.mode === 'report') {
+    html = '<span>↑↓ Scroll</span>';
+    if (state.report.text && !state.report.saving) html += b('ok', 'Save');
+    html += b('back', 'Back');
   } else if (state.mode === 'settings') {
     const row = state.settings.rows[state.settings.idx];
-    if (row?.adjust) html += b('adjust', 'Adjust');
-    else if (row?.kind) html += b('ok', row.kind === 'section' ? 'Open' : (row.hold ?? 'Select'));
+    const disabled = els.settingsList.querySelector('.row.focus')?.getAttribute('aria-disabled') === 'true';
+    if (!disabled && row?.adjust) html += b('adjust', 'Adjust');
+    else if (!disabled && row?.kind && row.kind !== 'restorestep') html += b('ok', row.kind === 'section' ? 'Open' : (row.hold ?? 'Select'));
     html += b('back', state.settings.section ? 'Back' : 'Close');
   } else if (state.mode === 'find' && state.findList) {
     html = b('ok', 'Select') + b('back', 'Back');
@@ -73,6 +81,44 @@ export function showHints() {
     else if (state.running && state.running !== g?.id) html += b('back', 'Back to game');
   }
   els.hint.innerHTML = html;
+  showFirstHint();
+}
+
+/** @type {Map<import('./api.js').FirstHint, boolean>} Permission to show a hint during this start. */
+const firstHints = new Map();
+/** @type {Set<import('./api.js').FirstHint>} */
+const completed = new Set();
+
+/** Rust counts a hint only when its screen is reached, once per start even if this WebView reloads. */
+function showFirstHint() {
+  const name = state.mode === 'starting' ? 'return_home' : state.mode === 'browse' && focused() ? 'game_menu' : null;
+  const el = els.firstHint;
+  el.hidden = true;
+  if (!name || completed.has(name)) return;
+  if (!firstHints.has(name)) {
+    firstHints.set(name, false);
+    api.prefsHintShown(name).then((show) => {
+      firstHints.set(name, show);
+      showFirstHint();
+    }).catch(() => {});
+    return;
+  }
+  if (!firstHints.get(name)) return;
+  fillPill(el, { icon: 'i-controller', text: name === 'game_menu' ? '' : returnHint(state.padKind) });
+  if (name === 'game_menu') {
+    const words = el.querySelector('.text');
+    words.innerHTML = `Press ${buttonBadge('menu')} to open a game's menu`;
+  }
+  el.dataset.hint = name;
+  el.hidden = false;
+}
+
+/** @param {import('./api.js').FirstHint} name */
+export function finishHint(name) {
+  if (completed.has(name)) return;
+  completed.add(name);
+  showFirstHint();
+  api.prefsHintDone(name).catch(() => {});
 }
 
 /** The player used another kind of controller: the hints name its buttons. @param {import('./api.js').PadKind} kind */

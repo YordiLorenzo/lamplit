@@ -68,11 +68,12 @@ pub fn on_close_request<R: Runtime>(app: &tauri::AppHandle<R>, event: &RunEvent)
         api.prevent_close();
         return true;
     }
-    if label == "main"
-        && let Some(dock) = app.get_webview_window(LABEL)
-    {
-        DOCK.store(0, Ordering::SeqCst);
-        let _ = dock.destroy();
+    if label == "main" {
+        super::glass::release();
+        if let Some(dock) = app.get_webview_window(LABEL) {
+            DOCK.store(0, Ordering::SeqCst);
+            let _ = dock.destroy();
+        }
     }
     false
 }

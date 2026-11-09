@@ -12,6 +12,7 @@ mod itch;
 pub mod loose;
 mod names;
 mod proto;
+mod read;
 mod rockstar;
 mod sqlite;
 pub mod steam;
@@ -21,6 +22,7 @@ mod xml;
 
 pub use installed::Installed;
 
+use crate::error::Result;
 use crate::files::{folder_key, subdirs};
 use crate::library::{Game, Launch};
 use crate::win;
@@ -94,11 +96,11 @@ impl Store {
     }
 
     /// The games this store has installed.
-    pub fn games(self, installed: &Installed) -> Vec<Game> {
+    pub fn games(self, installed: &Installed) -> Result<Vec<Game>> {
         match self {
             Store::Steam => steam::games(),
             Store::Epic => epic::games(),
-            Store::Ea => ea::games(&installed.drives, &installed.programs),
+            Store::Ea => Ok(ea::games(&installed.drives, &installed.programs)),
             Store::Ubisoft => ubisoft::games(),
             Store::Rockstar => rockstar::games(&installed.game_exes),
             Store::Battlenet => battlenet::games(),
@@ -292,7 +294,7 @@ pub fn status(store: Store, procs: &Processes) -> Status {
     };
     let account = match store {
         Store::Steam => steam::account(pid),
-        Store::Epic => saved(epic::remembered()),
+        Store::Epic => saved(exe.as_deref().is_some_and(epic::remembered)),
         Store::Ea => saved(ea::remembered()),
         Store::Ubisoft => saved(ubisoft::remembered()),
         Store::Rockstar => saved(rockstar::remembered()),
