@@ -431,10 +431,16 @@ pub async fn power_shut_down() -> Result<()> {
     blocking(power::shut_down).await?
 }
 
-/// A successful exit ends the supervisor too, as closing the home window does.
+/// Closes the home window, as Alt+F4 does: the dock goes with it and the app ends cleanly, so the supervisor ends too.
+/// `AppHandle::exit` from inside the page's call ended WebView2 with exit code 0xE0464645 on Windows, which the
+/// supervisor took for a crash and started Lamplit again.
 #[tauri::command]
 pub fn app_exit(app: AppHandle) {
-    app.exit(0);
+    if let Some(main) = app.get_webview_window("main")
+        && let Err(e) = main.close()
+    {
+        log::warn!("exit: the home window didn't close: {e}");
+    }
 }
 
 /// The screen's mode now, e.g. "3840 × 2160 at 120 Hz".
