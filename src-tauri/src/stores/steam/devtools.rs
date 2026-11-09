@@ -302,11 +302,11 @@ fn restore_flags(flags: &mut BTreeMap<PathBuf, Option<Vec<u8>>>) -> Vec<String> 
 }
 
 pub fn restore_note() -> String {
-    if !super::running() {
-        "Open Steam with its DevTools port, then try again.".into()
-    } else {
+    if super::running() {
         "Steam must be signed in with its DevTools port open. Restart Steam with -cef-enable-debugging, then try again."
             .into()
+    } else {
+        "Open Steam with its DevTools port, then try again.".into()
     }
 }
 

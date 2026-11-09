@@ -67,7 +67,7 @@ pub fn logon_task(name: &str, user: &str) -> Result<Option<LogonTask>> {
                 let logon: ILogonTrigger = trigger.cast()?;
                 let mut account = BSTR::new();
                 logon.UserId(&raw mut account)?;
-                at_sign_in |= account.is_empty() || account.to_string() == user;
+                at_sign_in |= account.is_empty() || account == user;
             }
         }
         Ok(Some(LogonTask {
