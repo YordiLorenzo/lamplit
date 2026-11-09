@@ -1,7 +1,8 @@
 // The Epic Games Launcher: where it is, its games (the .item manifests in ProgramData) and its remembered sign-in.
 
-use super::Store;
 use super::names::clean_name;
+use super::{Store, read};
+use crate::error::Result;
 use crate::files::{local_app_data, on_a_drive, read_text};
 use crate::library::{Game, Launch};
 use serde_json::Value;
@@ -29,25 +30,32 @@ fn exe_from_command(command: &str) -> Option<PathBuf> {
     Some(binaries.join(r"Win64\EpicGamesLauncher.exe"))
 }
 
-pub fn games() -> Vec<Game> {
-    let Some(program_data) = std::env::var_os("ProgramData") else { return Vec::new() };
-    let Ok(rd) = std::fs::read_dir(Path::new(&program_data).join(r"Epic\EpicGamesLauncher\Data\Manifests")) else {
-        return Vec::new();
-    };
+pub fn games() -> Result<Vec<Game>> {
+    let Some(program_data) = std::env::var_os("ProgramData") else { return Ok(Vec::new()) };
+    games_in(&Path::new(&program_data).join(r"Epic\EpicGamesLauncher\Data\Manifests"))
+}
+
+fn games_in(manifests: &Path) -> Result<Vec<Game>> {
     let mut out = Vec::new();
-    for entry in rd.flatten() {
+    for entry in read::entries(manifests)? {
         if entry.path().extension().is_none_or(|e| !e.eq_ignore_ascii_case("item")) {
             continue;
         }
-        let Some(v) = read_text(&entry.path()).and_then(|t| serde_json::from_str::<Value>(&t).ok()) else {
-            continue;
+        let Some(text) = read::text(&entry.path())? else { continue };
+        let v: Value = match serde_json::from_str(&text) {
+            Ok(v) => v,
+            Err(e) => {
+                log::warn!("discovery epic: {} skipped: {e}", entry.path().display());
+                continue;
+            }
         };
         if !is_game(&v) {
+            log::info!("discovery epic: {} skipped, it has no launchable game", entry.path().display());
             continue;
         }
         let s = |k: &str| v[k].as_str().unwrap_or_default().to_string();
         let dir = PathBuf::from(s("InstallLocation"));
-        if !on_a_drive(&dir) || !dir.is_dir() {
+        if !on_a_drive(&dir) || !read::is_dir(&dir)? {
             log::info!("discovery epic: {} skipped, {} is missing", s("DisplayName"), dir.display());
             continue;
         }
@@ -60,7 +68,7 @@ pub fn games() -> Vec<Game> {
             Launch::Uri(format!("com.epicgames.launcher://apps/{ns}%3A{item}%3A{app}?action=launch&silent=true")),
         ));
     }
-    out
+    Ok(out)
 }
 
 /// Epic also writes manifests for add-ons, for DLC (which shares the game's folder, and would name the game after
@@ -94,6 +102,44 @@ fn remember_me(ini: &str) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn unreadable_manifests_are_not_an_empty_library() {
+        let dir = std::env::temp_dir().join(format!("lamplit-test-epic-read-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(games_in(&dir).unwrap().is_empty());
+        let manifest = dir.join("game.item");
+        std::fs::write(&manifest, "{").unwrap();
+        assert!(games_in(&dir).unwrap().is_empty());
+        std::fs::write(&manifest, "{}").unwrap();
+        assert!(games_in(&dir).unwrap().is_empty());
+        std::fs::remove_file(&manifest).unwrap();
+        std::fs::create_dir(&manifest).unwrap();
+        assert!(games_in(&dir).is_err());
+        assert!(games_in(&dir.join("missing")).unwrap().is_empty());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_damaged_manifest_does_not_hide_other_epic_games() {
+        let dir = std::env::temp_dir().join(format!("lamplit-test-epic-partial-{}", std::process::id()));
+        let manifests = dir.join("Manifests");
+        let game = dir.join("Fennel");
+        std::fs::create_dir_all(&manifests).unwrap();
+        std::fs::create_dir_all(&game).unwrap();
+        let good = json!({"AppName": "Fennel", "DisplayName": "Fennel", "InstallLocation": game,
+            "LaunchExecutable": "Game.exe"});
+        std::fs::write(manifests.join("good.item"), serde_json::to_vec(&good).unwrap()).unwrap();
+        let baseline = games_in(&manifests).unwrap();
+        assert_eq!(baseline.len(), 1);
+        std::fs::write(manifests.join("damaged.item"), "{").unwrap();
+        std::fs::write(manifests.join("incomplete.item"), "{}").unwrap();
+        let with_damage = games_in(&manifests).unwrap();
+        assert!(with_damage == baseline, "a bad sibling leaves the one readable game unchanged");
+        std::fs::create_dir(manifests.join("unreadable.item")).unwrap();
+        assert!(games_in(&manifests).is_err(), "an I/O error still fails the store");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn finds_the_launcher_from_its_link_registration() {

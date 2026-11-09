@@ -2,7 +2,8 @@
 // GOG game carries. GOG games are DRM-free and start from their own exe, so Galaxy itself never has to run.
 
 use super::names::clean_name;
-use super::{Store, machine_value};
+use super::{Store, machine_value, read};
+use crate::error::Result;
 use crate::files::{file_name, inside, read_text};
 use crate::library::{Game, Launch};
 use serde_json::Value;
@@ -15,24 +16,28 @@ pub fn exe() -> Option<PathBuf> {
         .map(|d| Path::new(&d).join("GalaxyClient.exe"))
 }
 
-pub fn games() -> Vec<Game> {
+pub fn games() -> Result<Vec<Game>> {
     let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    let Ok(root) = hklm.open_subkey(r"SOFTWARE\WOW6432Node\GOG.com\Games") else { return Vec::new() };
+    let Some(root) = read::optional(hklm.open_subkey(r"SOFTWARE\WOW6432Node\GOG.com\Games"))? else {
+        return Ok(Vec::new());
+    };
     let mut out = Vec::new();
-    for id in root.enum_keys().flatten() {
-        let Ok(key) = root.open_subkey(&id) else { continue };
-        let value = |name: &str| key.get_value::<String, _>(name).unwrap_or_default();
+    for id in root.enum_keys() {
+        let id = id?;
+        let Some(key) = read::optional(root.open_subkey(&id))? else { continue };
+        let value = |name: &str| read::optional(key.get_value::<String, _>(name));
         // DLC gets a key of its own that names the game it belongs to, and can share that game's folder.
-        if !value("dependsOn").is_empty() {
+        if value("dependsOn")?.is_some_and(|v| !v.is_empty()) {
             continue;
         }
-        let (name, dir, exe) = (value("gameName"), PathBuf::from(value("path")), PathBuf::from(value("exe")));
-        if name.is_empty() || !exe.is_file() || !dir.is_dir() {
+        let (Some(name), Some(dir), Some(exe)) = (value("gameName")?, value("path")?, value("exe")?) else { continue };
+        let (dir, exe) = (PathBuf::from(dir), PathBuf::from(exe));
+        if name.is_empty() || !read::is_file(&exe)? || !read::is_dir(&dir)? {
             continue;
         }
         out.push(Game::new(format!("gog:{id}"), clean_name(&name), Some(Store::Gog), dir, Launch::Exe(exe)));
     }
-    out
+    Ok(out)
 }
 
 /// A GOG game's name and main exe, from the `goggame-<id>.info` it carries, also when copied without an installer.

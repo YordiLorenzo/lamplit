@@ -3,7 +3,8 @@
 // in, from the log it writes each time it starts.
 
 use super::names::{clean_name, prettify};
-use super::{Account, Store, machine_value, proto};
+use super::{Account, Store, machine_value, proto, read};
+use crate::error::{Error, Result};
 use crate::files::{file_name, local_app_data, on_a_drive, read_text};
 use crate::library::{Game, Launch};
 use std::collections::HashMap;
@@ -33,9 +34,13 @@ struct Install {
 /// product.db is a protobuf message: field 1 repeats one ProductInstall per product (uid 1, product code 2, settings
 /// 3 with the install path in 1, cached state 4 whose base state 1 has `installed` in 1). The layout is the one GOG
 /// Galaxy's Battle.net plugin decodes (product_db.proto), checked against a real product.db.
-fn installs(db: &[u8]) -> Vec<Install> {
-    proto::fields(db)
-        .filter_map(|(n, f)| match f {
+fn installs(db: &[u8]) -> Result<Vec<Install>> {
+    if !db.is_empty() && proto::fields(db).next().is_none() {
+        return Err(Error::Internal("Battle.net product.db has no readable fields".into()));
+    }
+    // A cut-off tail must not hide products already read.
+    Ok(proto::fields(db)
+        .filter_map(|(n, field)| match field {
             proto::Field::Bytes(product) if n == 1 => Some(product),
             _ => None,
         })
@@ -50,7 +55,7 @@ fn installs(db: &[u8]) -> Vec<Install> {
                 installed: proto::varint_field(state, 1) == Some(1),
             }
         })
-        .collect()
+        .collect())
 }
 
 /// The codes `Battle.net.exe --exec="launch <code>"` takes, by product code or uid. Battle.net keeps them nowhere on
@@ -104,22 +109,30 @@ fn launch_args(i: &Install) -> String {
     }
 }
 
-pub fn games() -> Vec<Game> {
-    let Some(app) = exe().filter(|e| e.is_file()) else { return Vec::new() };
-    let Some(program_data) = std::env::var_os("ProgramData") else { return Vec::new() };
-    let Ok(db) = std::fs::read(Path::new(&program_data).join(r"Battle.net\Agent\product.db")) else {
-        return Vec::new();
+pub fn games() -> Result<Vec<Game>> {
+    let Some(key) = read::optional(RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(format!(r"{UNINSTALL}\Battle.net")))?
+    else {
+        return Ok(Vec::new());
+    };
+    let Some(dir): Option<String> = read::optional(key.get_value("InstallLocation"))? else { return Ok(Vec::new()) };
+    let app = Path::new(&dir).join("Battle.net.exe");
+    if !read::is_file(&app)? {
+        return Ok(Vec::new());
+    }
+    let Some(program_data) = std::env::var_os("ProgramData") else { return Ok(Vec::new()) };
+    let Some(db) = read::bytes(&Path::new(&program_data).join(r"Battle.net\Agent\product.db"))? else {
+        return Ok(Vec::new());
     };
     let names = names();
     // An id that isn't a plain word never reaches Battle.net's command line.
     let plain = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "_-.".contains(c));
     let mut out = Vec::new();
-    for i in installs(&db) {
+    for i in installs(&db)? {
         // The agent and the Battle.net app list themselves too.
         if ["agent", "bna"].contains(&i.product.as_str()) || !i.installed || !plain(&i.uid) || !plain(&i.product) {
             continue;
         }
-        if !on_a_drive(&i.dir) || !i.dir.is_dir() {
+        if !on_a_drive(&i.dir) || !read::is_dir(&i.dir)? {
             log::info!("discovery battlenet: {} skipped, {} is missing", i.uid, i.dir.display());
             continue;
         }
@@ -136,7 +149,7 @@ pub fn games() -> Vec<Game> {
             Launch::ExeArgs(app.clone(), args),
         ));
     }
-    out
+    Ok(out)
 }
 
 /// Each game's name by uid, from the installed-programs entry Battle.net writes for it, whose uninstall command ends
@@ -250,7 +263,7 @@ mod tests {
             product("prometheus", "pro", "D:/Games/Overwatch", 1),
             product("fenris", "fenris", "C:/Program Files (x86)/Diablo IV", 0),
         ]);
-        let list = installs(&db);
+        let list = installs(&db).unwrap();
         assert_eq!(list.len(), 4);
         assert_eq!(
             list[2],
@@ -262,7 +275,9 @@ mod tests {
             }
         );
         assert!(!list[3].installed);
-        assert!(installs(b"").is_empty());
+        assert!(installs(b"").unwrap().is_empty());
+        assert_eq!(installs(&db[..db.len() - 1]).unwrap(), list);
+        assert!(installs(&[0x0A, 0x05, b'a']).is_err());
     }
 
     #[test]

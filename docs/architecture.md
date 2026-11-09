@@ -113,16 +113,27 @@ outside any store; 0.1.0's `played.json` is still read for the last-played times
 (the settings quiet mode replaced), plus the logs. WebView2 keeps its profile in
 `%LOCALAPPDATA%\io.github.yordilorenzo.lamplit`.
 
+`data.rs` saves JSON atomically and keeps the previous valid content beside it as `<name>.bak`. A file that no
+longer parses is copied to `<name>.damaged` (replacing the older damaged copy). The loader restores a valid backup
+atomically and logs the recovery; without one, `load_or_default` callers use their defaults. The invalid primary
+also stays until replaced, so quiet mode's strict loader continues to refuse changes without a good restore record.
+Removing quiet mode's completed record also removes its backup, so it cannot be restored by a later read. Damaged
+copies stay in the data folder.
+
 ## Inside the app
 
 `lib.rs` loads the prefs, starts the first library scan and these threads:
 
 | Thread | Does |
 | --- | --- |
-| Library scan | Reads every store side by side, then games outside any store, then art on disk, then missing art online. Runs at start and when the page asks (each time Lamplit comes forward), at most every 30 seconds. |
+| Library scan | Reads every store side by side, then games outside any store, then art on disk, then missing art online. A store read that fails is logged and keeps that store's games from the previous scan; an empty successful read removes them. The first scan has nothing to keep. Runs at start and when the page asks (each time Lamplit comes forward), at most every 30 seconds. |
 | Headset | Looks for the PRO X 2 receiver every 10 seconds and owns it while it is plugged in. |
 | Controllers | Looks for DualSense controllers every 2 seconds and reads each one on a thread of its own. |
 | Other controllers | Reads XInput and Windows.Gaming.Input every 15 ms while one of their controllers is connected, and looks for new ones every 2 seconds. |
+
+A malformed per-game manifest is logged and skipped without hiding other games. Optional detail files, such as
+Steam play minutes, never fail a store scan. An unreadable installed-games list or a file I/O error keeps that
+store's previous games; a missing file counts as absent.
 | Upkeep | Every 10 seconds: Steam's DevTools port and PS button setting, and quiet-mode changes that had to wait. |
 | Big Picture guard | Every 2 seconds: closes Steam's Big Picture mode if it is open. |
 | Dock news | Every second: compares the headset and the controllers with a second before, for the news the folded dock shows. |

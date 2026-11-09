@@ -5,7 +5,8 @@
 
 use super::installed::skip_exe;
 use super::names::{clean_name, prettify};
-use super::{Store, sqlite};
+use super::{Store, read, sqlite};
+use crate::error::Result;
 use crate::files::{file_name, inside, local_app_data, on_a_drive, read_text};
 use crate::library::{Game, Launch};
 use serde::Deserialize;
@@ -36,10 +37,10 @@ fn app_exe(base: &Path) -> Option<PathBuf> {
     inside(base, &format!(r"app-{}\itch.exe", state["current"].as_str()?))
 }
 
-pub fn games() -> Vec<Game> {
-    let Some(roaming) = std::env::var_os("APPDATA") else { return Vec::new() };
+pub fn games() -> Result<Vec<Game>> {
+    let Some(roaming) = std::env::var_os("APPDATA") else { return Ok(Vec::new()) };
     let user_data = Path::new(&roaming).join("itch");
-    let Some(db) = sqlite::Db::open(&user_data.join(r"db\butler.db")) else { return Vec::new() };
+    let Some(db) = sqlite::Db::open(&user_data.join(r"db\butler.db"))? else { return Ok(Vec::new()) };
     let app = App {
         isolate_apps: isolate_apps(&user_data.join("preferences.json")),
         setup: base().join("itch-setup.exe"),
@@ -47,14 +48,14 @@ pub fn games() -> Vec<Game> {
         prereqs: user_data.join("prereqs"),
     };
     let mut out: Vec<Game> = Vec::new();
-    for cave in caves(&db) {
+    for cave in caves(&db)? {
         let id = format!("itch:{}", cave.game_id);
         let name = cave.title.as_deref().map_or_else(|| prettify(&file_name(&cave.dir)), clean_name);
         if !on_a_drive(&cave.dir) || !cave.dir.is_dir() {
             log::info!("discovery itch: {name} skipped, {} is missing", cave.dir.display());
             continue;
         }
-        let Some((start, exe_names)) = launch(&cave, &app) else {
+        let Some((start, exe_names)) = launch(&cave, &app)? else {
             log::info!("discovery itch: {name} skipped, it has no Windows exe (an HTML or Java game, say)");
             continue;
         };
@@ -62,7 +63,7 @@ pub fn games() -> Vec<Game> {
         game.exe_names = exe_names;
         out.push(game);
     }
-    out
+    Ok(out)
 }
 
 /// An install (butler calls it a cave).
@@ -91,12 +92,8 @@ struct Cave {
 /// then launches the game's most recently used cave (cmd/launchcmd resolveCave), so Lamplit takes that one too, for
 /// every launch: the folder it watches is then the one the game runs from. Should that cave be one Lamplit can't
 /// start, the game is left out rather than started from another install.
-fn caves(db: &sqlite::Db) -> Vec<Cave> {
-    let (Some(caves), Some(games), Some(locations)) =
-        (db.rows("caves"), db.rows("games"), db.rows("install_locations"))
-    else {
-        return Vec::new();
-    };
+fn caves(db: &sqlite::Db) -> Result<Vec<Cave>> {
+    let (caves, games, locations) = (db.rows("caves")?, db.rows("games")?, db.rows("install_locations")?);
     let mut caves: Vec<(&sqlite::Row, Option<OffsetDateTime>)> = caves
         .iter()
         .map(|c| (c, used(["local_last_run_at", "last_touched_at", "installed_at"].map(|t| c.text(t)))))
@@ -104,7 +101,7 @@ fn caves(db: &sqlite::Db) -> Vec<Cave> {
     // Newest first, and among equals the database's order, as butler's stable sort leaves them.
     caves.sort_by_key(|(_, used)| std::cmp::Reverse(*used));
     let mut seen = HashSet::new();
-    caves
+    Ok(caves
         .into_iter()
         .filter_map(|(c, _)| {
             let game_id = c.int("game_id")?;
@@ -122,16 +119,25 @@ fn caves(db: &sqlite::Db) -> Vec<Cave> {
                 let location = locations.iter().find(|l| l.text("id") == c.text("install_location_id"))?;
                 inside(Path::new(location.text("path")?), c.text("install_folder_name")?)?
             };
-            let verdict: Value = serde_json::from_str(c.text("verdict")?).ok()?;
+            let verdict: Value = serde_json::from_str(c.text("verdict")?)
+                .map_err(|e| log::warn!("discovery itch: game {game_id} skipped, its verdict can't be read: {e}"))
+                .ok()?;
             let title = game.and_then(|g| g.text("title")).map(str::to_string);
-            let settings: Value = c.text("settings").and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default();
+            let settings: Value = c
+                .text("settings")
+                .and_then(|s| {
+                    serde_json::from_str(s)
+                        .map_err(|e| log::warn!("discovery itch: game {game_id} settings unavailable: {e}"))
+                        .ok()
+                })
+                .unwrap_or_default();
             let target = settings["launchTarget"].as_str().filter(|t| !t.is_empty()).map(str::to_string);
             let sandbox = settings["sandbox"].as_bool();
             let ran = c.text("local_last_run_at").is_some();
             let template = settings["commandTemplate"].as_str().is_some_and(|t| !t.trim().is_empty());
             Some(Cave { game_id, title, dir, exes: windows_exes(&verdict), target, sandbox, ran, template })
         })
-        .collect()
+        .collect())
 }
 
 /// When a cave was last used, as butler orders caves (caveFreshness): its last local run, else when the app last saw
@@ -184,25 +190,25 @@ struct App {
 ///   DLLs the game's exes import, and Unreal Engine's (launchers/native/prereqs.go). butler records a run only after
 ///   all that, so a game it has run from this install has had them.
 /// - The command template the player set for the game in the app, which butler applies to the start.
-fn launch(cave: &Cave, app: &App) -> Option<(Launch, Vec<String>)> {
+fn launch(cave: &Cave, app: &App) -> Result<Option<(Launch, Vec<String>)>> {
     let scanned = || {
         let picked = cave.target.as_deref().and_then(|t| cave.exes.iter().find(|e| same_path(e, t)));
         let exe = picked.into_iter().chain(&cave.exes).filter_map(|rel| inside(&cave.dir, rel)).find(|p| p.is_file());
         exe.map(|exe| Start { exe, args: Vec::new(), sandbox: false, api_key: false, prereqs: Vec::new() })
     };
-    let start = manifest_action(&cave.dir, cave.target.as_deref()).or_else(scanned)?;
+    let Some(start) = manifest_action(&cave.dir, cave.target.as_deref())?.or_else(scanned) else { return Ok(None) };
     let installed = |name: &String| inside(&app.prereqs, name).is_some_and(|d| d.join(".installed").is_file());
     let prereqs = !cave.ran || !start.prereqs.iter().all(installed);
     if prereqs || cave.template || start.api_key || cave.sandbox.unwrap_or(app.isolate_apps || start.sandbox) {
         let run = format!("--appname itch --run-game {}", cave.game_id);
-        return Some((Launch::ExeArgs(app.setup.clone(), run), vec![file_name(&start.exe).to_lowercase()]));
+        return Ok(Some((Launch::ExeArgs(app.setup.clone(), run), vec![file_name(&start.exe).to_lowercase()])));
     }
     let launch = if start.args.is_empty() {
         Launch::Exe(start.exe)
     } else {
         Launch::ExeArgs(start.exe, command_line(&start.args))
     };
-    Some((launch, Vec::new()))
+    Ok(Some((launch, Vec::new())))
 }
 
 /// A game's own start: its exe and arguments, and what it asks of the app.
@@ -219,7 +225,11 @@ struct Start {
 
 /// Whether the app's preference to run every game in its sandbox is on (preferences.json in the app's data folder).
 fn isolate_apps(preferences: &Path) -> bool {
-    let prefs: Option<Value> = read_text(preferences).and_then(|t| serde_json::from_str(&t).ok());
+    let prefs: Option<Value> = read::detail_text(preferences).and_then(|t| {
+        serde_json::from_str(&t)
+            .map_err(|e| log::warn!("discovery itch: {} unavailable: {e}", preferences.display()))
+            .ok()
+    });
     prefs.is_some_and(|p| p["isolateApps"].as_bool() == Some(true))
 }
 
@@ -258,11 +268,14 @@ struct Action {
 /// The start the manifest's action for this game names, if the game ships a manifest with an action that runs on
 /// Windows: one with no platform or `windows`, whose path (`{{EXT}}` standing for `.exe`) is an exe in the game's
 /// folder. URLs, folders and other platforms' files are left out, as butler leaves them out on Windows.
-fn manifest_action(dir: &Path, picked: Option<&str>) -> Option<Start> {
-    let text = read_text(&dir.join(".itch.toml"))?;
-    let manifest: Manifest = toml::from_str(&text)
+fn manifest_action(dir: &Path, picked: Option<&str>) -> Result<Option<Start>> {
+    let Some(text) = read::text(&dir.join(".itch.toml"))? else { return Ok(None) };
+    let Some(manifest): Option<Manifest> = toml::from_str(&text)
         .map_err(|e| log::info!("discovery itch: {} has a manifest Lamplit can't read: {e}", dir.display()))
-        .ok()?;
+        .ok()
+    else {
+        return Ok(None);
+    };
     let actions: Vec<(&Action, String, PathBuf)> = manifest
         .actions
         .iter()
@@ -276,15 +289,18 @@ fn manifest_action(dir: &Path, picked: Option<&str>) -> Option<Start> {
     let named = |name: &str| actions.iter().find(|(a, ..)| a.name == name);
     // A pick by path may spell `{{EXT}}` out or not.
     let at = |t: &str| actions.iter().find(|(a, path, _)| same_path(&a.path, t) || same_path(path, t));
-    let (action, _, exe) =
-        picked.and_then(|t| named(t).or_else(|| at(t))).or_else(|| named("play")).or(actions.first())?;
-    Some(Start {
+    let Some((action, _, exe)) =
+        picked.and_then(|t| named(t).or_else(|| at(t))).or_else(|| named("play")).or(actions.first())
+    else {
+        return Ok(None);
+    };
+    Ok(Some(Start {
         exe: exe.clone(),
         args: action.args.clone(),
         sandbox: action.sandbox,
         api_key: !action.scope.is_empty(),
         prereqs: manifest.prereqs.iter().map(|p| p.name.clone()).collect(),
-    })
+    }))
 }
 
 /// Two paths relative to a game's folder, in either slash and with or without `./`, are the same.
@@ -337,7 +353,7 @@ mod tests {
         let dir = scratch("db");
         fs::write(dir.join("butler.db"), BUTLER).unwrap();
         fs::write(dir.join("butler.db-wal"), BUTLER_WAL).unwrap();
-        let db = sqlite::Db::open(&dir.join("butler.db")).unwrap();
+        let db = sqlite::Db::open(&dir.join("butler.db")).unwrap().unwrap();
         let apps = r"C:\Users\player\AppData\Roaming\itch\apps";
         let cave = |game_id, title: &str, dir: &str, exes: &[&str]| Cave {
             game_id,
@@ -352,7 +368,7 @@ mod tests {
         // Not the tool. The HTML game is there, with no exe to start (games() leaves it out), and so is the one on a
         // share (games() never follows it).
         assert_eq!(
-            caves(&db),
+            caves(&db).unwrap(),
             vec![
                 // Of Fennel's two downloads, the one used last, which butler launches for the game.
                 // butler has run it from there.
@@ -431,6 +447,10 @@ mod tests {
     /// How a game that needs nothing of the app starts.
     fn direct(cave: &Cave) -> Option<Launch> {
         launch(cave, &app(false)).map(|(launch, _)| launch)
+    }
+
+    fn launch(cave: &Cave, app: &App) -> Option<(Launch, Vec<String>)> {
+        super::launch(cave, app).unwrap()
     }
 
     /// The app's launcher starting game 1.
@@ -591,6 +611,11 @@ path = "docs/"
         assert!(isolate_apps(&prefs));
         fs::write(&prefs, r#"{"isolateApps":false}"#).unwrap();
         assert!(!isolate_apps(&prefs));
+        fs::write(&prefs, "{").unwrap();
+        assert!(!isolate_apps(&prefs));
+        fs::remove_file(&prefs).unwrap();
+        fs::create_dir(&prefs).unwrap();
+        assert!(!isolate_apps(&prefs), "an unreadable optional preference does not fail discovery");
         fs::remove_dir_all(&dir).unwrap();
     }
 

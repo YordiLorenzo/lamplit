@@ -12,6 +12,7 @@ mod itch;
 pub mod loose;
 mod names;
 mod proto;
+mod read;
 mod rockstar;
 mod sqlite;
 pub mod steam;
@@ -21,6 +22,7 @@ mod xml;
 
 pub use installed::Installed;
 
+use crate::error::Result;
 use crate::files::{folder_key, subdirs};
 use crate::library::{Game, Launch};
 use crate::win;
@@ -94,7 +96,7 @@ impl Store {
     }
 
     /// The games this store has installed.
-    pub fn games(self, installed: &Installed) -> Vec<Game> {
+    pub fn games(self, installed: &Installed) -> Result<Vec<Game>> {
         match self {
             Store::Steam => steam::games(),
             Store::Epic => epic::games(),

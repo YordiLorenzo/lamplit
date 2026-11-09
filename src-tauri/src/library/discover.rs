@@ -2,13 +2,14 @@
 // store. Games are keyed by install folder, so a game found twice appears once (store entries win).
 
 use super::Game;
+use crate::error::Result;
 use crate::files::folder_key;
-use crate::stores::{self, Installed};
+use crate::stores::{self, Installed, Store};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 /// Every game, with the `manual` ones the player added by hand.
-pub fn discover_all(manual: Vec<Game>) -> Vec<Game> {
+pub fn discover_all(manual: Vec<Game>, previous: &[Game]) -> Vec<Game> {
     let installed = &Installed::read();
     log::info!(
         "discovery: {} installed programs, {} exes in Windows' game list",
@@ -21,7 +22,7 @@ pub fn discover_all(manual: Vec<Game>) -> Vec<Game> {
         let handles = stores::ALL.map(|store| {
             s.spawn(move || {
                 let started = Instant::now();
-                let games = store.games(installed);
+                let games = keep_on_error(store, store.games(installed), previous);
                 log::info!("discovery {} ({} ms): {}", store.key(), started.elapsed().as_millis(), names(&games));
                 games
             })
@@ -42,6 +43,17 @@ pub fn discover_all(manual: Vec<Game>) -> Vec<Game> {
     }
     stores::set_requirements(&mut games);
     games
+}
+
+fn keep_on_error(store: Store, found: Result<Vec<Game>>, previous: &[Game]) -> Vec<Game> {
+    match found {
+        Ok(games) => games,
+        Err(e) => {
+            let games: Vec<Game> = previous.iter().filter(|g| g.store == Some(store)).cloned().collect();
+            log::warn!("discovery {}: {e}; keeping {} games from the previous scan", store.key(), games.len());
+            games
+        }
+    }
 }
 
 fn names(games: &[Game]) -> String {
@@ -80,7 +92,42 @@ fn add(games: &mut Vec<Game>, g: Game) {
 mod tests {
     use super::*;
     use crate::library::Launch;
-    use crate::stores::Store;
+
+    #[test]
+    fn a_failed_store_read_keeps_only_that_stores_previous_games() {
+        let dir = std::env::temp_dir().join(format!("lamplit-test-discovery-read-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("games.json");
+        let game = |store: Store, name: &str| {
+            Game::new(
+                format!("{}:{name}", store.key()),
+                name.into(),
+                Some(store),
+                dir.join(name),
+                Launch::Uri(format!("{}://{name}", store.key())),
+            )
+        };
+        let previous = vec![game(Store::Epic, "Old"), game(Store::Steam, "Other")];
+        let read = || -> Result<Vec<Game>> {
+            let names: Vec<String> = serde_json::from_slice(&std::fs::read(&file)?)?;
+            Ok(names.iter().map(|name| game(Store::Epic, name)).collect())
+        };
+        std::fs::write(&file, "[").unwrap();
+        let kept = keep_on_error(Store::Epic, read(), &previous);
+        assert_eq!(kept.len(), 1);
+        assert!(kept[0] == previous[0]);
+        assert!(keep_on_error(Store::Epic, read(), &[]).is_empty(), "the first scan has nothing to keep");
+        std::fs::write(&file, "[]").unwrap();
+        assert!(keep_on_error(Store::Epic, read(), &previous).is_empty(), "a good empty read removes old games");
+        std::fs::write(&file, r#"["New"]"#).unwrap();
+        let fresh = keep_on_error(Store::Epic, read(), &previous);
+        assert_eq!(fresh.len(), 1);
+        assert_eq!(fresh[0].id, "epic:New");
+        std::fs::remove_file(&file).unwrap();
+        std::fs::create_dir(&file).unwrap();
+        assert_eq!(keep_on_error(Store::Epic, read(), &previous).len(), 1, "an I/O error also keeps the games");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn a_folder_found_twice_keeps_its_first_store() {
