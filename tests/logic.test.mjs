@@ -7,6 +7,7 @@ import {
   STORE_ORDER,
   batteryText,
   buttonFace,
+  returnHint,
   byName,
   byPlayed,
   counts,
@@ -835,4 +836,12 @@ test('a press Steam mirrors as a key counts once, in either order', () => {
   assert.equal(counts(seen, 'left', 'key', 10_350 + PAD_KEEPS_MS + 1), true);
   // The mouse always counts.
   assert.equal(counts(seen, 'ok', 'mouse', 10_351), true);
+});
+
+test('the return hint names a way back that works with the controller in use', () => {
+  assert.equal(returnHint('dualsense'), 'Hold PS to come back from a game');
+  assert.equal(returnHint('xbox'), 'Hold View and Menu to come back from a game');
+  // Read only while Lamplit is in front, so no hold of theirs reaches it over a game.
+  assert.equal(returnHint('playstation'), 'Press Alt+Tab to come back from a game');
+  assert.equal(returnHint('other'), 'Press Alt+Tab to come back from a game');
 });

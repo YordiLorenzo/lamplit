@@ -50,6 +50,17 @@ const FACES = {
 export const buttonFace = (kind, button) =>
   FACES[kind === 'dualsense' || kind === 'playstation' ? 'playstation' : 'xbox'][button];
 
+/**
+ * How to come back from a game with the controller in use. A DualShock 4 and the other controllers read through
+ * Windows.Gaming.Input reach Lamplit only while it is in front (devices/pad/other.rs), so their hold can't.
+ * @param {PadKind} kind
+ */
+export function returnHint(kind) {
+  if (kind === 'dualsense') return 'Hold PS to come back from a game';
+  if (kind === 'xbox') return 'Hold View and Menu to come back from a game';
+  return 'Press Alt+Tab to come back from a game';
+}
+
 // ---------- the controller and the keyboard ----------
 
 /** How long a mirrored key and the pad's own press can be apart and still be one press. */

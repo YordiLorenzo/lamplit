@@ -2,7 +2,7 @@
 // The bottom of the screen: which buttons do what right now, named as on the controller in use; and short messages
 // for the player, as pills.
 
-import { buttonFace, detailChoices, narrowed } from './logic.js';
+import { buttonFace, detailChoices, narrowed, returnHint } from './logic.js';
 import * as api from './api.js';
 import { fillPill } from './pill.js';
 import { actionableStep, els, focused, state, storeName } from './state.js';
@@ -104,11 +104,7 @@ function showFirstHint() {
     return;
   }
   if (!firstHints.get(name)) return;
-  const ps = state.padKind === 'dualsense' || state.padKind === 'playstation';
-  fillPill(el, {
-    icon: 'i-controller',
-    text: name === 'game_menu' ? '' : ps ? 'Hold PS to come back from a game' : 'Hold View and Menu to come back from a game',
-  });
+  fillPill(el, { icon: 'i-controller', text: name === 'game_menu' ? '' : returnHint(state.padKind) });
   if (name === 'game_menu') {
     const words = el.querySelector('.text');
     words.innerHTML = `Press ${buttonBadge('menu')} to open a game's menu`;
