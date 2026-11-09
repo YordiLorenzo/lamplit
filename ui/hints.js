@@ -33,7 +33,9 @@ export function showHints() {
   const b = (button, label) => `<span>${buttonBadge(button)}${label}</span>`;
   const g = focused();
   let html = '';
-  if (state.mode === 'starting') {
+  if (state.mode === 'news') {
+    html = b('ok', 'Continue') + b('back', 'Close');
+  } else if (state.mode === 'starting') {
     const s = actionableStep();
     if (s) html += b('ok', stepAction(s));
     if (s?.state === 'block') html += b('triangle', 'Try anyway');

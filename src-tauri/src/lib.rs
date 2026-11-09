@@ -23,6 +23,7 @@ mod launch;
 mod library;
 mod stores;
 mod system;
+mod updates;
 
 // What the features share: the commands and events the page sees, errors, files, the data folder, the player's prefs
 // and the log.
@@ -101,6 +102,8 @@ fn first_lamplit_window() -> Option<win::window::HWND> {
 pub fn run() {
     probe::with(tauri::Builder::default())
         .plugin(logging::plugin())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updates::Updates::default())
         .manage(library::Library::default())
         .manage(launch::Launcher::default())
         .manage(devices::pad::Controllers::default())
@@ -140,6 +143,11 @@ pub fn run() {
             commands::controller_turn_off,
             commands::controller_kind,
             commands::prefs_state,
+            commands::updates_state,
+            commands::updates_check,
+            commands::updates_install,
+            commands::updates_whats_new,
+            commands::prefs_set_check_updates,
             commands::prefs_set_sound_follows,
             commands::prefs_set_interface_sounds,
             commands::prefs_hint_shown,
@@ -173,6 +181,7 @@ pub fn run() {
             devices::pad::start(app.handle().clone());
             dock::start(app.handle());
             upkeep(app.handle().clone());
+            updates::start(app.handle().clone());
             stores::steam::guard_big_picture();
             Ok(())
         })

@@ -176,7 +176,18 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {boolean} online_art  art comes from Steam's store too
  * @property {number} screensaver_minutes  minutes without input before the screensaver, 0 for never
  * @property {boolean} dock  holding PS over a game opens the dock rather than the home screen
+ * @property {boolean} check_updates  checks GitHub automatically at most once a day after start
+ * @property {number} update_checked_at  Unix seconds of the last check attempt
+ * @property {string} last_version_seen  empty on a fresh install
  */
+
+/**
+ * @typedef {object} Update
+ * @property {'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'installing' | 'error'} phase
+ * @property {string | null} version
+ * @property {string | null} error
+ */
+/** @typedef {{ version: string, highlights: string[] }} News */
 
 /**
  * What became of a launched game. `up`: its window is up, and gets the screen once the starting screen has faded to
@@ -363,6 +374,16 @@ export const controllerTurnOff = (id) => call('controller_turn_off', { id });
 export const controllerKind = () => call('controller_kind');
 /** @returns {Promise<Prefs>} */
 export const prefsState = () => call('prefs_state');
+/** Offline update state. @returns {Promise<Update>} */
+export const updatesState = () => call('updates_state');
+/** Manual check, also when automatic checks are off. @returns {Promise<string | null>} */
+export const updatesCheck = () => call('updates_check');
+/** Downloads, then installs once no game runs and Lamplit is in front. @returns {Promise<Update>} */
+export const updatesInstall = () => call('updates_install');
+/** Built-in highlights on the first start of a new version. @returns {Promise<News | null>} */
+export const updatesWhatsNew = () => call('updates_whats_new');
+/** @param {boolean} on @returns {Promise<Prefs>} */
+export const prefsSetCheckUpdates = (on) => call('prefs_set_check_updates', { on });
 /** @param {boolean} on @returns {Promise<Prefs>} */
 export const prefsSetSoundFollows = (on) => call('prefs_set_sound_follows', { on });
 /** @param {InterfaceSounds} level @returns {Promise<Prefs>} */
@@ -408,6 +429,8 @@ const on = (name, handle) => tauri.event.listen(name, (/** @type {{ payload: T }
 
 /** The library changed. @param {(games: Game[]) => void} handle */
 export const onGames = (handle) => on('games', handle);
+/** @param {(update: Update) => void} handle */
+export const onUpdate = (handle) => on('update', handle);
 /** Art for one game came in. @param {(update: { id: string, art: Art }) => void} handle */
 export const onArt = (handle) => on('art', handle);
 /** A controller press while Lamplit is in front, or Cross let go. @param {(action: Action | DockRelease) => void} handle */

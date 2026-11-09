@@ -36,6 +36,7 @@ import {
   storeChoices,
   storeWarning,
   typed,
+  updateRow,
   visibleSections,
   words,
 } from '../ui/logic.js';
@@ -62,6 +63,7 @@ const settingsState = (extra = {}) => ({
   stores: new Map(),
   all: [],
   running: null,
+  update: { phase: 'idle', version: null, error: null },
   settings: { section: null, focus: null, idx: 0, rows: [], confirm: null },
   ...extra,
 });
@@ -73,6 +75,31 @@ const { headset: headsetBase, controllers: [controllerBase, xboxBase] } = ipc('a
 /** The headset, on battery unless `extra` says otherwise. */
 const headset = (extra = {}) =>
   like(headsetBase, { receiver: true, on: true, battery: 80, charge: known('charge', 'battery'), sidetone: 40, auto_off: 30, ...extra });
+
+describe('update rows', () => {
+  test('every backend phase has a usable row without losing focus', () => {
+    const labels = {
+      idle: 'Check for updates', checking: 'Checking for updates…', current: 'Lamplit is up to date',
+      available: 'Lamplit 0.4.1 is available', downloading: 'Downloading Lamplit 0.4.1…',
+      ready: "Lamplit 0.4.1 installs when you're done playing", installing: 'Installing Lamplit 0.4.1…',
+      error: 'Signature failed',
+    };
+    assert.deepEqual(Object.keys(labels), values.update_phase);
+    for (const phase of values.update_phase) {
+      const status = like(ipc('update'), { phase, version: ['idle', 'checking', 'current'].includes(phase) ? null : '0.4.1', error: phase === 'error' ? 'Signature failed' : null });
+      const row = updateRow(status);
+      assert.equal(row.label, labels[phase]);
+      assert.equal(rowKey(row), 'update:');
+    }
+  });
+  test('turning automatic checks off leaves the manual check and a found version visible', () => {
+    const s = settingsState({ prefs: prefs({ check_updates: false }), update: ipc('update') });
+    const rows = sectionRows('updates', s);
+    assert.equal(rows[0].value, 'Download and install');
+    assert.equal(rows[1].value, 'Off');
+    assert.match(sectionSummary('updates', s)[0], /0\.4\.1/);
+  });
+});
 
 describe('readable', () => {
   test('keeps the hue and lifts a dark colour', () => {

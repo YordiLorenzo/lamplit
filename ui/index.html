@@ -122,6 +122,14 @@
   </div>
 
   <!-- Any other message, at the top right under the clock (hints.js toast). -->
+  <div id="news" hidden>
+    <section role="dialog" aria-modal="true" aria-labelledby="newsTitle">
+      <p id="newsVersion"></p>
+      <h2 id="newsTitle">What's new</h2>
+      <ul id="newsList"></ul>
+      <button id="newsClose" type="button">Continue</button>
+    </section>
+  </div>
   <div id="toast" class="news"></div>
   <div id="firstHint" class="news" hidden></div>
   <!-- Black between the starting screen and the game's window (launch.js handOver). -->

@@ -16,6 +16,7 @@ use crate::report;
 use crate::stores::steam::devtools;
 use crate::stores::{self, Store};
 use crate::system::{overlay, power, quiet, setup};
+use crate::updates::{self, Updates};
 use crate::win;
 use tauri::{AppHandle, Manager, State};
 
@@ -97,6 +98,11 @@ pub async fn library_remove_game(app: AppHandle, id: String) -> Result<Vec<Game>
 pub fn launch_start(app: AppHandle, library: State<Library>, id: String) -> Result<()> {
     // The page's list can be older than the last scan, which may have dropped the game.
     let game = library.game(&id).ok_or_else(|| Error::Player("That game isn't installed any more.".into()))?;
+    let updates = app.state::<Updates>();
+    let installing = updates.installing.lock();
+    if *installing {
+        return Err(Error::Player("Lamplit is installing an update. It will be back shortly.".into()));
+    }
     launch::start(&app, game);
     Ok(())
 }
@@ -235,7 +241,34 @@ pub fn prefs_state(app: AppHandle) -> Prefs {
     prefs::get(&app)
 }
 
+/// Offline snapshot; automatic checks also send an update event.
+#[tauri::command]
+pub fn updates_state(app: AppHandle) -> updates::Status {
+    updates::state(&app)
+}
+
+#[tauri::command]
+pub async fn updates_check(app: AppHandle) -> Result<Option<String>> {
+    blocking(move || updates::check(&app, false)).await?
+}
+
+/// Downloads and verifies now, then waits for the game to end and Lamplit to come forward before installing.
+#[tauri::command]
+pub async fn updates_install(app: AppHandle) -> Result<updates::Status> {
+    blocking(move || updates::install(&app)).await?
+}
+
+#[tauri::command]
+pub async fn updates_whats_new(app: AppHandle) -> Result<Option<updates::News>> {
+    blocking(move || updates::whats_new(&app)).await?
+}
+
 // Each change returns the prefs that follow.
+
+#[tauri::command]
+pub async fn prefs_set_check_updates(app: AppHandle, on: bool) -> Result<Prefs> {
+    blocking(move || prefs::change(&app, |p| p.check_updates = on).map(|()| prefs::get(&app))).await?
+}
 
 #[tauri::command]
 pub async fn prefs_set_sound_follows(app: AppHandle, on: bool) -> Result<Prefs> {

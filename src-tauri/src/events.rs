@@ -5,6 +5,7 @@ use crate::dock;
 use crate::library::{Art, Game};
 use crate::stores::{self, Store};
 use crate::system::setup;
+use crate::updates;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
@@ -36,6 +37,8 @@ pub enum Event<'a> {
     Notice(String),
     /// Setup started from Settings has ended: whether it is still needed.
     Setup(setup::Status),
+    /// A check, download or deferred install changed state.
+    Update(updates::Status),
     /// A controller press for the dock while the dock is in front: "left", "ok", "back" and so on, or Cross let go.
     DockPad(&'a str),
     /// The dock opens over the game, folds away, or shows news for a moment.
@@ -96,6 +99,7 @@ impl Event<'_> {
             Event::InterfaceSounds(_) => "interface-sounds",
             Event::Notice(_) => "notice",
             Event::Setup(_) => "setup",
+            Event::Update(_) => "update",
             Event::DockPad(_) => "dock-pad",
             Event::Dock(_) => "dock",
         }

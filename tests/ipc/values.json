@@ -9,5 +9,6 @@
   "battery_level": ["empty", "low", "medium", "full"],
   "entry_kind": ["drive", "folder", "exe"],
   "dock_icon": ["headset", "controller"],
-  "dock_release": ["ok-up"]
+  "dock_release": ["ok-up"],
+  "update_phase": ["idle", "checking", "current", "available", "downloading", "ready", "installing", "error"]
 }

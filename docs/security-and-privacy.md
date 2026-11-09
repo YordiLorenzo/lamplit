@@ -5,9 +5,9 @@ This page lists everything Lamplit changes outside its own data folder (`%LOCALA
 does to other apps, and everything it sends over the network. How to report a security problem is in
 [SECURITY.md](../SECURITY.md).
 
-## Network: art only
+## Network: game art and app updates
 
-Lamplit goes online for one thing: cover, background and logo art for your games. It does so only while
+Lamplit goes online for cover, background and logo art for your games. It does so only while
 **Settings > System > Find art online** is on. That setting is on until you switch it off, so the first scan after
 Lamplit's first start goes online. Switching it off also stops a search or download that is under way. Art that
 Steam already keeps on your PC (its library cache) is used without going online. While the setting is on:
@@ -18,8 +18,31 @@ Steam already keeps on your PC (its library cache) is used without going online.
 | `api.steampowered.com` (`IStoreBrowseService/GetItems`) | The Steam app ids whose art is missing, or that Change art found, and the country of your Windows region. |
 | `shared.steamstatic.com` | Requests for the art files themselves. |
 
-Every request carries the user agent `lamplit/<version>`. Nothing else leaves the PC: no accounts, no telemetry, no
-update checks, and the logs stay in Lamplit's data folder.
+Art requests carry the user agent `lamplit/<version>`.
+
+### App updates
+
+**Settings > Check for updates > Check for updates** controls automatic checks. It is on by default. Ten seconds
+after start, Lamplit requests `https://github.com/YordiLorenzo/lamplit/releases/latest/download/latest.json` if its
+last check attempt was at least 24 hours ago. Failed attempts count too. Switching the setting off prevents future
+automatic requests; a request already sent can finish. The row's **Check** button still makes a check when you choose
+it, even with automatic checks off.
+
+GitHub and its release download hosts receive your IP address, a request for Lamplit's release metadata and the
+updater's user agent, `tauri-plugin-updater/<plugin version>`. The fixed URL sends no installed Lamplit version, game
+names, account details or device identifiers. Version comparison happens on your PC. There are no accounts or
+telemetry, and logs stay on the PC.
+
+An automatic check only shows the available version. Choosing **Check** or **Download and install** in that section
+also downloads the installer if a newer version exists, from the release URL in the metadata, normally GitHub's
+release download hosts. It carries the same updater user agent. Lamplit verifies its signature against the public
+key built into the app before running anything. This update signature is separate from Windows publisher signing.
+
+The verified download stays in memory until no game is starting or running and Lamplit is in front. The passive
+installer then closes Lamplit, replaces its installed files and starts the new Lamplit with its supervisor. It asks
+for no clicks or admin rights in the normal per-account installation and keeps the player's settings, art and sign-in
+task. Closing Lamplit before installation discards the download. What's new comes from the changelog built into the
+exe; displaying it sends nothing online.
 
 Two more things go online, but not from Lamplit itself:
 
