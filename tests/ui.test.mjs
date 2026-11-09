@@ -929,7 +929,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await row("Restore Lamplit's changes").dispatchEvent('pointerdown');
   await page.clock.runFor(1000);
   v = await view();
-  check('a full hold starts restore and disables conflicting System actions', v.calls.filter((c) => c === 'restore_changes').length === 1 && v.disabled.length === 4 && v.text.includes('Restoring…'), JSON.stringify(v));
+  check('a full hold starts restore and disables conflicting System actions', v.calls.filter((c) => c === 'restore_changes').length === 1 && v.disabled.length === 5 && v.text.includes('Restoring…'), JSON.stringify(v));
   const from = v.calls.length;
   await row("Restore Lamplit's changes").dispatchEvent('pointerdown');
   await page.clock.runFor(1000);
@@ -959,7 +959,8 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await row('System').click();
   v = await view();
   check('the final report survives closing Settings and startup is read back', v.text.includes('Restore report') && v.text.includes('Close Ubisoft Connect, then try again.') && (await row('Start when I sign in').textContent()).endsWith('Off') && v.disabled.length === 0, JSON.stringify(v));
-  for (let i = 0; i < 7; i++) await page.keyboard.press('ArrowDown');
+  // Down past the System rows (Save a report among them) to the last line of the restore report.
+  for (let i = 0; i < 8; i++) await page.keyboard.press('ArrowDown');
   await settled(page);
   const reportVisible = await page.evaluate(() => {
     const row = document.querySelector('#settingsList .row.focus');
