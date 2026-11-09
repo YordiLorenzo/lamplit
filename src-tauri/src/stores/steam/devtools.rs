@@ -173,7 +173,9 @@ fn set_flag(open: bool) -> Result<()> {
     }
     let mut saved = saved()?;
     if let std::collections::btree_map::Entry::Vacant(entry) = saved.flags.entry(flag.clone()) {
-        entry.insert(before);
+        // Opening finds no flag; closing is the player switching the port off. Either way, no flag is how a restore
+        // should leave it: a flag 0.3 made, or one of unknown origin, must not come back and open the port again.
+        entry.insert(None);
         data::save(RECORD_FILE, &saved)?;
     }
     if open {
