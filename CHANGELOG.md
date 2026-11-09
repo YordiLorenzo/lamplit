@@ -49,6 +49,8 @@ Every release of Lamplit, newest first. The format follows
 - A damaged settings file is kept as `.damaged`. Lamplit uses the previous good copy when available, recovering
   saved settings such as favourites and hidden games. Each save keeps the previous good copy as `.bak`.
 - After Change art, the screen's colours follow the new art at once.
+- Alt+F4 closes Lamplit again. On current Windows 11 builds, Lamplit ended with an error as it closed, and its
+  supervisor started it again at once.
 
 ## 0.3.0 - 2026-10-30
 

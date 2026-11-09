@@ -60,6 +60,15 @@ pub fn prepare() {
     }
 }
 
+/// Takes the glass away before Lamplit ends (see `Glass::shut_down`). On the main thread.
+pub fn release() {
+    if let Some((_, Ok(glass))) = GLASS.with_borrow_mut(Option::take)
+        && let Err(e) = glass.shut_down()
+    {
+        log::warn!("dock: the glass's dispatcher queue didn't shut down: {e}");
+    }
+}
+
 /// The glass in `dock`, made there first if it isn't yet; a new dock window (the dock was switched off and on) gets
 /// glass of its own. None when Windows couldn't make it.
 fn made(glass: &mut Option<(isize, windows::core::Result<Glass>)>, dock: HWND) -> Option<&Glass> {

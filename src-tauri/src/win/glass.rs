@@ -69,6 +69,18 @@ impl Glass {
         Ok(Glass { _queue: queue, _target: target, visual, shape })
     }
 
+    /// Takes the glass away and shuts down the dispatcher queue made for it. A queue made for the current thread must
+    /// be shut down while the thread still handles messages: one left running when Lamplit ends makes CoreMessaging
+    /// end the process with 0xE0464645, which the supervisor takes for a crash and starts Lamplit again.
+    pub fn shut_down(self) -> windows::core::Result<()> {
+        let Glass { _queue: queue, _target: target, visual, shape } = self;
+        drop((visual, shape, target));
+        match queue {
+            Some(queue) => queue.ShutdownQueueAsync().map(drop),
+            None => Ok(()),
+        }
+    }
+
     /// Shows the glass with `shape`, or hides it.
     pub fn show(&self, shape: Option<Shape>) -> windows::core::Result<()> {
         let Some(s) = shape else { return self.visual.SetIsVisible(false) };
