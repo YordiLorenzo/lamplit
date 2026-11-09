@@ -292,7 +292,7 @@ pub fn status(store: Store, procs: &Processes) -> Status {
     };
     let account = match store {
         Store::Steam => steam::account(pid),
-        Store::Epic => saved(epic::remembered()),
+        Store::Epic => saved(exe.as_deref().is_some_and(epic::remembered)),
         Store::Ea => saved(ea::remembered()),
         Store::Ubisoft => saved(ubisoft::remembered()),
         Store::Rockstar => saved(rockstar::remembered()),

@@ -137,6 +137,28 @@ Controller presses reach the page as `pad` events only while Lamplit's window is
 Menu, is the exception: over a running game it opens the dock, and anywhere else it brings Lamplit forward. Each kind of
 controller is read into the same buttons, by position (south is Cross or A), so navigation doesn't care which it is.
 
+## Epic's two launchers
+
+`stores/epic.rs` reads the legacy `.item` manifests in
+`%ProgramData%\Epic\EpicGamesLauncher\Data\Manifests` and the Preview's
+`%LOCALAPPDATA%\com.epicgames.eglv2\installations.jsonl`. The latter is a journal: the last record for an
+`installationId` wins, and a deletion record removes it. Only completed Windows games with an existing local
+folder are listed. DLC and Unreal Engine installs are skipped. Names come from the Preview's local
+`cache\prod\catalog-cache.json`, or the install folder when no title is cached. A migrated game keeps its
+`epic:<app name>` id. With a launcher installed, only its records are used, so stale files from migration or
+rollback cannot bring back removed games. With neither launcher installed, both sources are listed, with duplicate
+ids merged, so Play can explain that Epic needs installing.
+
+The `com.epicgames.launcher` protocol registration selects the exe to start, show and wait for. Only the legacy
+`Portal\Binaries\Win32` path is redirected to its Win64 sibling; the Preview's registered path is used directly.
+Process checks compare that full exe path, so they need no window title or helper-process name. Without a usable
+registration, discovery tries the Preview's default install folder, then the existing legacy default.
+
+Saved sign-in detection follows that selected launcher. The legacy launcher uses its `RememberMe` INI section;
+the Preview uses the presence of a non-empty encrypted `auth\access-token-prod.dpapi` file, without reading it.
+The account cache alone only records past logins. These are local hints, not proof that Epic still accepts the
+session; the existing Try anyway action remains available. [Sources and Windows verification limits](epic-launcher.md).
+
 ## How a launch works
 
 1. The page calls `launch_start` with the game's id and shows the starting screen.
