@@ -150,6 +150,9 @@ fn may_install(active: bool, running: bool, in_front: bool) -> bool {
 }
 
 fn install_ready(app: &AppHandle) {
+    // Installing ends Lamplit. Never in the middle of Restore Lamplit's changes, and no restore starts once the
+    // installer has: the guard lives until the process exits, or until a failed install returns.
+    let Some(_restore) = crate::system::restore::CHANGES.try_lock() else { return };
     let updates = app.state::<Updates>();
     let (update, bytes) = {
         let mut installing = updates.installing.lock();
