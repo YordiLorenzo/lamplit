@@ -30,6 +30,17 @@ Lamplit follows only folders on a drive letter from a store's files. A network s
 such as a Steam library folder, a Steam game's folder or an Epic install folder, is skipped, so looking for games
 never signs in to another computer.
 
+## Epic's local files
+
+Lamplit reads Epic's installed-game records from the legacy launcher's ProgramData manifests and the Preview's
+`%LOCALAPPDATA%\com.epicgames.eglv2\installations.jsonl`, plus its `cache\prod\catalog-cache.json` for game names.
+It reads the launcher protocol registration to find the exe. These files and registry entries are not changed.
+
+For a saved sign-in, the legacy check reads its `RememberMe` settings. The Preview check reads only the file type
+and size of `auth\access-token-prod.dpapi` in the Preview's data folder. Lamplit does not read or decrypt that
+token, access Windows Credential Manager, read the account cache, or send account information anywhere. A saved
+file is only a hint that the launcher can sign in; it does not confirm a live session.
+
 ## The logs
 
 Lamplit writes `lamplit.log`, `supervisor.log` and `setup.log` in its data folder, and keeps them there. They name
