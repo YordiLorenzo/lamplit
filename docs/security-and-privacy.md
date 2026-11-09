@@ -85,13 +85,18 @@ NVIDIA's overlay notifications aren't covered; switch those off in NVIDIA's over
 - While **Sound follows the headset and controller headphones** is on (the default), Lamplit changes Windows' default
   output and microphone when the headset turns on or off, or headphones go into or out of a controller on a USB
   cable. A separate default communications device (the one chat apps use) stays where you set it.
-- Picking a device in **Settings > Sound** makes it Windows' default for everything, calls included.
+  Output and microphone endpoint ids are kept separately in `sound-return.json` in the local data folder so the
+  return survives a restart. A missing device stays recorded until it returns or a newer choice cancels the return.
+  Pending returns are checked every ten seconds while Sound follows is on. These ids are not sent online.
+- Picking a device in **Settings > Sound** makes it Windows' default for everything, calls included, and cancels the
+  pending return for that output or microphone.
 - **Turn off** on a DualSense on Bluetooth drops its Bluetooth link.
 - While **Touchpad as mouse** is on, the DualSense touchpad sends ordinary mouse input to Windows (never over a
   full-screen game).
 - Lamplit only reads the controllers and the headset receiver. It never changes a controller's mode, lights or
-  rumble. A DualSense is read over HID, Xbox-style controllers through XInput and others through
-  Windows.Gaming.Input; none of these takes a controller from a game or from Steam Input, or changes what they see.
+  rumble. A DualSense and the 2026 Steam Controller are read over shared HID handles, Xbox-style controllers through
+  XInput and others through Windows.Gaming.Input; none of these takes a controller from a game or from Steam Input,
+  or changes what they see.
   On the headset it changes only what you change in Settings (sidetone and the auto-off timer), and those settings
   are stored on the headset.
 
