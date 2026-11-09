@@ -364,10 +364,10 @@ mod tests {
     #[test]
     fn selects_only_the_last_50_warnings_and_errors_in_order() {
         let mut log = "not a log record WARN Alice\n2026-10-25 21:04:05.123 INFO  ERROR is just a word\n".to_string();
-        for i in 0..55 {
+        log.extend((0..55).map(|i| {
             let level = if i % 2 == 0 { "WARN " } else { "ERROR" };
-            log.push_str(&format!("2026-10-25 21:04:05.123 {level} error {i} for Alice\n"));
-        }
+            format!("2026-10-25 21:04:05.123 {level} error {i} for Alice\n")
+        }));
         let text = warning_lines(&log, &redactor());
         assert_eq!(text.lines().count(), 50);
         assert!(text.lines().next().unwrap().ends_with("error 5 for <user>"));

@@ -15,7 +15,7 @@ pub fn downloads() -> Result<PathBuf> {
     let copied = unsafe { path.to_string() };
     // SAFETY: SHGetKnownFolderPath allocates with the COM task allocator; this is its only free.
     unsafe { CoTaskMemFree(Some(path.0.cast())) };
-    copied.map(PathBuf::from)
+    Ok(PathBuf::from(copied?))
 }
 
 pub fn username() -> Result<String> {
