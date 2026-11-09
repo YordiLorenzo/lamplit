@@ -348,7 +348,7 @@ or running and Lamplit is in front, then starts again by itself. Closing Lamplit
 download.
 
 Automatic checks are on by default, at most once every 24 hours after a start. They only show whether an update is
-available. Switch **Check for updates** off in that section to stop them; the manual check still works. After a
+available. Switch **Check by itself** off in that section to stop them; the manual check still works. After a
 version change, a short **What's new** card shows three highlights once Lamplit has a previous version recorded.
 
 You can still run the new version's installer into the same folder. Both methods keep your settings, art and
@@ -509,7 +509,7 @@ read them before posting one. If Lamplit cannot open, attach the relevant log in
 ### Does it send anything online?
 
 Game art requests go to Steam's store while **Find art online** is on: names of games that aren't from Steam,
-Change art searches, Steam app ids and your country. Update checks go to GitHub while **Check for updates** is on,
+Change art searches, Steam app ids and your country. Update checks go to GitHub while **Check by itself** is on,
 or when you choose a manual check. The automatic check sends no installed version, game names or device identifiers,
 and downloads no installer. Both switches start on. Details are in
 [the privacy section](docs/security-and-privacy.md#network-game-art-and-app-updates).

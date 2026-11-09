@@ -23,7 +23,7 @@ Art requests carry the user agent `lamplit/<version>`.
 
 ### App updates
 
-In **Settings > Check for updates**, the **Check for updates** switch controls automatic checks. It is on by default.
+In **Settings > Check for updates**, the **Check by itself** switch controls automatic checks. It is on by default.
 Ten seconds after start, Lamplit requests `https://github.com/YordiLorenzo/lamplit/releases/latest/download/latest.json` if its
 last check attempt was at least 24 hours ago. Failed attempts count too. Switching the setting off prevents future
 automatic requests; a request already sent can finish. The **Check** action still works with automatic checks off.

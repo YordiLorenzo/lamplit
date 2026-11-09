@@ -741,7 +741,7 @@ export function sectionRows(key, state) {
     }
   } else if (key === 'updates') {
     rows.push(updateRow(state.update));
-    rows.push({ kind: 'checkupdates', label: 'Check for updates', value: onOff(prefs?.check_updates ?? true), note: 'Automatically, at most once a day after start' });
+    rows.push({ kind: 'checkupdates', label: 'Check by itself', value: onOff(prefs?.check_updates ?? true), note: 'At most once a day, after Lamplit starts' });
   } else if (key === 'hidden') {
     for (const g of hiddenGames(state)) rows.push({ kind: 'unhide', id: g.id, store: g.store, label: g.name, value: 'Show' });
     // The section stays open when its last game is shown again.
