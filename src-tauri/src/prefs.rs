@@ -81,6 +81,8 @@ pub struct Prefs {
     /// Lamplit opens Steam's DevTools port, which the PS button guard and Steam's part of quiet mode need. Any program
     /// on the PC can control Steam through that port, so it is off until the player switches it on (devtools.rs).
     pub steam_devtools: bool,
+    /// Keeps the Guide button for Lamplit, including closing Steam's Big Picture window.
+    pub steam_guide: bool,
     /// Art Steam's library cache doesn't have comes from Steam's store, which then learns the names of the games
     /// outside Steam (art.rs).
     pub online_art: bool,
@@ -105,6 +107,7 @@ impl Default for Prefs {
             hints: Hints::default(),
             touchpad_mouse: false,
             steam_devtools: false,
+            steam_guide: true,
             online_art: true,
             screensaver_minutes: 5,
             dock: true,
@@ -166,6 +169,16 @@ pub fn hint_done(app: &AppHandle, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// The windowless restore has no Tauri state. An unreadable file must stay intact, not become default prefs.
+pub fn stop_steam_changes() -> Result<bool> {
+    let mut prefs: Prefs = data::load(FILE)?.unwrap_or_default();
+    let opened_port = prefs.steam_devtools;
+    prefs.steam_devtools = false;
+    prefs.steam_guide = false;
+    data::save(FILE, &prefs)?;
+    Ok(opened_port)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Hint, Hints, InterfaceSounds, Prefs};
@@ -184,6 +197,7 @@ mod tests {
         assert_eq!(prefs.interface_sounds, InterfaceSounds::Normal);
         assert_eq!(prefs.hints.game_menu.starts, 0);
         assert!(!prefs.hints.return_home.done);
+        assert!(prefs.steam_guide);
     }
 
     #[test]

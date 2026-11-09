@@ -1,6 +1,7 @@
 # What Lamplit changes on your PC, and what it sends
 
-Lamplit runs as your own Windows account, with your normal rights. Only the first-time setup asks for admin rights.
+Lamplit runs as your own Windows account, with your normal rights. Repairing Steam's background service asks for
+admin rights. Removing a sign-in task created by an older Lamplit may also need them.
 This page lists everything Lamplit changes outside its own data folder (`%LOCALAPPDATA%\lamplit`), everything else it
 does to other apps, and everything it sends over the network. How to report a security problem is in
 [SECURITY.md](../SECURITY.md).
@@ -66,7 +67,7 @@ file is only a hint that the launcher can sign in; it does not confirm a live se
 
 ## The logs
 
-Lamplit writes `lamplit.log`, `supervisor.log` and `setup.log` in its data folder, and keeps them there. They name
+Lamplit writes `lamplit.log`, `supervisor.log`, `setup.log` and `restore.log` in its data folder, and keeps them there. They name
 the games it found, their folders and your sound devices. Read a log before you attach it to a public issue, and
 remove anything you'd rather not share.
 
@@ -94,23 +95,30 @@ the port yourself, Lamplit uses it too.
 Through the port, Lamplit reads and changes three of Steam's settings and nothing else: **Guide Button Focuses
 Steam**, and Steam's two notification switches (all notifications, and notifications in game) while quiet mode is on.
 
-Whenever the port is open, Lamplit switches off **Guide Button Focuses Steam** (Steam > Settings > Controller), so the
-PS button doesn't open Big Picture. Steam keeps that setting, so it stays off after Lamplit is gone until you switch
-it back on.
+While **Keep the Guide button for Lamplit** is on (the default), Lamplit switches off **Guide Button Focuses Steam**
+(Steam > Settings > Controller) whenever the port is open. It saves the previous setting in `steam-saved.json` before
+changing it. That file also saves the original presence and contents of any DevTools flag Lamplit changes. Restore
+puts these back and switches both Steam prefs off, including the guard that closes Big Picture.
 
-## First-time setup (admin rights, once)
+## Start when I sign in
 
-`lamplit.exe --setup`, or **Settings > System > First-time setup**, asks Windows for admin rights once and then:
+**Settings > System > Start when I sign in** registers `lamplit-<your account's SID>` without an admin prompt. It
+starts Lamplit in your desktop session with your normal rights. It is off on a fresh install until you switch it
+on. The switch reads Task Scheduler: a deleted or disabled task, or one pointing to a different lamplit.exe, is off.
 
-1. Repairs Steam's background service with Valve's own `<Steam>\bin\SteamService.exe /repair`, after checking that
-   Steam's folder is on a fixed drive of this PC and that the file carries Valve's signature. Without this, Steam
-   asks for admin rights itself whenever it updates that service.
-2. Registers the logon task `lamplit-<your account's SID>`, which starts Lamplit when you sign in, with your normal
-   rights.
+Switching it off deletes the task. Tasks created by 0.3 or earlier may have permissions that prevent your normal
+account from deleting them. Only after Windows refuses that deletion does Lamplit ask for admin rights. That helper
+deletes only the original account's Lamplit task, even if another administrator answers the prompt.
 
-On a standard account, Windows' prompt asks for an administrator's password, and the logon task is still made for
-the account that asked. lamplit.exe is built so that Windows loads the DLLs it needs from System32 only, so a DLL
-placed next to lamplit.exe can't run with admin rights during setup.
+## Repair Steam's background service
+
+`lamplit.exe --setup`, or **Settings > System > Repair Steam's background service**, asks Windows for admin rights.
+It runs Valve's own `<Steam>\bin\SteamService.exe /repair`, after checking that Steam's folder is on a fixed drive
+and the file carries Valve's signature. This stops Steam asking for admin rights to repair that service itself.
+It does not change Lamplit's start at sign-in. Restore does not undo Valve's service repair.
+
+On a standard account, Windows' prompt asks for an administrator's password. lamplit.exe is built so that Windows
+loads the DLLs it needs from System32 only, so a DLL beside it cannot run with admin rights during repair.
 
 ## Quiet mode (when you switch it on)
 
@@ -148,7 +156,7 @@ These don't change any setting, but you may notice them:
   that the itch app runs in its sandbox (a Windows account of its own, with less access than yours) starts through
   the app's launcher, `itch-setup --run-game <id>`, which keeps it in the sandbox; Lamplit never starts such a game
   from its exe. So does a game that asks the itch app for an itch.io API key, which only the app hands out.
-- It closes Steam's Big Picture mode whenever it opens, and minimises Steam's main window when Lamplit takes the
+- While **Keep the Guide button for Lamplit** is on, it closes Steam's Big Picture mode whenever it opens. It minimises Steam's main window when Lamplit takes the
   screen back after a Steam game.
 - It keeps the PC and the screen awake while a game is starting or Steam is updating it, and lets them sleep again
   once the game runs.
@@ -178,20 +186,27 @@ These don't change any setting, but you may notice them:
 
 ## Removing Lamplit
 
-Before you uninstall Lamplit, undo what it changed outside its data folder that the uninstaller can't:
+Hold **Settings > System > Restore Lamplit's changes**. Its report shows quiet mode, Steam's Guide setting,
+Steam's DevTools flag, and the sign-in task one by one. It turns quiet mode and Lamplit's two automatic Steam prefs
+off, so the changes stay restored while Lamplit runs. A pre-existing DevTools flag is restored too; in that case
+Steam will still open its port as it did before Lamplit changed it. Restart Steam to apply any flag change.
 
-1. Switch **Steam's DevTools port** off in Settings, or delete `.cef-enable-remote-debugging` from Steam's folder
-   yourself. Otherwise Steam keeps opening the port at every start.
-2. Switch **Quiet mode** off, so your notification, Game Bar, Ubisoft Connect and Steam settings go back to what
-   they were.
-3. If Lamplit ever had Steam's DevTools port open, switch **Guide Button Focuses Steam** back on in Steam > Settings >
-   Controller, if you want the PS button to open Steam again.
+If Steam is closed or its DevTools port is unavailable, or Ubisoft Connect is running, the report says what to do.
+The originals remain in `quiet-saved.json` and `steam-saved.json`; Lamplit retries while it runs. Keep those files
+until every change is back. Steam must be signed in with its DevTools port open for its settings to be restored;
+when necessary, restart Steam with `-cef-enable-debugging` for the restore, then restart it normally afterwards.
 
-Then uninstall it from **Settings > Apps > Installed apps**. The uninstaller deletes the logon task
-`lamplit-<your account's SID>` (Windows usually asks for admin rights for that) and the setup record. A silent or
-passive uninstall (`/S` or `/P`) can't show that prompt and leaves the task; delete it in Task Scheduler. Tick
-**Delete the application data** to also delete the data folder `%LOCALAPPDATA%\lamplit`, which is also where the
-installer puts lamplit.exe unless you choose another folder.
+Versions before 0.4 did not save the Guide setting or the DevTools flag's original state. Restore names this
+limitation. Check **Guide Button Focuses Steam** in Steam's Controller settings yourself. If the old version opened
+the port and the flag is still there without an original, remove `.cef-enable-remote-debugging` from Steam's folder
+only if Lamplit created it, then try Restore again. A flag you had before Lamplit can stay.
 
-If you run lamplit.exe without installing it, delete the task in Task Scheduler (this asks for admin rights), then
-lamplit.exe and the data folder yourself.
+Uninstall from **Settings > Apps > Installed apps**. The uninstaller runs the same restore before removing the exe;
+updates and reinstalls in place keep your settings. Silent and passive removal (`/S` or `/P`) cannot ask for admin
+rights, so a protected legacy task may remain. Remove it in Task Scheduler. If anything could not be restored,
+the uninstaller keeps the data folder and `restore.log`, even if **Delete the application data** was selected.
+Run Lamplit again to finish restoring the saved settings. When restoration succeeds, that checkbox also removes
+`%LOCALAPPDATA%\lamplit`, where the installer puts lamplit.exe by default.
+
+For a copy used without the installer, close Lamplit and run `lamplit.exe --restore`. It writes `restore.log` and
+returns a nonzero exit code for pending changes. Finish those before deleting the exe and its data folder.

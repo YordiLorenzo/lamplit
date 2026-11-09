@@ -79,7 +79,7 @@ const settings = {
   stores_status: stores,
   overlay_state: like(ipc('overlays'), { nvidia_overlay: true, nvidia_stats: false }),
   quiet_state: like(ipc('quiet'), { state: known('quiet_state', 'on'), active: true, notes: [] }),
-  setup_state: like(ipc('setup'), { needed: false }),
+  startup_state: like(ipc('startup'), { enabled: false }),
   sound_state: like(sound, {
     outputs: [
       device('{0.0.0.00000000}.{6f1c2b0e-tv}', 'LG TV SSCR2 (NVIDIA High Definition Audio)', 'TV (LG TV SSCR2)', 'tv', false),

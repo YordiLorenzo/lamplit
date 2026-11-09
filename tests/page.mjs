@@ -35,6 +35,7 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
     dock: (show) => show.mode !== 'status' || values.dock_icon.includes(show.icon),
     'pad-kind': (kind) => values.pad_kind.includes(kind),
     'launch-step': (step) => values.step_state.includes(step.state),
+    'restore-step': (step) => typeof step.name === 'string' && typeof step.restored === 'boolean' && typeof step.message === 'string',
     stores: (list) => list.every((s) => values.account.includes(s.account)),
     update: (status) => values.update_phase.includes(status.phase),
   };
@@ -92,6 +93,9 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
       window.__prefs.check_updates = on;
       return window.__prefs;
     },
+    startup_state: ${JSON.stringify(ipc('startup'))},
+    startup_set: ({ on }) => ({ enabled: on }),
+    restore_changes: [],
   };
   const early = ${JSON.stringify(earlyGames)};
   window.__TAURI__ = {

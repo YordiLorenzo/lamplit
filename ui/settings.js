@@ -16,6 +16,14 @@ import { SPRINGS } from './springs.js';
 import { renderStatus } from './status.js';
 import { els, state, withStoreLogo } from './state.js';
 
+/** A restore waits for any Settings change already sent to finish. */
+let changes = 0;
+
+/** @param {import('./state.js').Row} row */
+const blocked = (row) =>
+  (state.restore.running && row.kind !== 'restorestep' && (row.kind !== 'section' || row.key === 'add')) ||
+  (row.kind === 'restore' && changes > 0);
+
 function renderSettings() {
   const s = state.settings;
   const section = SECTIONS.find((x) => x.key === s.section);
@@ -41,6 +49,7 @@ function renderSettings() {
     }
     const row = document.createElement('div');
     row.className = 'row' + (r.kind ? '' : ' info') + (i === s.idx ? ' focus' : '') + (r.adjust ? ' adjust' : '');
+    if (r.kind && blocked(r)) row.setAttribute('aria-disabled', 'true');
     const label = labelled('', r.note);
     label.prepend(...withStoreLogo(r.store, r.label ?? ''));
     const value = document.createElement('span');
@@ -163,11 +172,11 @@ const orKeep = (call) => call.catch(() => undefined);
 
 /** Everything the settings show, fetched together. */
 async function refreshSettings() {
-  const [stores, overlays, quiet, setup, sound, accessories, prefs, display] = await Promise.all([
+  const [stores, overlays, quiet, startup, sound, accessories, prefs, display] = await Promise.all([
     orKeep(api.storesStatus()),
     orKeep(api.overlayState()),
     orKeep(api.quietState()),
-    orKeep(api.setupState()),
+    orKeep(api.startupState()),
     orKeep(api.soundState()),
     orKeep(api.accessoriesState()),
     orKeep(api.prefsState()),
@@ -176,7 +185,7 @@ async function refreshSettings() {
   if (stores) setStores(stores);
   state.overlays = overlays ?? state.overlays;
   state.quiet = quiet ?? state.quiet;
-  state.setup = setup ?? state.setup;
+  state.startup = startup ?? state.startup;
   state.sound = sound ?? state.sound;
   state.accessories = accessories ?? state.accessories;
   state.prefs = prefs ?? state.prefs;
@@ -201,10 +210,29 @@ export async function refreshAccessories() {
   renderSettings();
 }
 
-/** Setup has ended: the System row shows whether it is still needed. @param {import('./api.js').Setup} setup */
-export function setSetup(setup) {
-  state.setup = setup;
+/** @param {import('./api.js').RestoreStep} step */
+export function setRestoreStep(step) {
+  if (!state.restore.running) return;
+  state.restore.steps.push(step);
+  if (state.settings.section === 'system') state.settings.focus = rowKey({ kind: 'restorestep', id: step.name });
   if (state.mode === 'settings') renderSettings();
+}
+
+/** The report stays in System after completion, also if Settings was closed meanwhile. */
+async function restoreChanges() {
+  if (state.restore.running || changes) return;
+  state.restore = { running: true, steps: [], error: '' };
+  renderSettings();
+  try {
+    state.restore.steps = await api.restoreChanges();
+  } catch (e) {
+    state.restore.error = e.message;
+  } finally {
+    // Read what was restored, including changes that only partly succeeded.
+    await refreshSettings();
+    state.restore.running = false;
+    if (state.mode === 'settings') renderSettings();
+  }
 }
 
 /** @param {import('./api.js').StoreStatus[]} list */
@@ -288,7 +316,8 @@ let statsBusy = false;
 /** ← and → on a row with a range: volume, sidetone, auto-off. @param {number} dir */
 export async function adjustSetting(dir) {
   const row = state.settings.rows[state.settings.idx];
-  if (row.kind !== 'volume' && headsetBusy) return;
+  if (!row || blocked(row) || (row.kind !== 'volume' && headsetBusy)) return;
+  changes++;
   sfx.move();
   try {
     if (row.kind === 'volume') {
@@ -300,6 +329,8 @@ export async function adjustSetting(dir) {
     else await adjustHeadset(row.kind, dir);
   } catch (e) {
     toast(e.message, { warn: true });
+  } finally {
+    changes--;
   }
   if (state.mode === 'settings') renderSettings();
 }
@@ -354,7 +385,7 @@ async function adjustScreensaver(dir) {
 }
 
 /** The rows that switch one of the player's prefs. */
-const PREF_ROWS = ['follows', 'touchmouse', 'steamport', 'onlineart', 'dock', 'saverafter', 'checkupdates'];
+const PREF_ROWS = ['follows', 'touchmouse', 'steamport', 'steamguide', 'onlineart', 'dock', 'saverafter', 'checkupdates'];
 let updateBusy = false;
 
 async function chooseUpdate() {
@@ -393,7 +424,7 @@ async function power(row) {
 export async function selectSetting() {
   const s = state.settings;
   const row = s.rows[s.idx];
-  if (!row?.kind || row.adjust || (row.kind === 'stats' && statsBusy)) return;
+  if (!row?.kind || row.kind === 'restorestep' || row.adjust || blocked(row) || (row.kind === 'stats' && statsBusy)) return;
   // Add a game is pushed inside this plate; Back there comes back here, on its row.
   if (row.kind === 'section' && row.key === 'add') return openAdd(() => returnFromAdd(rowKey(row)));
   if (row.kind === 'report') return openReport(() => {
@@ -403,10 +434,10 @@ export async function selectSetting() {
     renderSettings();
     turnPlate('settings-from-report', from, 'close');
   });
-  // Restart, Shut down and Exit to Windows happen once Cross has been held on them.
+  // Restore, Restart, Shut down and Exit to Windows happen once Cross has been held on them.
   if (row.hold) {
     sfx.move();
-    return hold(/** @type {HTMLElement} */ (els.settingsList.querySelector('.row.focus')), () => power(row));
+    return hold(/** @type {HTMLElement} */ (els.settingsList.querySelector('.row.focus')), () => row.kind === 'restore' ? restoreChanges() : power(row));
   }
   sfx.open();
   if (row.kind === 'section') {
@@ -418,6 +449,7 @@ export async function selectSetting() {
     renderSettings();
     return push(from, 1);
   }
+  changes++;
   try {
     if (row.kind === 'device') {
       state.sound = await api.soundSetDefault(row.id);
@@ -433,6 +465,10 @@ export async function selectSetting() {
     } else if (row.kind === 'steamport') {
       state.prefs = await api.prefsSetSteamDevtools(!state.prefs?.steam_devtools);
       toast(state.prefs.steam_devtools ? "Steam's DevTools port opens when Steam next starts." : "Steam's DevTools port closes when Steam next starts.");
+    } else if (row.kind === 'steamguide') {
+      state.prefs = await api.prefsSetSteamGuide(!(state.prefs?.steam_guide ?? true));
+    } else if (row.kind === 'startup') {
+      state.startup = await api.startupSet(!state.startup?.enabled);
     } else if (row.kind === 'onlineart') {
       state.prefs = await api.prefsSetOnlineArt(!state.prefs?.online_art);
     } else if (row.kind === 'checkupdates') {
@@ -459,7 +495,7 @@ export async function selectSetting() {
       const told = report.notes.length ? report.notes.join(' ') : quietMode(report).note;
       if (told) toast(told, { icon: 'i-quiet' });
     } else if (row.kind === 'setup') {
-      // The command returns only once the prompt is answered, and Lamplit says how setup went when it ends.
+      // Steam's service repair can still need a Windows admin prompt.
       toast('Answer the Windows prompt with a keyboard or mouse.');
       await api.setupStart();
     } else if (row.kind === 'store') {
@@ -476,6 +512,9 @@ export async function selectSetting() {
     toast(e.message, { warn: true });
     // The row shows what Rust holds, also after a change that failed halfway.
     if (PREF_ROWS.includes(row.kind)) state.prefs = (await orKeep(api.prefsState())) ?? state.prefs;
+    if (row.kind === 'startup') state.startup = (await orKeep(api.startupState())) ?? state.startup;
+  } finally {
+    changes--;
   }
   if (state.mode === 'settings') renderSettings();
 }

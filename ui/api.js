@@ -95,8 +95,15 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  */
 
 /**
- * @typedef {object} Setup
- * @property {boolean} needed
+ * @typedef {object} Startup
+ * @property {boolean} enabled
+ */
+
+/**
+ * @typedef {object} RestoreStep
+ * @property {string} name
+ * @property {boolean} restored
+ * @property {string} message
  */
 
 /**
@@ -173,6 +180,7 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {Record<FirstHint, HintProgress>} hints
  * @property {boolean} touchpad_mouse
  * @property {boolean} steam_devtools  Lamplit opens Steam's DevTools port (the PS button guard and Steam's pop-ups)
+ * @property {boolean} steam_guide  Lamplit keeps Steam's Guide Button Focuses Steam setting off
  * @property {boolean} online_art  art comes from Steam's store too
  * @property {number} screensaver_minutes  minutes without input before the screensaver, 0 for never
  * @property {boolean} dock  holding PS over a game opens the dock rather than the home screen
@@ -343,11 +351,14 @@ export const overlayToggleStats = () => call('overlay_toggle_stats');
 export const quietState = () => call('quiet_state');
 /** @param {boolean} on @returns {Promise<Quiet>} */
 export const quietSet = (on) => call('quiet_set', { on });
-/** @returns {Promise<Setup>} */
-export const setupState = () => call('setup_state');
+/** @returns {Promise<Startup>} */
+export const startupState = () => call('startup_state');
+/** @param {boolean} on @returns {Promise<Startup>} */
+export const startupSet = (on) => call('startup_set', { on });
+/** @returns {Promise<RestoreStep[]>} */
+export const restoreChanges = () => call('restore_changes');
 /**
- * Asks Windows for admin rights once and runs the first-time setup. Returns once the prompt is answered; onSetup
- * follows when setup has ended.
+ * Asks Windows for admin rights to repair Steam's background service.
  * @returns {Promise<void>}
  */
 export const setupStart = () => call('setup_start');
@@ -396,6 +407,8 @@ export const prefsHintDone = (name) => call('prefs_hint_done', { name });
 export const prefsSetTouchpadMouse = (on) => call('prefs_set_touchpad_mouse', { on });
 /** Steam opens its DevTools port from its next start, or doesn't. @param {boolean} on @returns {Promise<Prefs>} */
 export const prefsSetSteamDevtools = (on) => call('prefs_set_steam_devtools', { on });
+/** @param {boolean} on @returns {Promise<Prefs>} */
+export const prefsSetSteamGuide = (on) => call('prefs_set_steam_guide', { on });
 /** @param {boolean} on @returns {Promise<Prefs>} */
 export const prefsSetOnlineArt = (on) => call('prefs_set_online_art', { on });
 /** @param {number} minutes 0 for never @returns {Promise<Prefs>} */
@@ -455,5 +468,5 @@ export const onAccessories = (handle) => on('accessories', handle);
 export const onInterfaceSounds = (handle) => on('interface-sounds', handle);
 /** A short message for the player. @param {(text: string) => void} handle */
 export const onNotice = (handle) => on('notice', handle);
-/** Setup started from Settings has ended. @param {(setup: Setup) => void} handle */
-export const onSetup = (handle) => on('setup', handle);
+/** A completed restore step, also returned by restoreChanges. @param {(step: RestoreStep) => void} handle */
+export const onRestoreStep = (handle) => on('restore-step', handle);

@@ -5,9 +5,13 @@
 // has switched that on in Settings (`Prefs::steam_devtools`). A port the player opened some other way is used too.
 
 use super::settings::{self, GUIDE_BUTTON_FOCUSES_STEAM};
+use crate::data;
 use crate::error::{Error, Result};
-use parking_lot::Mutex;
+use crate::files::write_atomic;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
+use std::io::ErrorKind;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -86,31 +90,20 @@ pub fn write_settings(fields: &[(u32, bool)]) -> Result<()> {
 /// What `upkeep` has done for the Steam that runs now.
 #[derive(Default)]
 pub struct Upkeep {
-    /// The Steam session whose PS button setting is checked.
-    session: Option<String>,
     /// The last failure, logged once rather than on every round.
     failure: Option<String>,
 }
 
-/// The flag file (see `flag_file`) follows the pref: the Settings switch changes both, and upkeep puts the file back
-/// while the pref is on. Both hold this lock, so upkeep can't put the file back between the switch taking it away and
-/// saving Off.
-static FLAG: Mutex<()> = Mutex::new(());
-
-/// Called every 10 seconds: once per Steam session, however Steam was started, the PS button stops opening Big
+/// Called every 10 seconds: while the Guide button pref is on, the PS button stops opening Big
 /// Picture. Steam's settings only answer once it is up and signed in, so a failed try is made again next time. While
 /// the port is closed and the player lets Lamplit open it (`open_port`, the pref), it is opened for Steam's next start.
-pub fn upkeep(state: &mut Upkeep, open_port: impl Fn() -> bool) {
+pub fn upkeep(state: &mut Upkeep, open_port: bool, guide: bool) {
+    // The caller holds restore::CHANGES, so these prefs cannot change during an upkeep pass.
     let outcome = match shared_context() {
-        Ok(session) if state.session.as_ref() == Some(&session) => return,
-        Ok(session) => guide_button_off()
-            .map(|()| state.session = Some(session))
-            .map_err(|e| format!("couldn't check the PS button setting yet: {e}")),
+        Ok(_) if !guide => Ok(()),
+        Ok(_) => guide_button_off().map_err(|e| format!("couldn't check the PS button setting yet: {e}")),
         Err(_) => {
-            // The pref is read only now, under the lock: the probe above can take seconds, and the Settings switch
-            // may have turned the port off meanwhile.
-            let _flag = FLAG.lock();
-            if open_port() {
+            if open_port {
                 set_flag(true).map_err(|e| format!("couldn't open its DevTools port: {e}"))
             } else {
                 Ok(())
@@ -126,8 +119,14 @@ pub fn upkeep(state: &mut Upkeep, open_port: impl Fn() -> bool) {
 
 /// The PS button opens Big Picture while this is on (Steam's default).
 fn guide_button_off() -> Result<()> {
-    if read_settings(&[GUIDE_BUTTON_FOCUSES_STEAM.name])?.first() == Some(&Some(false)) {
+    let before = read_settings(&[GUIDE_BUTTON_FOCUSES_STEAM.name])?[0].unwrap_or(true);
+    if !before {
         return Ok(());
+    }
+    let mut saved = saved()?;
+    if saved.guide.is_none() {
+        saved.guide = Some(before);
+        data::save(RECORD_FILE, &saved)?;
     }
     write_settings(&[(GUIDE_BUTTON_FOCUSES_STEAM.field, false)])?;
     log::info!("steam: the PS button no longer focuses Steam");
@@ -144,22 +143,171 @@ fn flag_file() -> Option<PathBuf> {
 /// flag file can't change, the pref isn't saved, so the switch never says Off while the port still opens. A Steam that
 /// runs now keeps its port as it is until it restarts.
 pub fn open_from_next_start(open: bool, save: impl FnOnce() -> Result<()>) -> Result<()> {
-    let _flag = FLAG.lock();
+    if open {
+        resume_changes()?;
+    }
     set_flag(open)?;
     save()
 }
 
 /// Puts the flag file in Steam's folder (`open`) or takes it away.
-fn set_flag(open: bool) -> std::io::Result<()> {
+fn set_flag(open: bool) -> Result<()> {
     let Some(flag) = flag_file() else { return Ok(()) };
-    if open && !flag.exists() {
-        std::fs::File::create(&flag)?;
+    let before = read_flag(&flag)?;
+    if open == before.is_some() {
+        return Ok(());
+    }
+    let mut saved = saved()?;
+    if let std::collections::btree_map::Entry::Vacant(entry) = saved.flags.entry(flag.clone()) {
+        entry.insert(before);
+        data::save(RECORD_FILE, &saved)?;
+    }
+    if open {
+        // create_new cannot truncate a flag another program created after the read.
+        std::fs::OpenOptions::new().write(true).create_new(true).open(&flag)?;
         log::info!("steam: its DevTools port opens from its next start ({})", flag.display());
-    } else if !open && flag.exists() {
+    } else {
         std::fs::remove_file(&flag)?;
         log::info!("steam: its DevTools port stays closed from its next start");
     }
     Ok(())
+}
+
+const RECORD_FILE: &str = "steam-saved.json";
+
+#[derive(Default, Serialize, Deserialize)]
+struct Saved {
+    guide: Option<bool>,
+    /// The full path keeps a flag recoverable even when Steam moves before restoration.
+    flags: BTreeMap<PathBuf, Option<Vec<u8>>>,
+    /// A 0.3 pref says Lamplit opened the port, but that release didn't save the flag's previous state.
+    unrecorded_flag: Option<PathBuf>,
+    restoring: bool,
+}
+
+fn saved() -> Result<Saved> {
+    Ok(data::load(RECORD_FILE)?.unwrap_or_default())
+}
+
+fn read_flag(flag: &std::path::Path) -> Result<Option<Vec<u8>>> {
+    match std::fs::read(flag) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Starts a persistent restore. Old releases did not record the Guide setting or the flag's original contents.
+pub fn begin_restore(opened_port: bool) -> Result<()> {
+    let mut saved = saved()?;
+    if opened_port
+        && let Some(flag) = flag_file()
+        && !saved.flags.contains_key(&flag)
+        && read_flag(&flag)?.is_some()
+    {
+        saved.unrecorded_flag = Some(flag);
+    }
+    saved.restoring = true;
+    data::save(RECORD_FILE, &saved)
+}
+
+/// An explicit opt-in supersedes a pending restore, but its originals remain available for the next restore.
+pub fn resume_changes() -> Result<()> {
+    let Some(mut saved): Option<Saved> = data::load(RECORD_FILE)? else { return Ok(()) };
+    saved.restoring = false;
+    data::save(RECORD_FILE, &saved)
+}
+
+pub fn restoring() -> Result<bool> {
+    Ok(saved()?.restoring)
+}
+
+fn keep_or_remove(saved: &Saved) -> Result<()> {
+    if saved.guide.is_none() && saved.flags.is_empty() && saved.unrecorded_flag.is_none() {
+        match data::remove(RECORD_FILE) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    } else {
+        data::save(RECORD_FILE, saved)
+    }
+}
+
+/// Leaves the original recorded until Steam has answered with the restored value.
+pub fn restore_guide() -> Result<String> {
+    let mut saved = saved()?;
+    let Some(before) = saved.guide else {
+        return Ok("No saved change. Earlier versions did not save this setting; check Guide Button Focuses Steam in Steam's Controller settings.".into());
+    };
+    let restore = || -> Result<()> {
+        write_settings(&[(GUIDE_BUTTON_FOCUSES_STEAM.field, before)])?;
+        if read_settings(&[GUIDE_BUTTON_FOCUSES_STEAM.name])?[0].unwrap_or(true) != before {
+            return Err(Error::Internal("Steam hasn't applied its Guide button setting yet".into()));
+        }
+        Ok(())
+    };
+    if let Err(e) = restore() {
+        log::warn!("Steam Guide button restore: {e}");
+        return Err(Error::Player(restore_note()));
+    }
+    saved.guide = None;
+    // Keep the restore marker until the port has had its turn too.
+    data::save(RECORD_FILE, &saved)?;
+    Ok("Guide button setting restored.".into())
+}
+
+/// The flag waits until Steam's settings are restored, so its next start can still finish the restore.
+pub fn restore_port(steam_toasts_pending: bool) -> Result<String> {
+    let mut saved = saved()?;
+    if steam_toasts_pending || saved.guide.is_some() {
+        return Err(Error::Player(
+            "Restore Steam's settings first. Its DevTools flag is kept until they are back.".into(),
+        ));
+    }
+    let mut failures = Vec::new();
+    if let Some(flag) = &saved.unrecorded_flag {
+        if read_flag(flag)?.is_some() {
+            failures.push("An earlier Lamplit version did not save the DevTools flag's original state. If Lamplit created .cef-enable-remote-debugging in Steam's folder, delete it, then try again.".into());
+        } else {
+            saved.unrecorded_flag = None;
+        }
+    }
+    failures.extend(restore_flags(&mut saved.flags));
+    keep_or_remove(&saved)?;
+    if !failures.is_empty() {
+        return Err(Error::Player(failures.join(" ")));
+    }
+    Ok("DevTools flag restored. Restart Steam to apply it.".into())
+}
+
+/// A failed write must retain that file's original, even when other files are restored successfully.
+fn restore_flags(flags: &mut BTreeMap<PathBuf, Option<Vec<u8>>>) -> Vec<String> {
+    let mut failures = Vec::new();
+    flags.retain(|flag, before| {
+        let result = match before {
+            Some(bytes) => write_atomic(flag, bytes),
+            None => {
+                std::fs::remove_file(flag).or_else(|e| if e.kind() == ErrorKind::NotFound { Ok(()) } else { Err(e) })
+            }
+        };
+        if let Err(e) = result {
+            failures.push(format!("Couldn't restore {}: {e}", flag.display()));
+            true
+        } else {
+            false
+        }
+    });
+    failures
+}
+
+pub fn restore_note() -> String {
+    if super::running() {
+        "Steam must be signed in with its DevTools port open. Restart Steam with -cef-enable-debugging, then try again."
+            .into()
+    } else {
+        "Open Steam with its DevTools port, then try again.".into()
+    }
 }
 
 /// For the player when Steam runs with its port closed, so its settings can't change: what opens it.
@@ -172,4 +320,54 @@ pub fn closed_port_note() -> Option<String> {
     } else {
         "Steam's pop-ups need Steam's DevTools port: switch it on under Stores, then restart Steam.".into()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn original_guide_and_flag_contents_survive_a_pending_restore() {
+        let file = PathBuf::from(r"C:\Steam\.cef-enable-remote-debugging");
+        for before in [None, Some(Vec::new()), Some(b"player's flag".to_vec())] {
+            let saved = Saved {
+                guide: Some(true),
+                flags: BTreeMap::from([(file.clone(), before.clone())]),
+                restoring: true,
+                ..Saved::default()
+            };
+            let restored: Saved = serde_json::from_slice(&serde_json::to_vec(&saved).unwrap()).unwrap();
+            assert_eq!(restored.guide, Some(true));
+            assert_eq!(restored.flags.get(&file), Some(&before));
+            assert!(restored.restoring);
+        }
+        assert!(serde_json::from_str::<Saved>("broken").is_err());
+    }
+
+    #[test]
+    fn restores_flag_bytes_and_absence_but_keeps_failed_originals() {
+        let dir = std::env::temp_dir().join(format!("lamplit-test-steam-restore-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (removed, kept, blocked) = (dir.join("removed"), dir.join("kept"), dir.join("blocked"));
+        std::fs::write(&removed, []).unwrap();
+        // A directory at a file's path is a real failed write, not a mocked success.
+        std::fs::create_dir_all(&blocked).unwrap();
+        let mut flags = BTreeMap::from([
+            (removed.clone(), None),
+            (kept.clone(), Some(b"original".to_vec())),
+            (blocked.clone(), Some(b"still needed".to_vec())),
+        ]);
+        let failures = restore_flags(&mut flags);
+        assert!(!removed.exists());
+        assert_eq!(std::fs::read(&kept).unwrap(), b"original");
+        assert_eq!(failures.len(), 1);
+        assert_eq!(flags, BTreeMap::from([(blocked.clone(), Some(b"still needed".to_vec()))]));
+        std::fs::remove_dir(&blocked).unwrap();
+        assert!(restore_flags(&mut flags).is_empty());
+        assert!(flags.is_empty());
+        assert_eq!(std::fs::read(&blocked).unwrap(), b"still needed");
+        std::fs::remove_file(kept).unwrap();
+        std::fs::remove_file(blocked).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
 }

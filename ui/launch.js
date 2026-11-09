@@ -33,6 +33,7 @@ function showStarting(g, sub, store = null) {
 export async function play() {
   const g = focused();
   if (state.running === g.id) return backToGame();
+  if (state.restore.running) return toast('Wait for Restore to finish before starting a game.');
   sfx.launch();
   // A game starts through the first store app it needs, if any.
   const via = storeName(g.requires[0]);

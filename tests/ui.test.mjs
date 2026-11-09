@@ -471,7 +471,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
     stores_status: [ipc('stores')[1]],
     overlay_state: like(ipc('overlays'), { nvidia_stats: false }),
     quiet_state: like(ipc('quiet'), { state: known('quiet_state', 'on'), active: true, notes: [] }),
-    setup_state: like(ipc('setup'), { needed: false }),
+    startup_state: like(ipc('startup'), { enabled: false }),
     sound: like(sound, {
       outputs: [device('tv', 'TV (Living Room TV)', 'tv', false), device('hs', 'PRO X 2 headset', 'headset', true)],
       inputs: [device('mic', 'PRO X 2 headset', 'headset', true)],
@@ -767,7 +767,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   const page = await open({ games: [game(1)] });
   await page.evaluate((data) => {
     const s = (window.__settings = { ...data, stores_status: data.stores, display_mode: '1920 × 1080 at 60 Hz' });
-    for (const [cmd, key] of [['sound_state', 'sound'], ['accessories_state', 'accessories'], ['prefs_state', 'prefs'], ['quiet_state', 'quiet'], ['overlay_state', 'overlays'], ['setup_state', 'setup']]) {
+    for (const [cmd, key] of [['sound_state', 'sound'], ['accessories_state', 'accessories'], ['prefs_state', 'prefs'], ['quiet_state', 'quiet'], ['overlay_state', 'overlays'], ['startup_state', 'startup']]) {
       s[cmd] = () => s[key];
     }
     s.sound_set_mute = ({ mic, muted }) => {
@@ -776,10 +776,11 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
     // NVIDIA's log said nothing within 2 s: what a page that flips its own value would never show.
     s.overlay_toggle_stats = () => null;
     s.quiet_set = ({ on }) => (s.quiet = { state: on ? 'on' : 'off', active: on, notes: on ? [] : ['Close Ubisoft Connect so Lamplit can restore its settings.'] });
-    for (const pref of ['sound_follows', 'steam_devtools', 'online_art']) {
+    s.startup_set = ({ on }) => (s.startup = { enabled: on });
+    for (const pref of ['sound_follows', 'steam_devtools', 'steam_guide', 'online_art']) {
       s[`prefs_set_${pref}`] = ({ on }) => ((s.prefs[pref] = on), s.prefs);
     }
-  }, { sound: ipc('sound'), accessories: ipc('accessories'), prefs: ipc('prefs'), quiet: ipc('quiet'), overlays: ipc('overlays'), setup: ipc('setup'), stores: ipc('stores') });
+  }, { sound: ipc('sound'), accessories: ipc('accessories'), prefs: ipc('prefs'), quiet: ipc('quiet'), overlays: ipc('overlays'), startup: ipc('startup'), stores: ipc('stores') });
   const view = () =>
     page.evaluate(() => ({
       rows: [...document.querySelectorAll('#settingsList .row')].map((r) => r.textContent),
@@ -854,20 +855,137 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   sent = await press('Open it');
   v = await view();
   check("Steam's DevTools port switches on and says when", JSON.stringify(sent[0]) === '["prefs_set_steam_devtools",{"on":true}]' && v.focus?.endsWith('On') && v.toast.includes('next starts'), `${JSON.stringify(sent)} ${v.focus} ${v.toast}`);
+  sent = await press('Keep the Guide button');
+  v = await view();
+  check('the Steam Guide preference switches off', JSON.stringify(sent[0]) === '["prefs_set_steam_guide",{"on":false}]' && v.focus?.endsWith('Off'), `${JSON.stringify(sent)} ${v.focus}`);
   await section('System');
+  sent = await press('Start when I sign in');
+  v = await view();
+  check('startup switches off and shows the saved state', JSON.stringify(sent[0]) === '["startup_set",{"on":false}]' && v.focus?.endsWith('Off'), `${JSON.stringify(sent)} ${v.focus}`);
+  await page.evaluate((error) => {
+    window.__settings.startup_set = () => { throw error; };
+  }, like(ipc('error'), { message: 'Startup could not be changed.' }));
+  sent = await press('Start when I sign in');
+  v = await view();
+  check('a failed startup switch reads back the actual state', sent.some((c) => c[0] === 'startup_state') && v.focus?.endsWith('Off') && v.toast.includes('could not be changed'), `${JSON.stringify(sent)} ${v.focus}`);
   sent = await press('Find art online');
   v = await view();
   check('Find art online switches off', JSON.stringify(sent[0]) === '["prefs_set_online_art",{"on":false}]' && v.focus?.endsWith('Off'), `${JSON.stringify(sent)} ${v.focus}`);
-  sent = await press('First-time setup');
+  sent = await press("Repair Steam's background service");
   v = await view();
-  check('setup asks for the Windows prompt', sent[0]?.[0] === 'setup_start' && v.toast.includes('Windows prompt'), `${JSON.stringify(sent)} ${v.toast}`);
-  await page.evaluate((setup) => {
-    window.__settings.setup = setup;
-    window.__emit('setup', setup);
-    window.__emit('notice', 'Setup is done.');
-  }, like(ipc('setup'), { needed: false }));
+  check('Steam service repair asks for the Windows prompt', sent[0]?.[0] === 'setup_start' && v.toast.includes('Windows prompt'), `${JSON.stringify(sent)} ${v.toast}`);
+  await emit(page, 'notice', 'Steam service repair is done.');
   v = await view();
-  check('setup that ended takes its row away and says so', !v.rows.some((r) => r.startsWith('First-time setup')) && v.toast === 'Setup is done.', `${JSON.stringify(v.rows)} ${v.toast}`);
+  check('Steam repair stays available without setup nags', v.rows.some((r) => r.startsWith("Repair Steam's background service")) && !v.rows.some((r) => r.includes('Setup needed')) && v.toast === 'Steam service repair is done.', `${JSON.stringify(v.rows)} ${v.toast}`);
+  await close(page);
+}
+
+// Restore is held to confirm, streams a report, and keeps that report after navigating away.
+{
+  const page = await open({ games: [game(1)], clock: true });
+  await page.evaluate((data) => {
+    const s = (window.__settings = { ...data, stores_status: data.stores });
+    for (const key of ['prefs', 'quiet', 'startup']) s[`${key}_state`] = () => s[key];
+    s.startup_state = () => new Promise((resolve) => (window.__readStartup = resolve));
+    s.startup_set = ({ on }) => new Promise((resolve) => (window.__setStartup = () => resolve(s.startup = { enabled: on })));
+    s.restore_changes = () => new Promise((resolve) => (window.__finishRestore = (steps) => {
+      s.prefs = { ...s.prefs, steam_guide: false, steam_devtools: false };
+      s.quiet = { ...s.quiet, active: false, state: 'off' };
+      s.startup = { enabled: false };
+      resolve(steps);
+    }));
+  }, { prefs: ipc('prefs'), quiet: ipc('quiet'), startup: ipc('startup'), stores: ipc('stores') });
+  const row = (label) => page.locator('#settingsList .row').filter({ has: page.locator('.label', { hasText: label }) }).first();
+  const view = () => page.evaluate(() => ({
+    text: document.getElementById('settingsList').textContent,
+    calls: window.__calls.map((c) => c[0]),
+    disabled: [...document.querySelectorAll('#settingsList .row[aria-disabled="true"]')].map((r) => r.textContent),
+    focus: document.querySelector('#settingsList .row.focus')?.textContent ?? '',
+  }));
+  await page.keyboard.press('c');
+  await row('System').click();
+  check('startup is unknown until its state has been read', (await row('Start when I sign in').textContent()).endsWith('Unknown'));
+  await page.evaluate(() => {
+    window.__readStartup(window.__settings.startup);
+    window.__settings.startup_state = () => window.__settings.startup;
+  });
+  await idle(page);
+  check('startup reflects the enabled state from Rust', (await row('Start when I sign in').textContent()).endsWith('On'));
+  await settled(page);
+  await holdClock(page);
+  // A switch already in progress has to finish before a restore can begin.
+  await row('Start when I sign in').dispatchEvent('click');
+  await row("Restore Lamplit's changes").dispatchEvent('pointerdown');
+  await page.clock.runFor(1000);
+  let v = await view();
+  check('restore waits for an earlier Settings change', !v.calls.includes('restore_changes'), JSON.stringify(v.calls));
+  await page.evaluate(() => window.__setStartup());
+  await idle(page);
+  await row("Restore Lamplit's changes").dispatchEvent('pointerdown');
+  await page.clock.runFor(300);
+  await page.evaluate(() => window.dispatchEvent(new Event('pointerup')));
+  await page.clock.runFor(1000);
+  check('letting go early never restores changes', !(await view()).calls.includes('restore_changes'));
+  await row("Restore Lamplit's changes").dispatchEvent('pointerdown');
+  await page.clock.runFor(1000);
+  v = await view();
+  check('a full hold starts restore and disables conflicting System actions', v.calls.filter((c) => c === 'restore_changes').length === 1 && v.disabled.length === 4 && v.text.includes('Restoring…'), JSON.stringify(v));
+  const from = v.calls.length;
+  await row("Restore Lamplit's changes").dispatchEvent('pointerdown');
+  await page.clock.runFor(1000);
+  await row('Start when I sign in').dispatchEvent('click');
+  await row("Repair Steam's background service").dispatchEvent('click');
+  await emit(page, 'restore-step', ipc('restore-step'));
+  v = await view();
+  check('restore streams the actionable report without duplicate or conflicting calls', v.calls.length === from && v.text.includes('Close Ubisoft Connect, then try again.') && v.text.includes('Needs attention'), JSON.stringify(v));
+  await page.keyboard.press('Escape');
+  await page.clock.runFor(500);
+  await row('Stores').dispatchEvent('click');
+  await page.clock.runFor(500);
+  await row('Keep the Guide button').dispatchEvent('click');
+  await row('Open it').dispatchEvent('click');
+  v = await view();
+  check('navigation stays available while Steam switches stay blocked', v.calls.length === from && v.disabled.some((text) => text.startsWith('Keep the Guide button')), JSON.stringify(v));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Enter');
+  check('a game cannot start while restore changes its store settings', !(await view()).calls.includes('launch_start'));
+  const done = [ipc('restore-step'), ...["Steam's Guide button", "Steam's DevTools port", 'Start when I sign in'].map((name) => like(ipc('restore-step'), { name, restored: true, message: 'Restored.' }))];
+  await page.evaluate((steps) => window.__finishRestore(steps), done);
+  await idle(page);
+  await page.clock.resume();
+  await page.keyboard.press('c');
+  await idle(page);
+  await row('System').click();
+  v = await view();
+  check('the final report survives closing Settings and startup is read back', v.text.includes('Restore report') && v.text.includes('Close Ubisoft Connect, then try again.') && (await row('Start when I sign in').textContent()).endsWith('Off') && v.disabled.length === 0, JSON.stringify(v));
+  for (let i = 0; i < 7; i++) await page.keyboard.press('ArrowDown');
+  await settled(page);
+  const reportVisible = await page.evaluate(() => {
+    const row = document.querySelector('#settingsList .row.focus');
+    const bounds = row.getBoundingClientRect();
+    const list = document.getElementById('settingsList').getBoundingClientRect();
+    return { text: row.textContent, visible: bounds.top >= list.top - 1 && bounds.bottom <= list.bottom + 1 && bounds.bottom <= innerHeight };
+  });
+  check('the final restore line stays reachable and readable at 1080p', reportVisible.visible && reportVisible.text.includes('Start when I sign in') && reportVisible.text.endsWith('Restored'), JSON.stringify(reportVisible));
+  await page.screenshot({ path: path.join(shots, 'restore-report.png') });
+  await page.keyboard.press('Escape');
+  await row('Stores').click();
+  check('Steam Guide shows its actual state after restore', (await row('Keep the Guide button').textContent()).endsWith('Off'));
+  await page.keyboard.press('Escape');
+  await row('Overlay and pop-ups').click();
+  check('Quiet mode shows its actual state after restore', (await row('Quiet mode').textContent()).endsWith('Off'));
+  await page.keyboard.press('Escape');
+  await row('System').click();
+  await page.evaluate((error) => {
+    window.__settings.restore_changes = () => { throw error; };
+  }, like(ipc('error'), { message: 'Restore could not finish. Try again.' }));
+  await holdClock(page);
+  await row("Restore Lamplit's changes").dispatchEvent('pointerdown');
+  await page.clock.runFor(1000);
+  await idle(page);
+  v = await view();
+  check('a failed restore keeps its error in System and allows another attempt', v.text.includes('Restore did not finish') && v.text.includes('Restore could not finish. Try again.') && !v.disabled.length, JSON.stringify(v));
   await close(page);
 }
 

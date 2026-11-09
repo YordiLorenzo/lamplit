@@ -1,5 +1,5 @@
 // Lamplit, a console-style home screen for Windows PCs on a TV. `run` starts the app; main.rs decides which of
-// Lamplit's processes this one is (the supervisor, the app or first-time setup).
+// Lamplit's processes this one is (the supervisor, the app or windowless maintenance).
 
 /// A payload's JSON as the page's tests use it (tests/ipc/<name>.json), for the tests that pin what Rust sends and
 /// takes to the same shape. Read at build time: the test binary runs on a Windows PC that may not have the repository.
@@ -55,7 +55,11 @@ pub use error::Error;
 // asks for, and only the exe's test binary carries that manifest.
 pub use dock::{LABEL as DOCK_LABEL, on_close_request};
 pub use logging::to_file as log_to_file;
-pub use system::setup::{FLAG as SETUP_FLAG, FOR_FLAG as SETUP_FOR_FLAG, run as setup};
+pub use system::restore::{FLAG as RESTORE_FLAG, NO_PROMPT_FLAG as RESTORE_NO_PROMPT_FLAG, headless as restore};
+pub use system::setup::{FLAG as SETUP_FLAG, run as setup};
+pub use system::startup::{
+    DELETE_FLAG as REMOVE_STARTUP_FLAG, FOR_FLAG as STARTUP_FOR_FLAG, delete_for as remove_startup,
+};
 pub use win::process::attach_parent_console;
 
 /// True when another Lamplit already runs (the one started at sign-in, say, when the player starts a second by hand);
@@ -132,7 +136,9 @@ pub fn run() {
             commands::overlay_toggle_stats,
             commands::quiet_state,
             commands::quiet_set,
-            commands::setup_state,
+            commands::startup_state,
+            commands::startup_set,
+            commands::restore_changes,
             commands::setup_start,
             commands::sound_state,
             commands::sound_set_default,
@@ -154,6 +160,7 @@ pub fn run() {
             commands::prefs_hint_done,
             commands::prefs_set_touchpad_mouse,
             commands::prefs_set_steam_devtools,
+            commands::prefs_set_steam_guide,
             commands::prefs_set_online_art,
             commands::prefs_set_screensaver_minutes,
             commands::prefs_set_dock,
@@ -182,7 +189,7 @@ pub fn run() {
             dock::start(app.handle());
             upkeep(app.handle().clone());
             updates::start(app.handle().clone());
-            stores::steam::guard_big_picture();
+            stores::steam::guard_big_picture(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -201,8 +208,13 @@ fn upkeep(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         let mut steam = stores::steam::devtools::Upkeep::default();
         loop {
-            stores::steam::devtools::upkeep(&mut steam, || prefs::get(&app).steam_devtools);
-            system::quiet::catch_up();
+            {
+                let _changes = system::restore::CHANGES.lock();
+                let prefs = prefs::get(&app);
+                stores::steam::devtools::upkeep(&mut steam, prefs.steam_devtools, prefs.steam_guide);
+                system::quiet::catch_up();
+                system::restore::catch_up();
+            }
             std::thread::sleep(Duration::from_secs(10));
         }
     });

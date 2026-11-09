@@ -61,8 +61,9 @@ export function showHints() {
     html += b('back', 'Back');
   } else if (state.mode === 'settings') {
     const row = state.settings.rows[state.settings.idx];
-    if (row?.adjust) html += b('adjust', 'Adjust');
-    else if (row?.kind) html += b('ok', row.kind === 'section' ? 'Open' : (row.hold ?? 'Select'));
+    const disabled = els.settingsList.querySelector('.row.focus')?.getAttribute('aria-disabled') === 'true';
+    if (!disabled && row?.adjust) html += b('adjust', 'Adjust');
+    else if (!disabled && row?.kind && row.kind !== 'restorestep') html += b('ok', row.kind === 'section' ? 'Open' : (row.hold ?? 'Select'));
     html += b('back', state.settings.section ? 'Back' : 'Close');
   } else if (state.mode === 'find' && state.findList) {
     html = b('ok', 'Select') + b('back', 'Back');
