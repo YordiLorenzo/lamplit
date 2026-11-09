@@ -4,7 +4,7 @@ use super::com;
 use windows::Win32::Foundation::{E_ACCESSDENIED, ERROR_FILE_NOT_FOUND, VARIANT_BOOL};
 use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance};
 use windows::Win32::System::TaskScheduler::{
-    IExecAction, ILogonTrigger, ITaskFolder, ITaskService, TASK_ACTION_EXEC, TASK_ACTION_TYPE, TASK_CREATE_OR_UPDATE,
+    IExecAction, ITaskFolder, ITaskService, TASK_ACTION_EXEC, TASK_ACTION_TYPE, TASK_CREATE_OR_UPDATE,
     TASK_LOGON_INTERACTIVE_TOKEN, TASK_TRIGGER_LOGON, TASK_TRIGGER_TYPE2, TaskScheduler,
 };
 use windows::Win32::System::Variant::VARIANT;
@@ -27,8 +27,10 @@ pub struct LogonTask {
     pub arguments: String,
 }
 
-/// The account's enabled logon trigger and executable action, read from Scheduler, never from Lamplit's records.
-pub fn logon_task(name: &str, user: &str) -> Result<Option<LogonTask>> {
+/// The task's enabled logon trigger and executable action, read from Scheduler, never from Lamplit's records. The
+/// trigger's account isn't compared: Scheduler reports it as "PC\name" whatever form it was registered with, and the
+/// task's name already carries the account's SID.
+pub fn logon_task(name: &str) -> Result<Option<LogonTask>> {
     let folder = root()?;
     // SAFETY: COM interfaces own their references; every out parameter is a valid local of the required type.
     unsafe {
@@ -63,12 +65,7 @@ pub fn logon_task(name: &str, user: &str) -> Result<Option<LogonTask>> {
             let mut enabled = VARIANT_BOOL::default();
             trigger.Type(&raw mut kind)?;
             trigger.Enabled(&raw mut enabled)?;
-            if kind == TASK_TRIGGER_LOGON && enabled.as_bool() {
-                let logon: ILogonTrigger = trigger.cast()?;
-                let mut account = BSTR::new();
-                logon.UserId(&raw mut account)?;
-                at_sign_in |= account.is_empty() || account == user;
-            }
+            at_sign_in |= kind == TASK_TRIGGER_LOGON && enabled.as_bool();
         }
         Ok(Some(LogonTask {
             enabled: task.Enabled()?.as_bool() && at_sign_in,

@@ -18,7 +18,7 @@ pub struct Status {
 
 pub fn status() -> Result<Status> {
     let user = token::user_sid()?;
-    let task = task::logon_task(&format!("{APP}-{user}"), &user)?;
+    let task = task::logon_task(&format!("{APP}-{user}"))?;
     let exe = std::env::current_exe()?;
     Ok(Status { enabled: task.as_ref().is_some_and(|task| starts_this_exe(task, &exe)) })
 }
