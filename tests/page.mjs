@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rust } from './contract.mjs';
-import { values } from './fixtures.mjs';
+import { ipc, values } from './fixtures.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const pageOrigin = 'http://tauri.localhost';
@@ -50,6 +50,8 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
     launch_running: ${JSON.stringify(running)},
     stores_status: [],
     controller_kind: ${JSON.stringify(padKind)},
+    report_preview: ${JSON.stringify(ipc('report'))},
+    report_save: ${JSON.stringify(ipc('report-saved'))},
   };
   const early = ${JSON.stringify(earlyGames)};
   window.__TAURI__ = {

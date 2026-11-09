@@ -1812,6 +1812,7 @@ dependencies = [
  "hidapi",
  "log",
  "parking_lot 0.13.0",
+ "regex",
  "serde",
  "serde_json",
  "strum",

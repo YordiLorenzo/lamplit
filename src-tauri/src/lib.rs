@@ -34,6 +34,7 @@ mod files;
 mod logging;
 mod prefs;
 mod probe;
+mod report;
 
 // The calls into Windows, the one place with unsafe code.
 #[allow(unsafe_code)]
@@ -105,6 +106,8 @@ pub fn run() {
         .manage(devices::pad::Controllers::default())
         .invoke_handler(tauri::generate_handler![
             commands::library_games,
+            commands::report_preview,
+            commands::report_save,
             commands::library_rescan,
             commands::library_set_favourite,
             commands::library_set_hidden,

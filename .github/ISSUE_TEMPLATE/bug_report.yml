@@ -84,12 +84,23 @@ body:
       required: true
 
   - type: textarea
+    id: report
+    attributes:
+      label: Lamplit report
+      description: |
+        In Lamplit, open Settings > System > Save a report. Read the preview, then choose Save.
+        Attach the `Lamplit report ...txt` file from Downloads here. It includes versions, devices, stores, prefs and recent warnings, with names and folders removed. Nothing is sent until you attach it.
+        If Lamplit cannot open, say so here and attach a log below instead.
+    validations:
+      required: false
+
+  - type: textarea
     id: logs
     attributes:
-      label: Logs
+      label: Raw logs (optional)
       description: |
         Lamplit writes its logs to `%LOCALAPPDATA%\lamplit\`. To open that folder, press Win+R, paste `%LOCALAPPDATA%\lamplit` and press Enter.
-        Drag `lamplit.log` into this box to attach it. Attach `setup.log` too for a problem with first-time setup, and `supervisor.log` when Lamplit closed by itself.
+        If the report is not enough, attach `lamplit.log` here. Attach `setup.log` for a problem with first-time setup, and `supervisor.log` when Lamplit closed by itself.
         The logs name your games and their folders, and a folder path can include your Windows user name. Read them first and remove anything you don't want to share.
     validations:
       required: false

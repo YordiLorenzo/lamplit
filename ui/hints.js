@@ -52,6 +52,10 @@ export function showHints() {
     const kind = state.add.rows.filter((r) => r.kind)[state.add.idx]?.kind;
     if (kind) html += b('ok', kind === 'exe' || kind === 'program' ? 'Choose' : 'Open');
     html += b('back', 'Back');
+  } else if (state.mode === 'report') {
+    html = '<span>↑↓ Scroll</span>';
+    if (state.report.text && !state.report.saving) html += b('ok', 'Save');
+    html += b('back', 'Back');
   } else if (state.mode === 'settings') {
     const row = state.settings.rows[state.settings.idx];
     if (row?.adjust) html += b('adjust', 'Adjust');

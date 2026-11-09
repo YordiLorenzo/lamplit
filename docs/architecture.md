@@ -19,6 +19,7 @@ src-tauri/
     data.rs          the data folder and the JSON files in it
     files.rs         path helpers: drive-letter checks, safe joins, atomic writes
     logging.rs       lamplit.log, supervisor.log and setup.log
+    report.rs        the local report: selected system facts, redacted warnings, and a plain-text file in Downloads
     library/         the game list: discovery, sorting, art and the art the player chose, favourites, hidden
                      games, play time, and games added by hand
     stores/          one file per store app; loose.rs finds games outside any store
@@ -51,7 +52,8 @@ ui/
                    there, the on-screen keyboard grows up out of the field and the store list out of its chip
   launch.js        the starting screen: the launch's steps with the shared icons, and on the step the player can
                    act on a chip with what ✕ does there (Show the window, Open Steam)
-  settings.js      the Settings panel, a plate with two faces, Settings and Add a game, that grows down out of the
+  report.js        Save a report, a face of Settings: a scrollable preview, saved unchanged to Downloads
+  settings.js      the Settings panel, a plate with Settings, Add a game and Save a report faces, growing out of the
                    status capsule; its height follows what it holds, and sections are pushed inside it
   status.js        the status capsule, top right: batteries, volume, quiet mode and the time
   morph.js         one plate changing shape, for both pages: its clip and place spring between boxes on screen
@@ -322,6 +324,8 @@ message is written for the player, and the page shows it.
 | `power_sleep` | | Nothing, once the PC has woken up again |
 | `power_restart`, `power_shut_down` | | Nothing, once Windows has started to restart or shut down |
 | `display_mode` | | The screen's mode, such as `3840 × 2160 at 120 Hz` |
+| `report_preview` | | Plain text with system facts and the last 50 warnings and errors, with names and paths removed |
+| `report_save` | `text` (the preview) | The saved file's name, in the account's Downloads known folder |
 | `dock_state` | | The game the dock is over: `{ id, name, art, started, responding, force_close }`, or `null` |
 | `dock_resume` | | Nothing; the dock folds and the game is in front again |
 | `dock_home` | | Nothing; the home screen comes forward and the dock goes |
@@ -329,6 +333,13 @@ message is written for the player, and the page shows it.
 | `dock_glass` | `island`: `{ x, y, width, height, radius }` in the window's pixels, or `null` | Whether real glass is under the island now |
 | `dock_glass_fold` | `fold`: `{ to, ms, curve, after, fade, drop }`, the pill and the spring the page folds the island with | Nothing; Rust squeezes the real glass the same way |
 | `dock_close_game` | `force` | Nothing, once Windows has the request; the game's end follows as after any game |
+
+Report commands run on the blocking pool. The preview reads the current library and prefs, cached accessories,
+Windows display and version information, sound endpoints, store status and `lamplit.log`. The library must have
+finished its first scan so game names can be removed. Only selected fields enter the report; device names and ids
+do not. Log redaction replaces paths, account and library game names, and device identifiers. Save writes the exact
+preview the player saw, using `SHGetKnownFolderPath(FOLDERID_Downloads)` and `create_new`; another save in the same
+minute gets a numbered suffix. These commands send no network requests and emit no new events.
 
 ## Events
 

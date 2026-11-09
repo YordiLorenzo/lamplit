@@ -76,6 +76,10 @@ export const els = {
   addList: $('addList'),
   addName: $('addName'),
   addKeys: $('addKeys'),
+  report: $('report'),
+  reportText: $('reportText'),
+  reportSave: /** @type {HTMLButtonElement} */ ($('reportSave')),
+  reportBack: $('reportBack'),
   settings: $('settings'),
   settingsFace: $('settingsFace'),
   settingsTitle: $('settingsTitle'),
@@ -108,8 +112,9 @@ export const state = {
   findFocus: 'a',
   /** Find's store list is open, grown up out of its chip */
   findList: false,
-  /** @type {'browse' | 'starting' | 'details' | 'settings' | 'find' | 'add'} details: a game's menu (library.js) */
+  /** @type {'browse' | 'starting' | 'details' | 'settings' | 'find' | 'add' | 'report'} details: a game's menu (library.js) */
   mode: 'browse',
+  report: { text: '', loading: false, saving: false },
   /** whether the library has come in yet, so an empty row means no games found */
   loaded: false,
   /** the focused choice in a game's menu (logic.js detailChoices) */

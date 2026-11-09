@@ -551,8 +551,9 @@ describe('Sound and System summaries', () => {
   });
   test('System offers setup only while it is needed, and the art switch always', () => {
     const kinds = (needed) => sectionRows('system', settingsState({ setup: setup(needed), prefs: prefs({ online_art: true }) })).map((r) => r.kind);
-    assert.deepEqual(kinds(true), ['setup', 'onlineart', undefined]);
-    assert.deepEqual(kinds(false), ['onlineart', undefined]);
+    assert.deepEqual(kinds(true), ['setup', 'onlineart', undefined, 'report']);
+    assert.deepEqual(kinds(false), ['onlineart', undefined, 'report']);
+    assert.equal(sectionRows('system', settingsState()).find((r) => r.kind === 'report').label, 'Save a report');
   });
 });
 
