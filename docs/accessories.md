@@ -11,6 +11,8 @@ What has been tested:
 - **DualSense Edge:** not tested. It sends the same reports as the DualSense, and Lamplit reads it the same way.
 - **Xbox-style controllers (XInput) and other controllers (Windows.Gaming.Input):** not tested on real controllers;
   the mapping and navigation have unit tests.
+- **Steam Controller (2026):** the HID report parsing and mappings have source-based unit tests. USB, Bluetooth and
+  the receiver still need Windows hardware checks, with Steam running and closed.
 - **Logitech G PRO X 2 LIGHTSPEED:** built from public sources only. Finding the receiver and reading the headset
   as off work; battery, sidetone, auto-off and the on and off messages are not yet confirmed on a real headset. If
   you have one, please open an issue with the `headset:` lines from `%LOCALAPPDATA%\lamplit\lamplit.log`.
@@ -119,7 +121,8 @@ empty slots every 2 seconds, since asking an empty slot is slow. It never calls 
 
 Every other controller Windows knows comes through `RawGameController` (Windows.Gaming.Input), with its name
 (`DisplayName`), whether it is wireless, and a battery report when it has one. Lamplit leaves out controllers it reads
-another way, by their USB ids: the DualSense, Valve's (Steam Input's own), and any controller XInput holds in a slot.
+another way, by their USB ids: the DualSense, the 2026 Steam Controller and its receivers (HID), Steam Input's virtual
+gamepad (`28DE:11FF`), and any controller XInput holds in a slot. Other Valve product ids are not excluded as a group.
 While XInput reads any controller, Microsoft's Xbox controllers (product ids from 0x0200 up) are left out too, since
 XInput and Windows.Gaming.Input can give one controller different ids; with no XInput controller they are read here
 (an original Xbox controller on the XBCD driver has no XInput slot), as are the older SideWinder ones, which are
@@ -144,6 +147,49 @@ Sources: Microsoft's XInput and Windows.Gaming.Input reference; SDL `src/core/wi
 `src/joystick/windows/SDL_xinputjoystick.c` and its gamecontrollerdb entries for the DualShock 4 and Logitech's
 DirectInput mode; Unity's issue tracker on Windows.Gaming.Input and background input.
 
+## Steam Controller (2026)
+
+SDL 3.4.20 identifies the new controller as Triton, separately from Steam Input's virtual gamepad:
+
+| Valve vendor `28DE`, product | Connection | Lamplit's reader |
+| --- | --- | --- |
+| `1302` | USB cable | Vendor HID collection, usage page `FF00`, usage `0001` |
+| `1303` | Bluetooth LE | The same vendor collection |
+| `1304` | Proteus receiver (Puck) | Each controller slot's vendor collection |
+| `1305` | Nereid receiver | Each controller slot's vendor collection |
+| `11FF` | Steam Input virtual gamepad | Excluded from both XInput and Windows.Gaming.Input |
+
+The physical controller uses vendor HID reports, not a native XInput gamepad mode. In lizard mode it also acts as a
+keyboard and mouse. Removing the Valve vendor filter from RawGameController alone would not make those reports a
+Windows gamepad. SDL's native driver disables lizard mode and renews that setting every three seconds. Lamplit does
+not use that part: it opens the vendor collection shared through hidapi and only reads input. No feature reports,
+mode changes, rumble, exclusive handles or virtual gamepad drivers are involved.
+
+`steam.rs` reads state reports `42`, `45` and `47` (at least 46 bytes). They share the button bits at bytes 2 to 5
+and signed left-stick x/y at bytes 10 to 13; positive y means up. A/B/X/Y are south/east/west/north, so `Kind::Xbox`
+gives the right face-button hints. View and Menu retain their physical meanings and together summon Lamplit. The
+Steam button stays for Steam. Battery, touchpads and extra grip buttons are not read. Empty receiver slots do not
+appear in Settings. Disconnect reports (`46` or `79`, state `01`), or 250 ms without state, release held actions and
+remove the controller from Settings; a new state report brings it back.
+
+| Steam | USB, Bluetooth and either receiver |
+| --- | --- |
+| Running | Lamplit reads the physical reports alongside Steam. Steam keeps its selected layout and mode. Its `11FF` virtual copy is still skipped. |
+| Closed | Lamplit reads state reports if the firmware supplies them and leaves lizard keyboard/mouse input intact. It does not enable gamepad reports if a firmware or transport withholds them. |
+
+The source for SteamlessController opens shared Windows handles for idle tracking and checks for state before any
+mode change. This supports using a passive reader, but is not a hardware test of Lamplit. Verify all six combinations
+of USB/Bluetooth/Puck and Steam running/closed: shared access, state delivery, one action per press (including any
+mirrored desktop keys or clicks), disconnects, reconnects, and no change to Steam's controls. Nereid needs a separate
+check if available. A driver exposing another virtual controller with different ids can still duplicate input.
+
+Sources checked on 2026-11-09:
+[SDL controller list](https://raw.githubusercontent.com/libsdl-org/SDL/release-3.4.20/src/joystick/controller_list.h),
+[SDL Triton driver](https://raw.githubusercontent.com/libsdl-org/SDL/release-3.4.20/src/joystick/hidapi/SDL_hidapi_steam_triton.c),
+[SDL report structures](https://raw.githubusercontent.com/libsdl-org/SDL/release-3.4.20/src/joystick/hidapi/steam/controller_structs.h),
+[SteamlessController's controller reader](https://github.com/ddeverill/SteamlessController/blob/main/src/steam/SteamController.cpp)
+and [shared Windows HID access](https://github.com/ddeverill/SteamlessController/blob/main/src/hid/HidDevice.cpp).
+
 ## Default sound device
 
 `IPolicyConfig` (CLSID 870AF99C-171D-4F9E-AF0D-E63DF40C2BC9, IID F8679F50-850A-41CF-9C72-430F290290C8), the
@@ -157,11 +203,22 @@ off and when headphones go into or out of a controller:
 
 1. Headphones in a controller on a USB cable: to the controller ("Wireless Controller" in the device's name).
 2. Else the PRO X 2 while it is on: to its receiver ("PRO X 2" in the name).
-3. Else back to the device Lamplit moved the sound away from. When it doesn't know one (Lamplit restarted meanwhile,
-   or that device is gone), the output goes to the TV: the sound device of a screen's HDMI or DisplayPort link
+3. Else back to the device Lamplit moved the sound away from. When it doesn't know one, or that device is gone,
+   the output goes to the TV: the sound device of a screen's HDMI or DisplayPort link
    (`PKEY_AudioEndpoint_FormFactor` is `DigitalAudioDisplayDevice`), whatever the graphics card.
 
-It never moves the sound off a device the player picked, and it doesn't guess between two that fit (two wired
-controllers, or a monitor and a TV that both have sound); lamplit.log says so (`sound:` lines). Each move sets the
+The output and microphone return records are saved separately in `sound-return.json`, by endpoint id, and loaded at
+start. Each also holds the last endpoint Lamplit routed through. A TV or soundbar that is off stays recorded, even
+after a move to a fallback. Upkeep checks pending returns every ten seconds while Sound follows is on; it does not
+start new moves to accessories. A successful return clears that direction's record. Save errors are logged.
+
+A choice in Settings cancels that direction's return, even if the chosen endpoint is already the default. A different
+Windows default while the last endpoint is still available cancels it too. If that endpoint disappeared, Lamplit
+treats the change as Windows falling back and keeps the return. Windows exposes no provenance for this snapshot:
+a manual choice made outside Lamplit while the previous endpoint is absent cannot be distinguished from a fallback.
+The last automatic output and microphone are independent of the communications role.
+
+It doesn't guess between two that fit (two wired controllers, or a monitor and a TV that both have sound);
+lamplit.log says so (`sound:` lines). Each move sets the
 console and multimedia roles, and the communications role only when it was on the same device as the console one, so
 a separate device for calls (a USB headset for chat, say) stays where the player set it.

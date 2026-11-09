@@ -115,9 +115,10 @@ Lamplit keeps its files in the data folder, `%LOCALAPPDATA%\lamplit`: `prefs.jso
 favourite, hidden, when it was last played, how long Lamplit saw it run, the art the player chose, and for a game
 added by hand its name and exe, or that it was removed again, which keeps it off the row when a scan finds its exe
 outside any store; 0.1.0's `played.json` is still read for the last-played times), `art.json` and
-`art\<steam appid>\` (art lookups and downloads), `quiet-saved.json` (the settings quiet mode replaced), and
-`steam-saved.json` (Steam's Guide setting and DevTools flag originals, plus a pending restore), plus the logs.
-Old `setup.json` files no longer determine startup state. WebView2 keeps its profile in
+`art\<steam appid>\` (art lookups and downloads), `quiet-saved.json` (the settings quiet mode replaced),
+`steam-saved.json` (Steam's Guide setting and DevTools flag originals, plus a pending restore), and
+`sound-return.json` (separate output and microphone return endpoints and the last default each was routed
+through), plus the logs. Old `setup.json` files no longer determine startup state. WebView2 keeps its profile in
 `%LOCALAPPDATA%\io.github.yordilorenzo.lamplit`.
 
 `prefs.json` also keeps the interface sound level (`off`, `quiet` or `normal`, the default) and each first-minute
@@ -134,15 +135,15 @@ running games and Windows settings as they are.
 
 ## Inside the app
 
-`lib.rs` loads the prefs, starts the first library scan and these threads:
+`lib.rs` loads the prefs and sound return records, starts the first library scan and these threads:
 
 | Thread | Does |
 | --- | --- |
 | Library scan | Reads every store side by side, then games outside any store, then art on disk, then missing art online. Runs at start and when the page asks (each time Lamplit comes forward), at most every 30 seconds. |
 | Headset | Looks for the PRO X 2 receiver every 10 seconds and owns it while it is plugged in. |
-| Controllers | Looks for DualSense controllers every 2 seconds and reads each one on a thread of its own. |
+| Controllers | Looks for DualSense and 2026 Steam Controller HID collections every 2 seconds and reads each on a thread of its own. An empty Steam receiver slot is listed only once input arrives. |
 | Other controllers | Reads XInput and Windows.Gaming.Input every 15 ms while one of their controllers is connected, and looks for new ones every 2 seconds. |
-| Upkeep | Every 10 seconds: Steam's port and Guide setting while their prefs are on, then pending quiet-mode and Steam restores. |
+| Upkeep | Every 10 seconds: Steam's port and Guide setting while their prefs are on, then pending quiet-mode and Steam restores, and pending sound returns once an endpoint comes back. |
 | Big Picture guard | Every 2 seconds: closes Steam's Big Picture mode while `steam_guide` is on. |
 | Dock news | Every second: compares the headset and the controllers with a second before, for the news the folded dock shows. |
 | Shell | Opens links and exes with ShellExecute, one at a time. |
@@ -209,6 +210,11 @@ Saved sign-in detection follows that selected launcher. The legacy launcher uses
 the Preview uses the presence of a non-empty encrypted `auth\access-token-prod.dpapi` file, without reading it.
 The account cache alone only records past logins. These are local hints, not proof that Epic still accepts the
 session; the existing Try anyway action remains available. [Sources and Windows verification limits](epic-launcher.md).
+
+`devices/accessories.rs` serialises automatic sound moves and explicit device choices under one lock. It saves changed
+return records through `data::save`; an output and a microphone have independent records. Pending returns survive
+missing endpoints and automatic fallback moves. Choosing a device in Settings cancels the pending return in that
+direction. Automatic moves still use `win/audio.rs::move_default`, which preserves a separate communications device.
 
 ## How a launch works
 
@@ -416,7 +422,7 @@ message is written for the player, and the page shows it.
 | `setup_start` | | Nothing, once the Steam repair admin prompt is answered; a `notice` follows |
 | `restore_changes` | | Every result as `{ name, restored, message }`; each also arrives as `restore-step` |
 | `sound_state` | | Outputs, microphones, volume and mute |
-| `sound_set_default` | `id` | The sound state after the change |
+| `sound_set_default` | `id` | The sound state after the change; cancels that direction's pending return |
 | `sound_change_volume` | `delta` | The new volume |
 | `sound_set_mute` | `mic`, `muted` | Nothing |
 | `accessories_state` | | The headset and the controllers |

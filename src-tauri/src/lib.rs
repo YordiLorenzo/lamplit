@@ -181,6 +181,7 @@ pub fn run() {
             log::info!("Lamplit {} starting", env!("CARGO_PKG_VERSION"));
             launch::window::remember_lamplit(app.handle())?;
             app.manage(prefs::load());
+            app.manage(devices::accessories::load_sound_routing());
             app.manage(library::UserData::load());
             library::scan(app.handle());
             // The headset before the controllers: a controller's thread reads the headset's state.
@@ -202,8 +203,7 @@ pub fn run() {
 }
 
 /// Every 10 s: Steam kept in line whenever it runs, and quiet-mode changes that had to wait (for Steam to start, or
-/// for Ubisoft Connect to close). Both are a refused localhost connection or a small file read when there is
-/// nothing to do.
+/// for Ubisoft Connect to close), plus pending sound returns when an endpoint comes back.
 fn upkeep(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         let mut steam = stores::steam::devtools::Upkeep::default();
@@ -216,6 +216,7 @@ fn upkeep(app: tauri::AppHandle) {
                 system::restore::catch_up();
             }
             std::thread::sleep(Duration::from_secs(10));
+            devices::accessories::catch_up_sound(&app);
         }
     });
 }

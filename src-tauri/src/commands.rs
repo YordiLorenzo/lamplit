@@ -216,13 +216,8 @@ pub async fn sound_state() -> Result<audio::Sound> {
 
 /// Makes `id` the default output or microphone, and returns the sound state that follows.
 #[tauri::command]
-pub async fn sound_set_default(id: String) -> Result<audio::Sound> {
-    blocking(move || {
-        audio::set_default(&id).inspect_err(|e| log::warn!("can't switch audio to {id}: {e}"))?;
-        log::info!("audio device switched to {id}");
-        audio::state()
-    })
-    .await?
+pub async fn sound_set_default(app: AppHandle, id: String) -> Result<audio::Sound> {
+    blocking(move || accessories::set_sound_default(&app, &id)).await?
 }
 
 /// Returns the new volume.
