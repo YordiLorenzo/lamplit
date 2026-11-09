@@ -101,11 +101,10 @@ impl Route {
         let changed = self.via.as_deref() != Some(&default.id);
         let via_there = devices.iter().any(|d| Some(d.id.as_str()) == self.via.as_deref());
         if self.back_to.as_deref() == Some(&default.id) {
-            // Back where it came from while the device it went to is still there: someone chose it, and the return is
-            // done. With that device gone, Windows put it back by itself, and an accessory still on may want it.
-            if via_there {
-                *self = Self::default();
-            }
+            // Back where it came from, so the return is done. While the device it went to is still there, someone
+            // chose this and nothing else moves; with that device gone, Windows put it back by itself, and an
+            // accessory still on may want the sound.
+            *self = Self::default();
             return via_there;
         }
         if changed && via_there {
@@ -427,6 +426,7 @@ mod tests {
         let mut route = returning("tv", "controller");
         let devices = [device("tv", Kind::Tv, true), device("headset", Kind::Headset, false)];
         assert!(!route.observe(&devices));
+        assert_eq!(route, Route::default(), "a later reconnect starts a fresh return");
         assert_eq!(
             pick(&devices, Some(Kind::Headset), route.back_to.as_deref(), Some(Kind::Tv)),
             Pick::Switch(&devices[1])
@@ -493,8 +493,9 @@ mod tests {
 
     #[test]
     fn returning_without_lamplit_clears_the_record() {
+        // The headset went and Windows put the sound back on the TV: the return is done, and routing goes on.
         let mut route = returning("tv", "headset");
-        assert!(route.observe(&[device("tv", Kind::Tv, true)]));
+        assert!(!route.observe(&[device("tv", Kind::Tv, true)]));
         assert_eq!(route, Route::default());
         assert_eq!(serde_json::from_str::<Routes>("{}").unwrap().output, Route::default());
     }
