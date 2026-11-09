@@ -30,6 +30,8 @@ pub enum Event<'a> {
     Stores(Vec<stores::Status>),
     /// The headset, a controller or the sound device changed; the page asks for accessories_state and sound_state.
     Accessories,
+    /// Both pages play interface sounds at the level saved in Settings.
+    InterfaceSounds(crate::prefs::InterfaceSounds),
     /// A short message for the player.
     Notice(String),
     /// Setup started from Settings has ended: whether it is still needed.
@@ -91,6 +93,7 @@ impl Event<'_> {
             Event::LaunchStep(_) => "launch-step",
             Event::Stores(_) => "stores",
             Event::Accessories => "accessories",
+            Event::InterfaceSounds(_) => "interface-sounds",
             Event::Notice(_) => "notice",
             Event::Setup(_) => "setup",
             Event::DockPad(_) => "dock-pad",
@@ -138,6 +141,10 @@ mod tests {
         assert_eq!(payload(&Event::LaunchStep(step)), ipc_fixture!("launch-step"));
         assert_eq!(payload(&Event::Setup(setup::Status { needed: true })), ipc_fixture!("setup"));
         assert_eq!(payload(&Event::Accessories), Value::Null);
+        assert_eq!(
+            payload(&Event::InterfaceSounds(crate::prefs::InterfaceSounds::Normal)),
+            ipc_fixture!("prefs")["interface_sounds"]
+        );
         assert_eq!(payload(&Event::Pad("ok")), json!("ok"));
         assert_eq!(payload(&Event::PadKind(pad::Kind::Xbox)), ipc_fixture!("pad-kind"));
         assert_eq!(payload(&Event::Summoned(None)), Value::Null);

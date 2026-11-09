@@ -1069,8 +1069,8 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   };
   await powerSection();
   let v = await view();
-  check('Power offers sleep, restart and shut down', JSON.stringify(v.rows) === '["Sleep","Restart","Shut down"]' && v.focus === 'Sleep', JSON.stringify(v.rows));
-  check('... restart and shut down say before the press that the running game will close', JSON.stringify(v.notes) === '["","Racer is running and will close","Racer is running and will close"]', JSON.stringify(v.notes));
+  check('Power offers sleep, restart, shut down and exit', JSON.stringify(v.rows) === '["Sleep","Restart","Shut down","Exit to Windows"]' && v.focus === 'Sleep', JSON.stringify(v.rows));
+  check('... only restart and shut down say the running game will close', JSON.stringify(v.notes) === '["","Racer is running and will close","Racer is running and will close","Closes Lamplit"]', JSON.stringify(v.notes));
   await page.keyboard.press('ArrowDown');
   v = await view();
   check('... and the hint says to hold', v.hint.includes('Hold to restart'), v.hint);
@@ -4439,6 +4439,181 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     live: getComputedStyle(document.querySelector('.hero.on')).visibility,
   }));
   check('a display change as the copy is drawn drops it, and the live stage stays', resized.stage === null && resized.copy === 0 && resized.live === 'visible', JSON.stringify(resized));
+  await close(page);
+}
+
+// 56. Interface sound levels affect the actual Web Audio gain, on both pages, and persist through Settings.
+{
+  const listen = `
+    window.__peaks = [];
+    const createGain = AudioContext.prototype.createGain;
+    AudioContext.prototype.createGain = function () {
+      const gain = createGain.call(this);
+      const ramp = gain.gain.exponentialRampToValueAtTime.bind(gain.gain);
+      gain.gain.exponentialRampToValueAtTime = (value, time) => {
+        if (value > 0.0001) window.__peaks.push(value);
+        return ramp(value, time);
+      };
+      return gain;
+    };
+  `;
+  const peak = (page) => page.evaluate(async () => {
+    window.__peaks = [];
+    (await import('/sounds.js')).sfx.move();
+    return window.__peaks;
+  });
+  const page = await open({ games: [game(1)], init: listen });
+  const normal = await peak(page);
+  await emit(page, 'pad', 'triangle');
+  await idle(page);
+  await emit(page, 'pad', 'ok');
+  await emit(page, 'pad', 'left');
+  await idle(page);
+  const quiet = await peak(page);
+  check('Normal and Quiet use the saved gain, Quiet one third as loud', normal.length === 1 && quiet.length === 1 && Math.abs(normal[0] / quiet[0] - 3) < 0.001, JSON.stringify({ normal, quiet }));
+  await emit(page, 'pad', 'left');
+  await idle(page);
+  check('Off creates no interface tone', (await peak(page)).length === 0);
+  const saved = await page.evaluate(() => ({ level: window.__prefs.interface_sounds, row: document.querySelector('#settingsList .row.focus').textContent }));
+  check('Settings saves Off and shows it on the row', saved.level === 'off' && saved.row === 'Interface soundsOff', JSON.stringify(saved));
+  await emit(page, 'pad', 'right');
+  await idle(page);
+  await emit(page, 'pad', 'right');
+  await idle(page);
+  check('the row steps back to Normal', JSON.stringify(await peak(page)) === JSON.stringify(normal));
+  await close(page);
+
+  const dock = await open({ file: 'dock.html', games: [], prefs: { ...ipc('prefs'), interface_sounds: 'quiet' }, init: listen });
+  check('the dock starts at the saved Quiet level', JSON.stringify(await peak(dock)) === JSON.stringify(quiet));
+  await emit(dock, 'interface-sounds', 'off');
+  check('the hidden dock follows a change to Off', (await peak(dock)).length === 0);
+  await emit(dock, 'interface-sounds', 'normal');
+  check('the dock follows a change to Normal', JSON.stringify(await peak(dock)) === JSON.stringify(normal));
+  await close(dock);
+}
+
+// 57. Each first-minute pill goes after its action and stays gone with the saved prefs on a fresh page.
+{
+  const hint = (page) => page.evaluate(() => {
+    const el = document.getElementById('firstHint');
+    return { shown: !el.hidden, text: el.textContent, button: el.querySelector('b')?.className, name: el.dataset.hint };
+  });
+  const page = await open({ games: [game(1)] });
+  await idle(page);
+  const first = await hint(page);
+  check('a new player sees the game menu pill with the controller button', first.shown && first.name === 'game_menu' && first.button === 'options' && first.text.includes("open a game's menu"), JSON.stringify(first));
+  const place = await page.evaluate(() => {
+    const pill = document.getElementById('firstHint').getBoundingClientRect();
+    const cover = document.querySelector('.cover.focus').getBoundingClientRect();
+    return { clear: pill.bottom < cover.top, pointer: getComputedStyle(document.getElementById('firstHint')).pointerEvents };
+  });
+  check('the pill neither covers the focused cover nor takes input', place.clear && place.pointer === 'none', JSON.stringify(place));
+  await emit(page, 'pad', 'menu');
+  await idle(page);
+  check('opening the game menu dismisses its pill', !(await hint(page)).shown && await page.evaluate(() => window.__prefs.hints.game_menu.done));
+  const saved = await page.evaluate(() => window.__prefs);
+  await close(page);
+  const again = await open({ games: [game(1)], prefs: saved });
+  await idle(again);
+  check('the game menu hint stays gone on a fresh page', !(await hint(again)).shown);
+  await close(again);
+
+  for (const kind of ['dualsense', 'xbox']) {
+    const page = await open({ games: [game(1)], padKind: kind });
+    await emit(page, 'pad', 'ok');
+    await idle(page);
+    const first = await hint(page);
+    check(`${kind}: the starting screen says how to come back`, first.shown && first.name === 'return_home' && first.text.includes(kind === 'dualsense' ? 'Hold PS' : 'Hold View and Menu'), JSON.stringify(first));
+    await running(page, 'pc:1');
+    if (kind === 'dualsense') await emit(page, 'summoned', 'pc:1');
+    else await emit(page, 'dock', { mode: 'open' });
+    await idle(page);
+    const saved = await page.evaluate(() => window.__prefs);
+    check(`${kind}: coming back completes the hint`, saved.hints.return_home.done);
+    await close(page);
+    const again = await open({ games: [game(1)], prefs: saved });
+    await emit(again, 'pad', 'ok');
+    await idle(again);
+    check(`${kind}: the return hint stays gone on the next launch`, !(await hint(again)).shown);
+    await close(again);
+  }
+
+  let prefs = ipc('prefs');
+  for (let start = 1; start <= 4; start++) {
+    const page = await open({ games: [game(1)], prefs });
+    await idle(page);
+    check(`start ${start}: game menu hint respects the three-start limit`, (await hint(page)).shown === (start <= 3));
+    await emit(page, 'pad', 'ok');
+    await idle(page);
+    check(`start ${start}: return hint respects the three-start limit`, (await hint(page)).shown === (start <= 3));
+    await emit(page, 'pad', 'back');
+    await emit(page, 'pad', 'ok');
+    await idle(page);
+    prefs = await page.evaluate(() => window.__prefs);
+    check(`start ${start}: another game launch counts no extra start`, prefs.hints.return_home.starts === Math.min(start, 3));
+    await close(page);
+  }
+}
+
+// 58. Change art samples its new URL, and an old sample that finishes later cannot repaint it.
+{
+  const look = (page) => page.evaluate(() => ['--accent', '--plate-light'].map((key) => document.documentElement.style.getPropertyValue(key)));
+  const page = await open({ games: [game(1)] });
+  await until(page, () => document.documentElement.style.getPropertyValue('--accent') !== '');
+  const before = await look(page);
+  await emit(page, 'art', { id: 'pc:1', art: { ...art[0], hero: art[0].portrait } });
+  await until(page, (old) => document.documentElement.style.getPropertyValue('--accent') !== old, before[0]);
+  const after = await look(page);
+  check('Change art updates both the accent and plate brightness', before.every((value, i) => value !== after[i]), JSON.stringify({ before, after }));
+  await close(page);
+
+  const race = await open({ games: [game(1, { noArt: true })] });
+  await race.evaluate((file) => {
+    const fetch = window.fetch;
+    window.fetch = async (...args) => {
+      const reply = await fetch(...args);
+      if (String(args[0]).includes(encodeURIComponent(file))) {
+        window.__sampleWaiting = true;
+        await new Promise((resolve) => window.__releaseSample = resolve);
+      }
+      return reply;
+    };
+  }, art[0].hero);
+  await emit(race, 'art', { id: 'pc:1', art: art[0] });
+  await until(race, () => window.__sampleWaiting);
+  await emit(race, 'art', { id: 'pc:1', art: { ...art[0], hero: art[0].portrait } });
+  await until(race, (want) => document.documentElement.style.getPropertyValue('--accent') === want, after[0]);
+  const latest = await look(race);
+  await race.evaluate(() => window.__releaseSample());
+  await until(race, async () => (await import('./state.js')).state.accents.size === 2);
+  const finished = await race.evaluate(async () => (await import('./state.js')).state.accents.size);
+  check('both samples finish, but the older one cannot replace the newer colours', finished === 2 && JSON.stringify(latest) === JSON.stringify(after) && JSON.stringify(await look(race)) === JSON.stringify(after), JSON.stringify({ finished, latest, expected: after, actual: await look(race) }));
+  await emit(race, 'art', { id: 'pc:1', art: noArt });
+  await until(race, () => document.documentElement.style.getPropertyValue('--plate-light') === '0');
+  check('removing art restores the default accent and dark plate', JSON.stringify(await look(race)) === '["140 170 255","0"]');
+  await close(race);
+}
+
+// 59. Exit to Windows uses the existing hold, and releasing early never exits.
+{
+  const page = await open({ games: [game(1)], running: 'pc:1', clock: true });
+  await emit(page, 'pad', 'triangle');
+  await idle(page);
+  for (let i = 0; i < 10; i++) await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  for (let i = 0; i < 3; i++) await emit(page, 'pad', 'down');
+  check('Exit to Windows names Lamplit as what closes', (await page.locator('#settingsList .row.focus').textContent()) === 'Exit to WindowsCloses Lamplit');
+  await holdClock(page);
+  await emit(page, 'pad', 'ok');
+  await page.clock.runFor(300);
+  await emit(page, 'pad', 'ok-up');
+  await page.clock.runFor(1200);
+  check('letting go of Exit to Windows early does nothing', !(await page.evaluate(() => window.__exited)));
+  await emit(page, 'pad', 'ok');
+  await page.clock.runFor(1500);
+  await emit(page, 'pad', 'ok-up');
+  const exit = await page.evaluate(() => ({ exited: window.__exited, calls: window.__calls.filter(([name]) => name === 'app_exit').length }));
+  check('holding Exit to Windows calls the clean exit exactly once', exit.exited && exit.calls === 1, JSON.stringify(exit));
   await close(page);
 }
 

@@ -3,6 +3,7 @@
 // for the player, as pills.
 
 import { buttonFace, detailChoices, narrowed } from './logic.js';
+import * as api from './api.js';
 import { fillPill } from './pill.js';
 import { actionableStep, els, focused, state, storeName } from './state.js';
 
@@ -73,6 +74,48 @@ export function showHints() {
     else if (state.running && state.running !== g?.id) html += b('back', 'Back to game');
   }
   els.hint.innerHTML = html;
+  showFirstHint();
+}
+
+/** @type {Map<import('./api.js').FirstHint, boolean>} Permission to show a hint during this start. */
+const firstHints = new Map();
+/** @type {Set<import('./api.js').FirstHint>} */
+const completed = new Set();
+
+/** Rust counts a hint only when its screen is reached, once per start even if this WebView reloads. */
+function showFirstHint() {
+  const name = state.mode === 'starting' ? 'return_home' : state.mode === 'browse' && focused() ? 'game_menu' : null;
+  const el = els.firstHint;
+  el.hidden = true;
+  if (!name || completed.has(name)) return;
+  if (!firstHints.has(name)) {
+    firstHints.set(name, false);
+    api.prefsHintShown(name).then((show) => {
+      firstHints.set(name, show);
+      showFirstHint();
+    }).catch(() => {});
+    return;
+  }
+  if (!firstHints.get(name)) return;
+  const ps = state.padKind === 'dualsense' || state.padKind === 'playstation';
+  fillPill(el, {
+    icon: 'i-controller',
+    text: name === 'game_menu' ? '' : ps ? 'Hold PS to come back from a game' : 'Hold View and Menu to come back from a game',
+  });
+  if (name === 'game_menu') {
+    const words = el.querySelector('.text');
+    words.innerHTML = `Press ${buttonBadge('menu')} to open a game's menu`;
+  }
+  el.dataset.hint = name;
+  el.hidden = false;
+}
+
+/** @param {import('./api.js').FirstHint} name */
+export function finishHint(name) {
+  if (completed.has(name)) return;
+  completed.add(name);
+  showFirstHint();
+  api.prefsHintDone(name).catch(() => {});
 }
 
 /** The player used another kind of controller: the hints name its buttons. @param {import('./api.js').PadKind} kind */

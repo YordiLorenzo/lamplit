@@ -488,13 +488,14 @@ export const SECTIONS = [
 ];
 /**
  * The rows of Settings > Power. Sleep can be undone with any button, so one press does it; Restart and Shut down are
- * held, and close a game that runs, which stays open while the PC sleeps.
+ * held, and close a game that runs, which stays open while the PC sleeps or Lamplit exits.
  * @type {{ id: string, label: string, icon: import('./icons.js').IconId, hold: string, note: string }[]}
  */
 const POWER = [
   { id: 'sleep', label: 'Sleep', icon: 'i-sleep', hold: '', note: '' },
   { id: 'restart', label: 'Restart', icon: 'i-restart', hold: 'Hold to restart', note: 'Restarts the PC' },
   { id: 'shutdown', label: 'Shut down', icon: 'i-power', hold: 'Hold to shut down', note: 'Turns the PC off' },
+  { id: 'exit', label: 'Exit to Windows', icon: 'i-home', hold: 'Hold to exit', note: 'Closes Lamplit' },
 ];
 /** The auto-off times the headset offers, in minutes; 0 is never. */
 const AUTO_OFF = [0, 5, 10, 15, 20, 30, 60];
@@ -508,6 +509,15 @@ const ACCOUNT = {
 };
 /** @param {boolean | null | undefined} v */
 const onOff = (v) => (v ? 'On' : 'Off');
+
+/** @type {Record<import('./api.js').InterfaceSounds, string>} */
+const SOUND_LEVELS = { off: 'Off', quiet: 'Quiet', normal: 'Normal' };
+
+/** @param {import('./api.js').InterfaceSounds} level @param {number} dir */
+export function stepInterfaceSounds(level, dir) {
+  const levels = /** @type {import('./api.js').InterfaceSounds[]} */ (Object.keys(SOUND_LEVELS));
+  return levels[Math.max(0, Math.min(levels.length - 1, levels.indexOf(level) + dir))];
+}
 
 /** The screensaver's settings until Rust's prefs are in, as prefs.rs has them. */
 export const SAVER_DEFAULT = /** @type {const} */ ({ minutes: 5 });
@@ -616,7 +626,7 @@ export function sectionSummary(key, state) {
     const n = hiddenGames(state).length;
     return [n === 1 ? '1 game' : `${n} games`];
   }
-  if (key === 'power') return ['Sleep, restart, shut down'];
+  if (key === 'power') return ['Sleep, restart, shut down, exit'];
   if (key === 'screensaver') {
     const minutes = state.prefs?.screensaver_minutes ?? SAVER_DEFAULT.minutes;
     return [minutes ? `After ${minutes} min` : 'Off'];
@@ -636,7 +646,8 @@ export function sectionRows(key, state) {
   const rows = [];
   const { sound, accessories: acc, prefs } = state;
   if (key === 'sound') {
-    if (!sound) return [{ label: 'Sound devices', value: 'Not available' }];
+    const interfaceSounds = { kind: 'interfacesounds', adjust: true, label: 'Interface sounds', value: SOUND_LEVELS[prefs?.interface_sounds ?? 'normal'] };
+    if (!sound) return [interfaceSounds, { label: 'Sound devices', value: 'Not available' }];
     rows.push({ heading: 'Output' });
     for (const d of sound.outputs) rows.push({ kind: 'device', id: d.id, label: d.name, value: d.default ? 'In use' : '', tone: 'good' });
     rows.push({ kind: 'volume', adjust: true, label: 'Volume', value: sound.muted ? 'Muted' : `${sound.volume ?? '?'}%` });
@@ -646,6 +657,7 @@ export function sectionRows(key, state) {
     rows.push({ kind: 'micmute', label: 'Mute microphone', value: onOff(sound.mic_muted) });
     rows.push({ heading: 'Automatic' });
     rows.push({ kind: 'follows', label: 'Sound follows the headset and controller headphones', value: onOff(prefs?.sound_follows) });
+    rows.push(interfaceSounds);
   } else if (key === 'headset') {
     const h = acc?.headset;
     rows.push({ heading: 'Logitech PRO X 2 LIGHTSPEED' });
@@ -711,7 +723,7 @@ export function sectionRows(key, state) {
     // What a held row does shows before the press: a running game that would close is named.
     const running = state.all.find((g) => g.id === state.running);
     for (const p of POWER) {
-      const note = p.hold && running ? `${running.name} is running and will close` : p.note;
+      const note = (p.id === 'restart' || p.id === 'shutdown') && running ? `${running.name} is running and will close` : p.note;
       rows.push({ kind: 'power', id: p.id, label: p.label, value: '', icon: p.icon, ...(p.hold ? { hold: p.hold } : {}), ...(note ? { note } : {}) });
     }
   }

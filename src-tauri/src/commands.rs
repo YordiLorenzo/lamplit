@@ -232,6 +232,27 @@ pub async fn prefs_set_sound_follows(app: AppHandle, on: bool) -> Result<Prefs> 
 }
 
 #[tauri::command]
+pub async fn prefs_set_interface_sounds(app: AppHandle, level: String) -> Result<Prefs> {
+    let level = prefs::InterfaceSounds::parse(&level)?;
+    blocking(move || {
+        prefs::change(&app, |p| p.interface_sounds = level)?;
+        crate::events::emit(&app, crate::events::Event::InterfaceSounds(level));
+        Ok(prefs::get(&app))
+    })
+    .await?
+}
+
+#[tauri::command]
+pub async fn prefs_hint_shown(app: AppHandle, name: String) -> Result<bool> {
+    blocking(move || prefs::hint_shown(&app, &name)).await?
+}
+
+#[tauri::command]
+pub async fn prefs_hint_done(app: AppHandle, name: String) -> Result<()> {
+    blocking(move || prefs::hint_done(&app, &name)).await?
+}
+
+#[tauri::command]
 pub async fn prefs_set_touchpad_mouse(app: AppHandle, on: bool) -> Result<Prefs> {
     blocking(move || accessories::set_touchpad_mouse(&app, on).map(|()| prefs::get(&app))).await?
 }
@@ -323,6 +344,12 @@ pub async fn power_restart() -> Result<()> {
 #[tauri::command]
 pub async fn power_shut_down() -> Result<()> {
     blocking(power::shut_down).await?
+}
+
+/// A successful exit ends the supervisor too, as closing the home window does.
+#[tauri::command]
+pub fn app_exit(app: AppHandle) {
+    app.exit(0);
 }
 
 /// The screen's mode now, e.g. "3840 × 2160 at 120 Hz".

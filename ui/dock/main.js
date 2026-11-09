@@ -13,7 +13,7 @@ import { focusRing } from '../ring.js';
 import { reduced } from '../morph.js';
 import { FADE_MS, SPRINGS, nameSprings } from '../springs.js';
 import { steady } from '../steady.js';
-import { sfx } from '../sounds.js';
+import { sfx, startSounds } from '../sounds.js';
 import { chips, hints, outputIcon, sessionText, tiles, volumeText } from './logic.js';
 
 /** @typedef {import('./logic.js').TileKey} TileKey */
@@ -963,6 +963,7 @@ async function init() {
   setInterval(() => state.mode === 'open' && tick(), 10_000);
   let heardKind = false;
   await Promise.all([
+    startSounds(),
     api.onDock(onDock),
     api.onPlay((play) => play.state === 'running' && prepare()),
     api.onDockPad((action) => act(action, 'pad')),

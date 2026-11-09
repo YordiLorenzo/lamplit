@@ -8,9 +8,9 @@ import * as api from './api.js';
 import { showHints, toast } from './hints.js';
 import { hold, letGo } from './hold.js';
 import { glyph, labelled, setGames, showInfo } from './library.js';
-import { SAVER_DEFAULT, SECTIONS, focusIndex, quietMode, rowKey, sectionRows, sectionSummary, stepAutoOff, stepSaverMinutes, visibleSections } from './logic.js';
+import { SAVER_DEFAULT, SECTIONS, focusIndex, quietMode, rowKey, sectionRows, sectionSummary, stepAutoOff, stepInterfaceSounds, stepSaverMinutes, visibleSections } from './logic.js';
 import { showScreensaver, warmScreensaver } from './screensaver/index.js';
-import { sfx } from './sounds.js';
+import { setSoundLevel, sfx } from './sounds.js';
 import { SPRINGS } from './springs.js';
 import { renderStatus } from './status.js';
 import { els, state, withStoreLogo } from './state.js';
@@ -288,6 +288,7 @@ export async function adjustSetting(dir) {
       // Into the sound shown now: a refresh may have replaced it while Windows answered.
       state.sound.volume = volume;
     } else if (row.kind === 'saverafter') await adjustScreensaver(dir);
+    else if (row.kind === 'interfacesounds') await adjustInterfaceSounds(dir);
     else await adjustHeadset(row.kind, dir);
   } catch (e) {
     toast(e.message, { warn: true });
@@ -314,6 +315,22 @@ async function adjustHeadset(kind, dir) {
 /** A held ← or → repeats; presses wait for Rust's answer, so each steps from the value saved before it. */
 let saverBusy = false;
 
+let soundsBusy = false;
+
+/** A held direction must step from the last saved sound level. @param {number} dir */
+async function adjustInterfaceSounds(dir) {
+  if (soundsBusy || !state.prefs) return;
+  const next = stepInterfaceSounds(state.prefs.interface_sounds, dir);
+  if (next === state.prefs.interface_sounds) return;
+  soundsBusy = true;
+  try {
+    state.prefs = await api.prefsSetInterfaceSounds(next);
+    setSoundLevel(state.prefs.interface_sounds);
+  } finally {
+    soundsBusy = false;
+  }
+}
+
 /** Settings > Screensaver: the minutes without input before it starts. @param {number} dir */
 async function adjustScreensaver(dir) {
   if (saverBusy) return;
@@ -331,7 +348,7 @@ async function adjustScreensaver(dir) {
 /** The rows that switch one of the player's prefs. */
 const PREF_ROWS = ['follows', 'touchmouse', 'steamport', 'onlineart', 'dock', 'saverafter'];
 /** What each row of Settings > Power calls. */
-const POWER = { sleep: api.powerSleep, restart: api.powerRestart, shutdown: api.powerShutDown };
+const POWER = { sleep: api.powerSleep, restart: api.powerRestart, shutdown: api.powerShutDown, exit: api.appExit };
 
 /**
  * Sleep, restart or shut down. The home screen is what shows when the PC wakes up, or if Windows doesn't go through
@@ -354,7 +371,7 @@ export async function selectSetting() {
   if (!row?.kind || row.adjust || (row.kind === 'stats' && statsBusy)) return;
   // Add a game is pushed inside this plate; Back there comes back here, on its row.
   if (row.kind === 'section' && row.key === 'add') return openAdd(() => returnFromAdd(rowKey(row)));
-  // Restart and Shut down happen once Cross has been held on them.
+  // Restart, Shut down and Exit to Windows happen once Cross has been held on them.
   if (row.hold) {
     sfx.move();
     return hold(/** @type {HTMLElement} */ (els.settingsList.querySelector('.row.focus')), () => power(row));

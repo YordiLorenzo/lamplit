@@ -129,6 +129,9 @@ These don't change any setting, but you may notice them:
 - **Settings > Power** asks Windows to sleep, restart or shut down (`SetSuspendState`, `InitiateShutdownW`). For
   that, Lamplit enables the shutdown privilege, which a standard account holds but has switched off, in its own
   process only. It doesn't force apps to close, and it doesn't sign out another account that is signed in.
+- **Settings > Power > Exit to Windows** closes Lamplit and its supervisor. It leaves running games and settings
+  as they are. Interface sound levels and the two first-minute hints' counts and completion stay in `prefs.json`
+  in Lamplit's data folder; they are not sent online.
 
 ## Removing Lamplit
 

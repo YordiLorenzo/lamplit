@@ -31,6 +31,7 @@ import {
   sectionRows,
   sectionSummary,
   stepAutoOff,
+  stepInterfaceSounds,
   stepSaverMinutes,
   storeChoices,
   storeWarning,
@@ -667,6 +668,25 @@ describe('Hidden games', () => {
     assert.deepEqual(sectionRows('hidden', settingsState()), [{ label: 'No hidden games', value: '' }]));
 });
 
+describe('Interface sounds', () => {
+  test('steps through Off, Quiet and Normal, stopping at each end', () => {
+    assert.equal(stepInterfaceSounds('normal', -1), 'quiet');
+    assert.equal(stepInterfaceSounds('quiet', -1), 'off');
+    assert.equal(stepInterfaceSounds('off', -1), 'off');
+    assert.equal(stepInterfaceSounds('off', 1), 'quiet');
+    assert.equal(stepInterfaceSounds('quiet', 1), 'normal');
+    assert.equal(stepInterfaceSounds('normal', 1), 'normal');
+  });
+  test('the row remains available without a Windows sound device', () => {
+    const row = (level) => sectionRows('sound', settingsState({ prefs: prefs({ interface_sounds: level }) }))
+      .find((r) => r.kind === 'interfacesounds');
+    for (const [level, label] of [['off', 'Off'], ['quiet', 'Quiet'], ['normal', 'Normal']]) {
+      assert.equal(row(level).value, label);
+      assert.equal(row(level).adjust, true);
+    }
+  });
+});
+
 describe('Power', () => {
   const library = [game('cp', 'Cyberpunk 2077')];
   /** The rows while `running` runs. */
@@ -677,6 +697,7 @@ describe('Power', () => {
       ['power', 'sleep', 'Sleep', 'i-sleep'],
       ['power', 'restart', 'Restart', 'i-restart'],
       ['power', 'shutdown', 'Shut down', 'i-power'],
+      ['power', 'exit', 'Exit to Windows', 'i-home'],
     ]);
   });
   test('restart and shut down are held, and say what they do before the press; sleep is one press', () => {
@@ -684,10 +705,11 @@ describe('Power', () => {
       ['sleep', null, null],
       ['restart', 'Hold to restart', 'Restarts the PC'],
       ['shutdown', 'Hold to shut down', 'Turns the PC off'],
+      ['exit', 'Hold to exit', 'Closes Lamplit'],
     ]);
   });
   test('restart and shut down name the running game that will close, before the press', () => {
-    assert.deepEqual(rows('cp').map((r) => r.note ?? null), [null, 'Cyberpunk 2077 is running and will close', 'Cyberpunk 2077 is running and will close']);
+    assert.deepEqual(rows('cp').map((r) => r.note ?? null), [null, 'Cyberpunk 2077 is running and will close', 'Cyberpunk 2077 is running and will close', 'Closes Lamplit']);
   });
 });
 
