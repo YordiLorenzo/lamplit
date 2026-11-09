@@ -4732,6 +4732,9 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await emit(page, 'pad', 'ok-up');
   const exit = await page.evaluate(() => ({ exited: window.__exited, calls: window.__calls.filter(([name]) => name === 'app_exit').length }));
   check('holding Exit to Windows calls the clean exit exactly once', exit.exited && exit.calls === 1, JSON.stringify(exit));
+  await close(page);
+}
+
 // Save a report: the whole preview scrolls with the pad, and Save writes exactly what was shown.
 {
   const page = await open({ games: [game(1)] });
@@ -4801,6 +4804,9 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     && (await page.locator('#reportText').textContent()).includes('Try again after the scan.')
     && !(await page.locator('#hint').textContent()).includes('Save'));
   await emit(page, 'pad', 'back');
+  await close(page);
+}
+
 // Updates only download after a player action. Rust owns the game/foreground gate; these are its real payloads.
 {
   const page = await open({ games: [game(1)], update: ipc('update') });
