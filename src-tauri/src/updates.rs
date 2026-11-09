@@ -118,7 +118,7 @@ pub fn install(app: &AppHandle) -> Result<Status> {
             return Err(Error::Player("The update is already being prepared.".into()));
         }
         let mut update = pending.update.clone().ok_or_else(|| Error::Player("Check for an update first.".into()))?;
-        update.timeout = Some(Duration::from_secs(300));
+        update.timeout = Some(Duration::from_mins(5));
         pending.status.phase = Phase::Downloading;
         pending.status.error = None;
         publish(app, &pending.status);
