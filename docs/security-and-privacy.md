@@ -47,6 +47,15 @@ Lamplit writes `lamplit.log`, `supervisor.log` and `setup.log` in its data folde
 the games it found, their folders and your sound devices. Read a log before you attach it to a public issue, and
 remove anything you'd rather not share.
 
+**Settings > System > Save a report** shows a plain-text preview before saving one file in your account's Downloads
+folder. It contains Lamplit and Windows versions, the screen mode and screen count, controller kinds, connections
+and batteries, headset status, the number of sound outputs and the default output's kind, store status and game
+counts, counts of added, hidden and favourite games, prefs, and the last 50 warning and error lines from `lamplit.log`.
+Device names and identifiers are left out. In log lines, paths become `<folder>`, the Windows account name becomes
+`<user>`, and current library game names become their ids. Path-based game ids also have their paths removed.
+Device names in sound-switch errors and device addresses are removed, including errors about disconnected devices.
+Read the whole preview before sharing it. Saving writes exactly that preview; nothing is uploaded or sent.
+
 ## Steam's DevTools port (off unless you switch it on)
 
 Two features need Steam's DevTools port: keeping the PS button from opening Steam's Big Picture, and switching off

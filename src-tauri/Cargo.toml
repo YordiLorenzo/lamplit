@@ -25,6 +25,8 @@ thiserror = "2"
 # A mutex that never poisons: one panicking thread must not take every later command down with it.
 parking_lot = "0.13"
 log = "0.4"
+# Report redaction: paths, device identifiers and case-insensitive names in log lines. Already used by Tauri.
+regex = "1"
 # The app's log. Its fern re-export also logs the supervisor and --setup, which run without Tauri.
 tauri-plugin-log = "2"
 # Local timestamps in the log lines, and the itch app's play times (the version and features tauri-plugin-log already
@@ -59,6 +61,7 @@ windows = { version = "0.62", features = [
   "Win32_UI_Input_XboxController",
   "Win32_System_LibraryLoader",
   "Win32_System_Threading",
+  "Win32_System_WindowsProgramming",
   "Win32_System_Power",
   "Win32_System_Registry",
   "Win32_System_Shutdown",

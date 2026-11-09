@@ -3,6 +3,7 @@
 // rows say comes from logic.js; this file draws them and acts on them.
 
 import { openAdd } from './add.js';
+import { openReport } from './report.js';
 import { morph, turn } from './morph.js';
 import * as api from './api.js';
 import { showHints, toast } from './hints.js';
@@ -76,8 +77,8 @@ function renderSettings() {
  */
 const capsule = () => ({ box: els.status.getBoundingClientRect(), round: els.status.offsetHeight / 2, still: true });
 
-/** The face of the plate that shows: Settings, or Add a game (add.js). */
-const shown = () => (els.add.classList.contains('on') ? els.add : els.settingsFace);
+/** The face of the plate that shows. */
+const shown = () => [els.add, els.report].find((face) => face.classList.contains('on')) ?? els.settingsFace;
 
 /** The plate covers two faces while its clip moves from one to the other (turnPlate). */
 let turning = false;
@@ -99,6 +100,7 @@ const resized = new ResizeObserver(() => {
 });
 resized.observe(els.settingsFace);
 resized.observe(els.add);
+resized.observe(els.report);
 
 /**
  * From what the plate showed (`from`, its box before the change) to the face that shows now: the plate covers both
@@ -371,6 +373,13 @@ export async function selectSetting() {
   if (!row?.kind || row.adjust || (row.kind === 'stats' && statsBusy)) return;
   // Add a game is pushed inside this plate; Back there comes back here, on its row.
   if (row.kind === 'section' && row.key === 'add') return openAdd(() => returnFromAdd(rowKey(row)));
+  if (row.kind === 'report') return openReport(() => {
+    state.mode = 'settings';
+    const from = els.settings.getBoundingClientRect();
+    sfx.back();
+    renderSettings();
+    turnPlate('settings-from-report', from, 'close');
+  });
   // Restart, Shut down and Exit to Windows happen once Cross has been held on them.
   if (row.hold) {
     sfx.move();

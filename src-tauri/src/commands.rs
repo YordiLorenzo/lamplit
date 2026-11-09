@@ -12,6 +12,7 @@ use crate::error::{Error, Result};
 use crate::launch::{self, Launcher};
 use crate::library::{self, ArtChoice, Game, Library};
 use crate::prefs::{self, Prefs};
+use crate::report;
 use crate::stores::steam::devtools;
 use crate::stores::{self, Store};
 use crate::system::{overlay, power, quiet, setup};
@@ -20,6 +21,16 @@ use tauri::{AppHandle, Manager, State};
 
 async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Result<T> {
     Ok(tauri::async_runtime::spawn_blocking(work).await?)
+}
+
+#[tauri::command]
+pub async fn report_preview(app: AppHandle) -> Result<String> {
+    blocking(move || report::preview(&app)).await?
+}
+
+#[tauri::command]
+pub async fn report_save(text: String) -> Result<String> {
+    blocking(move || report::save(&text)).await?
 }
 
 /// None until the first scan has finished.

@@ -391,6 +391,10 @@ export const powerShutDown = () => call('power_shut_down');
 export const appExit = () => call('app_exit');
 /** @returns {Promise<string | null>} e.g. "3840 × 2160 at 120 Hz" */
 export const displayMode = () => call('display_mode');
+/** The report, with names and folders removed, for the preview. @returns {Promise<string>} */
+export const reportPreview = () => call('report_preview');
+/** Saves the preview in Downloads and returns its file name. @param {string} text @returns {Promise<string>} */
+export const reportSave = (text) => call('report_save', { text });
 
 // ---------- events ----------
 

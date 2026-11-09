@@ -4614,6 +4614,75 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await emit(page, 'pad', 'ok-up');
   const exit = await page.evaluate(() => ({ exited: window.__exited, calls: window.__calls.filter(([name]) => name === 'app_exit').length }));
   check('holding Exit to Windows calls the clean exit exactly once', exit.exited && exit.calls === 1, JSON.stringify(exit));
+// Save a report: the whole preview scrolls with the pad, and Save writes exactly what was shown.
+{
+  const page = await open({ games: [game(1)] });
+  const preview = ipc('report') + Array.from({ length: 50 }, (_, i) => `2026-11-09 15:30:00.000 WARN  test warning ${i}\n`).join('');
+  await page.evaluate((text) => { window.__settings = { report_preview: text }; }, preview);
+  const openReport = async () => {
+    await page.locator('#settingsList .row').filter({ hasText: 'Save a report' }).click();
+    await idle(page);
+    await settled(page);
+  };
+  await page.keyboard.press('c');
+  await idle(page);
+  await page.locator('#settingsList .row').filter({ hasText: 'System' }).click();
+  await openReport();
+  check('report preview contains the full text and Save and Back hints',
+    await page.locator('#reportText').textContent() === preview && /Save.*Back/.test(await page.locator('#hint').textContent()));
+  await emit(page, 'pad', 'down');
+  check('d-pad scrolls the report without moving the Settings rows',
+    await page.locator('#reportText').evaluate((el) => el.scrollTop > 0));
+  for (let i = 0; i < 20; i++) await emit(page, 'pad', 'r1');
+  check('the last report line can be reached', await page.locator('#reportText').evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 1));
+  await page.screenshot({ path: path.join(shots, 'report.png') });
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  check('Back returns to Save a report without saving',
+    !(await state(page)).calls.includes('report_save') && (await page.locator('#settingsList .row.focus').textContent()).startsWith('Save a report'));
+  await openReport();
+  check('opening a report again starts at its first line', await page.locator('#reportText').evaluate((el) => el.scrollTop === 0));
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('Save writes the exact preview and names its Downloads file',
+    await page.evaluate((text) => window.__calls.find(([cmd]) => cmd === 'report_save')?.[1].text === text, preview)
+      && (await state(page)).toast.includes(`${ipc('report-saved')} is in Downloads.`));
+  await close(page);
+}
+
+// A failed or slow report stays controllable; no save happens before a preview, and stale replies cannot replace it.
+{
+  const page = await open({ games: [game(1)] });
+  await page.evaluate(() => {
+    window.__settings = { report_preview: () => new Promise((resolve) => { window.__reportReply = resolve; }) };
+  });
+  await page.keyboard.press('c');
+  await idle(page);
+  await page.locator('#settingsList .row').filter({ hasText: 'System' }).click();
+  await page.locator('#settingsList .row').filter({ hasText: 'Save a report' }).click();
+  await emit(page, 'pad', 'ok');
+  check('Save is disabled until the report is ready', await page.locator('#reportSave').isDisabled() && !(await state(page)).calls.includes('report_save'));
+  await emit(page, 'pad', 'back');
+  await page.evaluate(() => { window.__settings.report_preview = 'new preview'; });
+  await settled(page);
+  await page.locator('#settingsList .row').filter({ hasText: 'Save a report' }).click();
+  await page.evaluate(() => window.__reportReply('old preview'));
+  await idle(page);
+  check('an old preview reply does not replace a newer preview', await page.locator('#reportText').textContent() === 'new preview');
+  await page.evaluate(() => { window.__settings.report_save = () => { throw { kind: 'player', message: 'Downloads is full.' }; }; });
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('a save failure keeps the preview and allows a retry', await page.locator('#reportText').textContent() === 'new preview'
+    && !(await page.locator('#reportSave').isDisabled()) && (await state(page)).toast.includes('Downloads is full.'));
+  await emit(page, 'pad', 'back');
+  await settled(page);
+  await page.evaluate(() => { window.__settings.report_preview = () => { throw { kind: 'player', message: 'Try again after the scan.' }; }; });
+  await page.locator('#settingsList .row').filter({ hasText: 'Save a report' }).click();
+  await idle(page);
+  check('a preview failure explains what happened and has no Save action', await page.locator('#reportSave').isDisabled()
+    && (await page.locator('#reportText').textContent()).includes('Try again after the scan.')
+    && !(await page.locator('#hint').textContent()).includes('Save'));
+  await emit(page, 'pad', 'back');
   await close(page);
 }
 

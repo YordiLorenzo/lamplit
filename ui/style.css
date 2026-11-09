@@ -779,7 +779,7 @@ body.launching .cover.focus { scale: 1.1; }
   transition: opacity 160ms ease 100ms, translate var(--tap-ms) var(--tap);
 }
 #settingsFace { width: var(--narrow); }
-#settings:has(#add.on) #settingsFace {
+#settings:has(#add.on, #report.on) #settingsFace {
   opacity: 0;
   translate: -6vw 0;
   pointer-events: none;
@@ -1012,14 +1012,14 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
 
 /* ---------- add a game (add.js) ---------- */
 
-#add {
+#add, #report {
   width: var(--wide);
   opacity: 0;
   translate: 6vw 0;
   pointer-events: none;
   transition: opacity 120ms ease, translate var(--tap-ms) var(--tap);
 }
-#add.on { opacity: 1; translate: 0; pointer-events: auto; transition: opacity 160ms ease 100ms, translate var(--tap-ms) var(--tap); }
+#add.on, #report.on { opacity: 1; translate: 0; pointer-events: auto; transition: opacity 160ms ease 100ms, translate var(--tap-ms) var(--tap); }
 #addPath { margin: -1.6vh 0 2.2vh; font-size: 2vh; color: var(--ink-dim); overflow-wrap: anywhere; }
 #addList {
   display: grid;
@@ -1038,6 +1038,22 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
 #add.naming #addField { display: flex; }
 #add.naming #addKeys { display: grid; }
 #addName { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+#report { height: var(--plate-max); }
+#report p { font-size: 2vh; color: var(--ink-dim); margin: -1vh 0 2vh; }
+#reportText {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 1.8vh/1.6 ui-monospace, Consolas, monospace;
+  padding: .6vh;
+  user-select: text;
+}
+.report-actions { display: flex; gap: 1vh; margin-top: 2vh; }
+.report-actions button { color: var(--ink); background: rgb(255 255 255 / .06); font-family: inherit; cursor: pointer; border: 0; }
+.report-actions button:disabled { opacity: .45; cursor: default; }
 
 /* ---------- hints and messages ---------- */
 
@@ -1098,7 +1114,7 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
   translate: 0 -1vh;
 }
 body:has(#settings.on) #toast { top: var(--status-top); right: calc(var(--safe-x) + 38vw + 2vh); }
-body:has(#settings.on #add.on) #toast { right: calc(var(--safe-x) + 46vw + 2vh); }
+body:has(#settings.on :is(#add.on, #report.on)) #toast { right: calc(var(--safe-x) + 46vw + 2vh); }
 /* The line keeps the height of a pill, so one coming doesn't move what narrows the row. */
 #filters { min-height: 5.6vh; }
 
@@ -1121,8 +1137,8 @@ body:has(#settings.on #add.on) #toast { right: calc(var(--safe-x) + 46vw + 2vh);
    eased curve rather than a spring, and the end of the row doesn't bump (library.js move). */
 @media (prefers-reduced-motion: reduce) {
   .panel, .panel.on, #settings, #settings.on, #settings.grown { transform: none; transition: opacity var(--fade-ms) ease; }
-  .face, #add, #settings:has(#add.on) #settingsFace { translate: none; transition: opacity calc(var(--fade-ms) / 2) ease; }
-  #settingsFace, #add.on, #settings.grown #add.on {
+  .face, #add, #report, #settings:has(#add.on, #report.on) #settingsFace { translate: none; transition: opacity calc(var(--fade-ms) / 2) ease; }
+  #settingsFace, #add.on, #report.on, #settings.grown #add.on {
     translate: none;
     transition: opacity calc(var(--fade-ms) / 2) ease calc(var(--fade-ms) / 2);
   }

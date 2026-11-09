@@ -715,6 +715,7 @@ export function sectionRows(key, state) {
     if (state.setup?.needed) rows.push({ kind: 'setup', label: 'First-time setup (asks Windows once)', value: 'Needed', tone: 'warn' });
     rows.push({ kind: 'onlineart', label: "Find art online (sends game names to Steam's store)", value: onOff(prefs?.online_art) });
     rows.push({ label: 'Display', value: state.display ?? 'Unknown' });
+    rows.push({ kind: 'report', label: 'Save a report', value: 'Preview before saving' });
   } else if (key === 'hidden') {
     for (const g of hiddenGames(state)) rows.push({ kind: 'unhide', id: g.id, store: g.store, label: g.name, value: 'Show' });
     // The section stays open when its last game is shown again.

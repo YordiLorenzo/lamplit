@@ -73,6 +73,8 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
       hint.done = true;
     },
     app_exit: () => { window.__exited = true; },
+    report_preview: ${JSON.stringify(ipc('report'))},
+    report_save: ${JSON.stringify(ipc('report-saved'))},
   };
   const early = ${JSON.stringify(earlyGames)};
   window.__TAURI__ = {

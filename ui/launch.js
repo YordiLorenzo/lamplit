@@ -4,6 +4,7 @@
 
 import * as api from './api.js';
 import { closeAdd } from './add.js';
+import { closeReport } from './report.js';
 import { closeFind } from './find.js';
 import { meter } from './frames.js';
 import { buttonBadge, showHints, stepAction, toast } from './hints.js';
@@ -168,6 +169,7 @@ function leavePanels() {
   if (state.mode === 'details') closeDetails();
   if (state.mode === 'find') closeFind();
   if (state.mode === 'add') closeAdd();
+  if (state.mode === 'report') closeReport();
 }
 
 /** @param {import('./api.js').Play} play */
