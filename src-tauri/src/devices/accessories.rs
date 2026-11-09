@@ -99,9 +99,16 @@ impl Route {
             return false;
         }
         let changed = self.via.as_deref() != Some(&default.id);
-        if self.back_to.as_deref() == Some(&default.id)
-            || (changed && devices.iter().any(|d| Some(d.id.as_str()) == self.via.as_deref()))
-        {
+        let via_there = devices.iter().any(|d| Some(d.id.as_str()) == self.via.as_deref());
+        if self.back_to.as_deref() == Some(&default.id) {
+            // Back where it came from while the device it went to is still there: someone chose it, and the return is
+            // done. With that device gone, Windows put it back by itself, and an accessory still on may want it.
+            if via_there {
+                *self = Self::default();
+            }
+            return via_there;
+        }
+        if changed && via_there {
             *self = Self::default();
             return true;
         }
@@ -412,6 +419,23 @@ mod tests {
         let back = [device("tv", Kind::Tv, true), device("soundbar", Kind::Other, false)];
         assert!(!route.observe(&back));
         assert_eq!(pick(&back, None, route.back_to.as_deref(), Some(Kind::Tv)), Pick::Switch(&back[1]));
+    }
+
+    #[test]
+    fn windows_putting_it_back_on_the_tv_still_lets_the_headset_take_it() {
+        // TV, then controller headphones, then the headset on, then the controller goes and Windows picks the TV.
+        let mut route = returning("tv", "controller");
+        let devices = [device("tv", Kind::Tv, true), device("headset", Kind::Headset, false)];
+        assert!(!route.observe(&devices));
+        assert_eq!(
+            pick(&devices, Some(Kind::Headset), route.back_to.as_deref(), Some(Kind::Tv)),
+            Pick::Switch(&devices[1])
+        );
+        // The player choosing the TV while the controller is still there ends the return.
+        let mut chosen = returning("tv", "controller");
+        let both = [device("tv", Kind::Tv, true), device("controller", Kind::Controller, false)];
+        assert!(chosen.observe(&both));
+        assert_eq!(chosen, Route::default());
     }
 
     #[test]

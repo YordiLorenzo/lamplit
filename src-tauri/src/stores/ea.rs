@@ -3,7 +3,6 @@
 use super::installed::Program;
 use super::names::{clean_name, prettify};
 use super::{Store, machine_value, read, xml};
-use crate::error::Result;
 use crate::files::{file_name, folder_key, local_app_data, nonempty};
 use crate::library::{Game, Launch};
 use std::path::PathBuf;
@@ -13,16 +12,21 @@ pub fn exe() -> Option<PathBuf> {
 }
 
 /// EA games sit in the usual EA folders, or wherever the installed-programs list says.
-pub fn games(drives: &[PathBuf], programs: &[Program]) -> Result<Vec<Game>> {
+pub fn games(drives: &[PathBuf], programs: &[Program]) -> Vec<Game> {
     let mut roots: Vec<PathBuf> =
         std::env::var_os("ProgramFiles").map(|p| PathBuf::from(p).join("EA Games")).into_iter().collect();
     for d in drives {
         roots.push(d.join("Games"));
         roots.push(d.join("EA Games"));
     }
+    // EA keeps no list of its games, so these folders are guesses: one Lamplit can't read is passed over, as before,
+    // rather than failing the scan of every EA game.
     let mut dirs = Vec::new();
     for root in roots {
-        dirs.extend(read::subdirs(&root)?);
+        match read::subdirs(&root) {
+            Ok(found) => dirs.extend(found),
+            Err(e) => log::info!("discovery ea: {} passed over: {e}", root.display()),
+        }
     }
     dirs.extend(programs.iter().filter_map(|p| p.folder.clone()));
     dirs.sort_by_key(|d| folder_key(d));
@@ -30,7 +34,14 @@ pub fn games(drives: &[PathBuf], programs: &[Program]) -> Result<Vec<Game>> {
 
     let mut out = Vec::new();
     for dir in dirs {
-        let Some(text) = read::text(&dir.join(r"__Installer\installerdata.xml"))? else { continue };
+        let text = match read::text(&dir.join(r"__Installer\installerdata.xml")) {
+            Ok(Some(text)) => text,
+            Ok(None) => continue,
+            Err(e) => {
+                log::warn!("discovery ea: {} skipped: {e}", dir.display());
+                continue;
+            }
+        };
         let Some(content_id) = xml::between(&text, "<contentID>", "</contentID>").map(str::trim) else {
             log::warn!("discovery ea: {} skipped, installerdata.xml has no contentID", dir.display());
             continue;
@@ -49,7 +60,7 @@ pub fn games(drives: &[PathBuf], programs: &[Program]) -> Result<Vec<Game>> {
             Launch::Uri(format!("origin2://game/launch?offerIds={content_id}")),
         ));
     }
-    Ok(out)
+    out
 }
 
 pub fn remembered() -> bool {

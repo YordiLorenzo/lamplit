@@ -100,7 +100,7 @@ impl Store {
         match self {
             Store::Steam => steam::games(),
             Store::Epic => epic::games(),
-            Store::Ea => ea::games(&installed.drives, &installed.programs),
+            Store::Ea => Ok(ea::games(&installed.drives, &installed.programs)),
             Store::Ubisoft => ubisoft::games(),
             Store::Rockstar => rockstar::games(&installed.game_exes),
             Store::Battlenet => battlenet::games(),
