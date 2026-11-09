@@ -4,6 +4,50 @@ Every release of Lamplit, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.4.0 - Unreleased
+
+### Highlights
+
+- Updates come to Lamplit itself, and install once you're done playing.
+- Start when I sign in is a switch now, with no admin prompt.
+- Restore Lamplit's changes puts back everything Lamplit changed on this PC.
+
+### Added
+
+- Settings > Check for updates: Lamplit asks GitHub for a newer version, downloads it when you choose to, checks its
+  signature, and installs it once no game runs and Lamplit is in front. Lamplit starts again by itself afterwards. With
+  the switch on (the default), it also checks by itself, at most once a day after start; nothing downloads without
+  you. After an update, a short "What's new" shows the three changes that matter.
+- Settings > System > Start when I sign in, as a switch. Lamplit registers and removes its own sign-in task, without
+  an admin prompt. The switch shows what Task Scheduler really has, so a task removed by hand shows as off. Repairing
+  Steam's background service is a step of its own, which still asks Windows once. On a PC set up with 0.3 or earlier,
+  switching it off may ask for admin rights one time.
+- Settings > System > Restore Lamplit's changes, held to confirm: puts back what quiet mode changed, Steam's Guide
+  button setting and DevTools port, and removes the sign-in task, and turns off the switches that would make the
+  changes again. Each step says how it went, and one that has to wait (Steam or Ubisoft Connect open) says what to
+  do. Uninstalling Lamplit runs the same restore first.
+- Settings > System > Save a report: one plain-text file in Downloads with Lamplit's version, Windows, the screen,
+  the controllers, the stores and the last warnings in the log, for an issue. It shows the whole file before saving,
+  and leaves out folders, your account name, game names and device names. The bug report form asks for it.
+- Exit to Windows in the power menu, held to confirm like Restart and Shut down.
+- Settings > Sound > Interface sounds: Off, Quiet or Normal. The dock follows the same choice.
+- Two hints for the first minute: the button that opens a game's menu, and how to come back from a game. Each goes
+  once you've done it, or after it has shown on three starts.
+
+### Fixed
+
+- Epic's new launcher (in preview since 2026-10-14): its games show up and start, and Lamplit waits for its sign-in,
+  as with the old launcher. Not yet checked against a real install of the new launcher.
+- Valve's new Steam Controller moves around Lamplit, over USB, Bluetooth and its receiver, next to Steam and without
+  changing the controller's mode. Steam Input's own copy of a controller is still left out. Not yet tested with the
+  controller itself.
+- When a store's list of games can't be read for a moment (a file the store app is writing, a locked database), its
+  games stay in the row instead of disappearing until the next scan.
+- Lamplit remembers the TV or soundbar to put the sound back on after a restart, not only while it runs.
+- A damaged settings file is kept as `.damaged` and the last good copy is used, so favourites and hidden games aren't
+  lost. Every save keeps the previous good copy as `.bak`.
+- After Change art, the screen's colours follow the new art at once.
+
 ## 0.3.0 - 2026-10-30
 
 ### Added
