@@ -145,9 +145,23 @@ fn flag_file() -> Option<PathBuf> {
 pub fn open_from_next_start(open: bool, save: impl FnOnce() -> Result<()>) -> Result<()> {
     if open {
         resume_changes()?;
+        keep_players_flag()?;
     }
     set_flag(open)?;
     save()
+}
+
+/// A flag that is already there when the player turns the switch on is the player's own: recorded as the original,
+/// a restore leaves it in place instead of waiting on it as a change of 0.3's that it can't tell apart.
+fn keep_players_flag() -> Result<()> {
+    let Some(flag) = flag_file() else { return Ok(()) };
+    let Some(before) = read_flag(&flag)? else { return Ok(()) };
+    let mut saved = saved()?;
+    if let std::collections::btree_map::Entry::Vacant(entry) = saved.flags.entry(flag) {
+        entry.insert(Some(before));
+        data::save(RECORD_FILE, &saved)?;
+    }
+    Ok(())
 }
 
 /// Puts the flag file in Steam's folder (`open`) or takes it away.

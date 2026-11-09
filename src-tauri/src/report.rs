@@ -21,8 +21,10 @@ pub fn preview(app: &AppHandle) -> Result<String> {
     let username = win::report::username()?;
     let accessories = accessories::state(app);
     let sound = audio::state();
-    let redactor = Redactor::new(&username, &games, &accessories, sound.as_ref().ok())?;
-    let log = match std::fs::read_to_string(data::data_dir().join("lamplit.log")) {
+    let log = std::fs::read_to_string(data::data_dir().join("lamplit.log"));
+    let past = log.as_deref().map(logged_names).unwrap_or_default();
+    let redactor = Redactor::new(&username, &games, &past, &accessories, sound.as_ref().ok())?;
+    let log = match log {
         Ok(log) => warning_lines(&log, &redactor),
         Err(e) if e.kind() == ErrorKind::NotFound => "lamplit.log is not present.".into(),
         Err(_) => "lamplit.log could not be read.".into(),
@@ -167,6 +169,7 @@ impl Redactor {
     fn new(
         username: &str,
         games: &[Game],
+        past: &[String],
         accessories: &accessories::Accessories,
         sound: Option<&audio::Sound>,
     ) -> Result<Self> {
@@ -175,6 +178,8 @@ impl Redactor {
             // Games outside stores use a path as their id. Keep its prefix, never its folder or exe name.
             names.push((game.name.clone(), redact_paths(&game.id)));
         }
+        // A game that has left the library since can still be named in an older warning.
+        names.extend(past.iter().map(|name| (name.clone(), "<game>".into())));
         for pad in &accessories.controllers {
             names.push((pad.name.clone(), "<device>".into()));
             names.push((pad.id.clone(), "<device>".into()));
@@ -242,11 +247,43 @@ fn warning_lines(log: &str, redactor: &Redactor) -> String {
     }
 }
 
+/// The games each discovery line of the log lists (`discovery steam (12 ms): Name [folder], Other [folder]`, as
+/// `library/discover.rs` writes it), so a game uninstalled since is left out of the report's warnings too.
+fn logged_names(log: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for line in log.lines() {
+        let Some((_, list)) = line.split_once(" discovery ").and_then(|(_, rest)| rest.split_once(": ")) else {
+            continue;
+        };
+        for entry in list.split("], ") {
+            if let Some((name, _)) = entry.rsplit_once(" [") {
+                names.push(name.to_string());
+            }
+        }
+    }
+    names.sort();
+    names.dedup();
+    names
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::devices::{headset, pad};
     use crate::library::Launch;
+
+    #[test]
+    fn games_named_in_discovery_lines_are_known_after_they_are_gone() {
+        let log = "2026-11-01 20:00:00.000 INFO  discovery steam (12 ms): Old Game [D:\\Games\\Old], ELDEN RING [D:\\ER]\n\
+                   2026-11-01 20:00:00.001 INFO  discovery outside stores: Tool [C:\\Tool]\n\
+                   2026-11-01 20:00:00.002 INFO  discovery epic (3 ms): none\n\
+                   2026-11-02 20:00:00.000 WARN  launch of Old Game stopped: the exe is gone\n";
+        assert_eq!(logged_names(log), ["ELDEN RING", "Old Game", "Tool"]);
+        let redact =
+            Redactor::from_names(logged_names(log).into_iter().map(|name| (name, "<game>".to_string())).collect())
+                .unwrap();
+        assert!(warning_lines(log, &redact).ends_with("launch of <game> stopped: the exe is gone"));
+    }
 
     fn redactor() -> Redactor {
         Redactor::from_names(vec![
@@ -357,7 +394,7 @@ mod tests {
         for private in ["Alice", "private-id", "ELDEN RING", r"D:\Games"] {
             assert!(!text.contains(private), "{private}");
         }
-        let redact = Redactor::new("Alice", &details.games, &details.accessories, details.sound.as_ref()).unwrap();
+        let redact = Redactor::new("Alice", &details.games, &[], &details.accessories, details.sound.as_ref()).unwrap();
         assert_eq!(redact.line("Alice's controller and Alice's TV: private-id"), "<device> and <device>: <device>");
     }
 
