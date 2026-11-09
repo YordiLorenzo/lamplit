@@ -1,7 +1,8 @@
-// Windows settings Lamplit manages: quiet mode (no pop-ups), in-game overlays, and the first-time setup that needs
-// admin rights. And sleep, restart and shut down.
+// Windows settings Lamplit manages, their restoration, Steam service repair, and sleep, restart and shut down.
 
 pub mod overlay;
 pub mod power;
 pub mod quiet;
+pub mod restore;
 pub mod setup;
+pub mod startup;

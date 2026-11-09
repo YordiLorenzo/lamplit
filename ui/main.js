@@ -9,7 +9,7 @@ import { mountIcons } from './icons.js';
 import { onPlay, onStep, onSummoned } from './launch.js';
 import { layout, onArt, setGames } from './library.js';
 import { startScreensaver, wake } from './screensaver/index.js';
-import { refreshAccessories, setSetup, setStores } from './settings.js';
+import { refreshAccessories, setRestoreStep, setStores } from './settings.js';
 import { nameSprings } from './springs.js';
 import { steady } from './steady.js';
 import { readStatus, startStatus } from './status.js';
@@ -118,7 +118,7 @@ async function init() {
       readStatus();
     }),
     api.onNotice(toast),
-    api.onSetup(setSetup),
+    api.onRestoreStep(setRestoreStep),
   ]);
   const [list, running, stores, kind, prefs] = await Promise.all([
     api.libraryGames(),

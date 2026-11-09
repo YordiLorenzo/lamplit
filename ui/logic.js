@@ -622,7 +622,7 @@ export function sectionSummary(key, state) {
     return [minutes ? `After ${minutes} min` : 'Off'];
   }
   if (key === 'add') return ['A program or an exe on this PC'];
-  return state.setup?.needed ? ['Setup needed', 'warn'] : [state.display ?? ''];
+  return state.restore.running ? ['Restoring changes…'] : [state.display ?? ''];
 }
 
 /**
@@ -691,6 +691,7 @@ export function sectionRows(key, state) {
     }
     if (!rows.length) rows.push({ label: 'No store apps found', value: '' });
     if (state.stores.get('steam')?.installed) {
+      rows.push({ kind: 'steamguide', label: 'Keep the Guide button for Lamplit', note: 'Keeps Guide Button Focuses Steam off in Steam.', value: onOff(prefs?.steam_guide ?? true) });
       rows.push({ heading: "Steam's DevTools port" });
       rows.push({ kind: 'steamport', label: 'Open it (PS button guard, Steam pop-ups in quiet mode)', value: onOff(prefs?.steam_devtools) });
       rows.push({ label: 'While it is open, any program on this PC can control Steam', value: '' });
@@ -700,9 +701,18 @@ export function sectionRows(key, state) {
     rows.push({ kind: 'savernow', label: 'Show it now', value: '' });
     rows.push({ label: 'Starts while Lamplit is in front and no game runs. Any button ends it.', value: '' });
   } else if (key === 'system') {
-    if (state.setup?.needed) rows.push({ kind: 'setup', label: 'First-time setup (asks Windows once)', value: 'Needed', tone: 'warn' });
+    rows.push({ kind: 'startup', label: 'Start when I sign in', value: state.startup ? onOff(state.startup.enabled) : 'Unknown', note: 'Older installations may ask for admin rights when switched off.' });
+    rows.push({ kind: 'setup', label: "Repair Steam's background service", note: 'Stops Steam asking for admin rights.', value: '' });
     rows.push({ kind: 'onlineart', label: "Find art online (sends game names to Steam's store)", value: onOff(prefs?.online_art) });
     rows.push({ label: 'Display', value: state.display ?? 'Unknown' });
+    rows.push({ kind: 'restore', label: "Restore Lamplit's changes", value: state.restore.running ? 'Restoring…' : '', icon: 'i-restart', hold: 'Hold to restore', note: 'Restores the settings Lamplit changed and turns its automatic changes off.' });
+    if (state.restore.running || state.restore.steps.length || state.restore.error) {
+      rows.push({ heading: state.restore.running ? 'Restoring changes…' : 'Restore report' });
+      for (const step of state.restore.steps) {
+        rows.push({ kind: 'report', id: step.name, label: step.name, note: step.message, value: step.restored ? 'Restored' : 'Needs attention', tone: step.restored ? 'good' : 'warn' });
+      }
+      if (state.restore.error) rows.push({ kind: 'report', id: 'error', label: 'Restore did not finish', note: state.restore.error, value: '', tone: 'warn' });
+    }
   } else if (key === 'hidden') {
     for (const g of hiddenGames(state)) rows.push({ kind: 'unhide', id: g.id, store: g.store, label: g.name, value: 'Show' });
     // The section stays open when its last game is shown again.

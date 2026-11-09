@@ -2,6 +2,7 @@
   "sound_follows": true,
   "touchpad_mouse": false,
   "steam_devtools": false,
+  "steam_guide": true,
   "online_art": true,
   "screensaver_minutes": 5,
   "dock": true

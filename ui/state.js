@@ -178,8 +178,14 @@ export const state = {
   overlays: { nvidia_overlay: false, nvidia_stats: null },
   /** @type {import('./api.js').Quiet | null} */
   quiet: null,
-  /** @type {import('./api.js').Setup | null} */
-  setup: null,
+  /** @type {import('./api.js').Startup | null} */
+  startup: null,
+  restore: {
+    running: false,
+    /** @type {import('./api.js').RestoreStep[]} */
+    steps: [],
+    error: '',
+  },
   /** @type {import('./api.js').Sound | null} */
   sound: null,
   /** @type {import('./api.js').Accessories | null} */

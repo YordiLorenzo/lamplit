@@ -47,7 +47,7 @@ const store = (key, name, installed, account) =>
   like(ipc('stores')[0], { store: key, name, installed, running: false, account: known('account', account) });
 const quiet = (state, active) => like(ipc('quiet'), { state: known('quiet_state', state), active, notes: [] });
 const prefs = (changes) => like(ipc('prefs'), changes);
-const setup = (needed) => like(ipc('setup'), { needed });
+const startup = (enabled) => like(ipc('startup'), { enabled });
 const overlays = (nvidia_overlay, nvidia_stats) => like(ipc('overlays'), { nvidia_overlay, nvidia_stats });
 
 /** A Settings state with nothing loaded yet; tests fill in what they need. */
@@ -55,7 +55,8 @@ const settingsState = (extra = {}) => ({
   sound: null,
   accessories: null,
   quiet: null,
-  setup: null,
+  startup: null,
+  restore: { running: false, steps: [], error: '' },
   display: null,
   overlays: overlays(false, null),
   stores: new Map(),
@@ -545,14 +546,35 @@ describe('Sound and System summaries', () => {
     assert.deepEqual(sectionSummary('sound', settingsState({ sound: muted })), ['TV · muted']);
     assert.deepEqual(sectionSummary('sound', settingsState({ sound: { ...muted, muted: false } })), ['TV · 40%']);
   });
-  test('setup that is needed warns, else the display shows', () => {
-    assert.deepEqual(sectionSummary('system', settingsState({ setup: setup(true), display: '1920 × 1080 at 60 Hz' })), ['Setup needed', 'warn']);
-    assert.deepEqual(sectionSummary('system', settingsState({ setup: setup(false), display: '1920 × 1080 at 60 Hz' })), ['1920 × 1080 at 60 Hz']);
+  test('System shows the display, with no startup nag', () => {
+    for (const enabled of [false, true]) {
+      assert.deepEqual(sectionSummary('system', settingsState({ startup: startup(enabled), display: '1920 × 1080 at 60 Hz' })), ['1920 × 1080 at 60 Hz']);
+    }
   });
-  test('System offers setup only while it is needed, and the art switch always', () => {
-    const kinds = (needed) => sectionRows('system', settingsState({ setup: setup(needed), prefs: prefs({ online_art: true }) })).map((r) => r.kind);
-    assert.deepEqual(kinds(true), ['setup', 'onlineart', undefined]);
-    assert.deepEqual(kinds(false), ['onlineart', undefined]);
+  test('System keeps startup, Steam repair and a held restore available', () => {
+    const rows = sectionRows('system', settingsState({ prefs: prefs({ online_art: true }) }));
+    assert.deepEqual(rows.map((r) => r.kind), ['startup', 'setup', 'onlineart', undefined, 'restore']);
+    assert.equal(rows[0].value, 'Unknown');
+    assert.match(rows[0].note, /Older installations/);
+    assert.equal(rows[1].label, "Repair Steam's background service");
+    assert.equal(rows.at(-1).hold, 'Hold to restore');
+    for (const enabled of [false, true]) {
+      assert.equal(sectionRows('system', settingsState({ startup: startup(enabled) }))[0].value, enabled ? 'On' : 'Off');
+    }
+  });
+  test('restore progress and partial failures stay readable and focusable in System', () => {
+    const restore = { running: true, steps: [ipc('restore-step')], error: '' };
+    assert.deepEqual(sectionSummary('system', settingsState({ restore })), ['Restoring changes…']);
+    const rows = sectionRows('system', settingsState({ restore }));
+    const report = rows.find((r) => r.kind === 'report');
+    assert.equal(report.label, 'Quiet mode');
+    assert.equal(report.note, 'Close Ubisoft Connect, then try again.');
+    assert.equal(report.value, 'Needs attention');
+    assert.equal(focusIndex(rows, rowKey(report)), rows.indexOf(report));
+    restore.running = false;
+    assert.ok(sectionRows('system', settingsState({ restore })).some((r) => r.heading === 'Restore report'));
+    restore.steps[0].restored = true;
+    assert.equal(sectionRows('system', settingsState({ restore })).find((r) => r.kind === 'report').value, 'Restored');
   });
 });
 
@@ -633,6 +655,13 @@ describe('Stores', () => {
     assert.equal(rows.find((r) => r.kind === 'steamport')?.value, 'Off');
     assert.ok(rows.some((r) => r.label?.includes('any program on this PC can control Steam')));
     assert.ok(!port(steam(false)).some((r) => r.kind === 'steamport'));
+  });
+  test('the Steam Guide preference defaults on and follows its saved value', () => {
+    const state = withStores(store('steam', 'Steam', true, 'signed-in'));
+    const guide = (state) => sectionRows('stores', state).find((r) => r.kind === 'steamguide');
+    assert.equal(guide(state).value, 'On');
+    assert.equal(guide({ ...state, prefs: prefs({ steam_guide: false }) }).value, 'Off');
+    assert.equal(guide(withStores()), undefined);
   });
   test('a saved sign-in or an unknown account is not called signed in', () => {
     const remembered = withStores(store('epic', 'Epic Games Launcher', true, 'remembered'));

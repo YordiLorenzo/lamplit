@@ -9,12 +9,13 @@ use crate::devices::pad::{self, Controllers};
 use crate::devices::{accessories, audio};
 use crate::dock;
 use crate::error::{Error, Result};
+use crate::events::{self, Event};
 use crate::launch::{self, Launcher};
 use crate::library::{self, ArtChoice, Game, Library};
 use crate::prefs::{self, Prefs};
 use crate::stores::steam::devtools;
 use crate::stores::{self, Store};
-use crate::system::{overlay, power, quiet, setup};
+use crate::system::{overlay, power, quiet, restore, setup, startup};
 use crate::win;
 use tauri::{AppHandle, Manager, State};
 
@@ -145,16 +146,47 @@ pub async fn quiet_state() -> Result<quiet::Report> {
 
 #[tauri::command]
 pub async fn quiet_set(on: bool) -> Result<quiet::Report> {
-    blocking(move || quiet::set(on)).await
+    blocking(move || {
+        let _changes = restore::CHANGES.lock();
+        quiet::set(on)
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn setup_state() -> Result<setup::Status> {
-    blocking(setup::status).await
+pub async fn startup_state() -> Result<startup::Status> {
+    blocking(startup::status).await?
 }
 
-/// Asks Windows for admin rights once and runs setup in a second lamplit.exe, and returns once the prompt is
-/// answered; a `setup` event follows when that process ends.
+#[tauri::command]
+pub async fn startup_set(on: bool) -> Result<startup::Status> {
+    blocking(move || {
+        let _changes = restore::CHANGES.lock();
+        startup::set(on)
+    })
+    .await?
+}
+
+#[tauri::command]
+pub async fn restore_changes(app: AppHandle) -> Result<Vec<restore::Step>> {
+    blocking(move || {
+        restore::run(
+            true,
+            || {
+                let opened_port = prefs::get(&app).steam_devtools;
+                prefs::change(&app, |p| {
+                    p.steam_devtools = false;
+                    p.steam_guide = false;
+                })?;
+                Ok(opened_port)
+            },
+            |step| events::emit(&app, Event::RestoreStep(step.clone())),
+        )
+    })
+    .await
+}
+
+/// Repairs Steam's service through Windows' admin prompt; a notice follows when that process ends.
 #[tauri::command]
 pub async fn setup_start(app: AppHandle) -> Result<()> {
     blocking(move || setup::start_elevated(app)).await?
@@ -240,7 +272,21 @@ pub async fn prefs_set_touchpad_mouse(app: AppHandle, on: bool) -> Result<Prefs>
 #[tauri::command]
 pub async fn prefs_set_steam_devtools(app: AppHandle, on: bool) -> Result<Prefs> {
     blocking(move || {
+        let _changes = restore::CHANGES.lock();
         devtools::open_from_next_start(on, || prefs::change(&app, |p| p.steam_devtools = on))?;
+        Ok(prefs::get(&app))
+    })
+    .await?
+}
+
+#[tauri::command]
+pub async fn prefs_set_steam_guide(app: AppHandle, on: bool) -> Result<Prefs> {
+    blocking(move || {
+        let _changes = restore::CHANGES.lock();
+        if on {
+            devtools::resume_changes()?;
+        }
+        prefs::change(&app, |p| p.steam_guide = on)?;
         Ok(prefs::get(&app))
     })
     .await?

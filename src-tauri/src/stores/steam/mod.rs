@@ -268,17 +268,20 @@ pub fn minimize_main_window() {
 }
 
 /// Watches for Big Picture and closes it: Lamplit is the big-screen interface.
-pub fn guard_big_picture() {
+pub fn guard_big_picture(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         loop {
             std::thread::sleep(Duration::from_secs(2));
+            let _changes = crate::system::restore::CHANGES.lock();
+            if !crate::prefs::get(&app).steam_guide {
+                continue;
+            }
             if !windows_titled("Steam Big Picture Mode").is_empty() {
                 log::info!("steam: Big Picture opened; closing it");
                 let close = Launch::Uri("steam://close/bigpicture".into());
                 if let Err(e) = crate::launch::shell_open(&close, None) {
                     log::warn!("steam: couldn't close Big Picture: {e}");
                 }
-                std::thread::sleep(Duration::from_secs(3));
             }
         }
     });
