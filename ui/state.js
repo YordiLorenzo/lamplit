@@ -77,6 +77,15 @@ export const els = {
   captureImage: /** @type {HTMLImageElement} */ ($('captureImage')),
   captureCaption: $('captureCaption'),
   captureError: $('captureError'),
+  about: $('about'),
+  aboutStatus: $('aboutStatus'),
+  aboutText: $('aboutText'),
+  aboutDescription: $('aboutDescription'),
+  aboutMeta: $('aboutMeta'),
+  aboutGenres: $('aboutGenres'),
+  aboutScreens: $('aboutScreens'),
+  screenshot: $('screenshot'),
+  screenshotImage: /** @type {HTMLImageElement} */ ($('screenshotImage')),
   add: $('add'),
   addTitle: $('addTitle'),
   addPath: $('addPath'),
@@ -143,6 +152,14 @@ export const state = {
     open: false,
     fullscreen: false,
     idx: 0,
+  },
+  /** About (details.js), and the screenshot in focus or shown full screen. */
+  about: {
+    open: false,
+    /** @type {import('./api.js').GameDetails | null} */
+    data: null,
+    idx: 0,
+    fullscreen: false,
   },
   /**
    * Change art (art.js), over a game's menu. `found` is null while Steam's store is searched; `focus` is the data-id

@@ -4,6 +4,7 @@
 
 mod art;
 pub mod captures;
+mod details;
 mod discover;
 mod game;
 mod manual;
@@ -11,6 +12,7 @@ mod name_match;
 mod user_data;
 
 pub use art::{Candidate, candidates as art_candidates};
+pub use details::{Details, get as game_details};
 pub use game::{Art, ArtChoice, Game, Launch};
 pub use manual::{Folder, Program, browse};
 pub use user_data::UserData;

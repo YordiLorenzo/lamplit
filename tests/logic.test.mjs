@@ -207,13 +207,13 @@ describe('favourites and hidden games in the row', () => {
 
 describe('detailChoices', () => {
   const labels = (g, running = null) => detailChoices(g, running).map((c) => c.label);
-  test('Play first, then favourites, art and hiding, each with its icon', () => {
-    assert.deepEqual(labels(game('a', 'A')), ['Play', 'Favourite', 'Change art', 'Hide this game']);
-    assert.deepEqual(detailChoices(game('a', 'A'), null).map((c) => c.icon), ['i-play', 'i-star', 'i-photo', 'i-eye-off']);
+  test('Play first, then About, favourites, art and hiding, each with its icon', () => {
+    assert.deepEqual(labels(game('a', 'A')), ['Play', 'About this game', 'Favourite', 'Change art', 'Hide this game']);
+    assert.deepEqual(detailChoices(game('a', 'A'), null).map((c) => c.icon), ['i-play', 'i-info', 'i-star', 'i-photo', 'i-eye-off']);
   });
   test('Favourite is one row that switches: its star is filled while the game is one', () => {
-    assert.deepEqual(labels(game('a', 'A', { favourite: true })), ['Play', 'Favourite', 'Change art', 'Hide this game']);
-    assert.equal(detailChoices(game('a', 'A', { favourite: true }), null)[1].icon, 'i-star-on');
+    assert.deepEqual(labels(game('a', 'A', { favourite: true })), ['Play', 'About this game', 'Favourite', 'Change art', 'Hide this game']);
+    assert.equal(detailChoices(game('a', 'A', { favourite: true }), null)[2].icon, 'i-star-on');
   });
   test('the running game goes back to the game', () => assert.equal(labels(game('a', 'A'), 'a')[0], 'Back to game'));
   test('a game added by hand can be removed: held, and it says the files stay', () => {

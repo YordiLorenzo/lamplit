@@ -44,6 +44,12 @@ export function showHints() {
     html = state.captures.fullscreen
       ? '<span>←→ Browse</span>' + b('back', 'Back')
       : b('ok', 'View') + b('back', 'Back');
+  } else if (state.mode === 'details' && state.about.open) {
+    if (state.about.data?.screenshots.length) {
+      html = b('adjust', 'Screenshots');
+      if (!state.about.fullscreen) html += b('ok', 'Full screen');
+    }
+    html += b('back', state.about.fullscreen ? 'Close' : 'Back');
   } else if (state.mode === 'details' && state.art.open) {
     html = state.art.editing
       ? b('ok', 'Select') + b('square', 'Delete') + b('triangle', 'Space') + b('back', 'Cancel')

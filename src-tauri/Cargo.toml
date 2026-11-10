@@ -27,6 +27,8 @@ parking_lot = "0.13"
 log = "0.4"
 # Report redaction: paths, device identifiers and case-insensitive names in log lines. Already used by Tauri.
 regex = "1"
+# Steam descriptions contain HTML and named entities. Reuse Tauri's HTML tokenizer to read them as text.
+html5ever = "0.39"
 # The app's log. Its fern re-export also logs the supervisor and --setup, which run without Tauri.
 tauri-plugin-log = "2"
 # Verifies signed update downloads before handing them to the Windows installer.

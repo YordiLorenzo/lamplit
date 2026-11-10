@@ -6,7 +6,7 @@ This page lists everything Lamplit changes outside its own data folder (`%LOCALA
 does to other apps, and everything it sends over the network. How to report a security problem is in
 [SECURITY.md](../SECURITY.md).
 
-## Network: game art and app updates
+## Network: game art, details and app updates
 
 Lamplit goes online for cover, background and logo art for your games. It does so only while
 **Settings > System > Find art online** is on. That setting is on until you switch it off, so the first scan after
@@ -18,8 +18,19 @@ Steam already keeps on your PC (its library cache) is used without going online.
 | `store.steampowered.com` (store search) | The name of each game that isn't from Steam and has no art yet, and the country of your Windows region. A game outside any store is named after its folder. A name that matched nothing is asked about again after 7 days. In **Change art**, the game's name, or the words you type instead. |
 | `api.steampowered.com` (`IStoreBrowseService/GetItems`) | The Steam app ids whose art is missing, or that Change art found, and the country of your Windows region. |
 | `shared.steamstatic.com` | Requests for the art files themselves. |
+| `store.steampowered.com` (`api/appdetails`) | The Steam app id used for a game's About page or trailer, with English requested. No game folders or account details are sent. |
+| Steam's image CDNs (`*.steamstatic.com`, or legacy `steamcdn-a.akamaihd.net`) | Requests for the first eight screenshots and a playable trailer's poster. |
 
 Art requests carry the user agent `lamplit/<version>`.
+
+Details and their images also require **Find art online**. Switching it off stops further requests and hides details,
+including cached details. Requests already sent may finish. Details are cached for seven days in
+`details\<appid>.json`; screenshots and posters stay in `art\<appid>\screens\` and the page loads them from disk through
+the same asset scope as cover art. A known Steam match remains available for details when the player chooses no cover
+art. Steam data is reduced to plain-text description, developers, publishers, release date, genres, screenshots and
+an H.264 DASH trailer manifest URL. The trailer player receives only HTTPS manifest URLs from
+`video.akamai.steamstatic.com` or `video.fastly.steamstatic.com`. HLS and AV1 links are not substituted when the selected
+movie has no H.264 DASH manifest.
 
 ### App updates
 

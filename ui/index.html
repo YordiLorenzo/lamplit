@@ -57,7 +57,7 @@
   <main id="row"><div id="track"></div><div id="noMatch" hidden>No games match</div></main>
 
   <!-- A game's menu (library.js, lift.js): the focused cover lifted over the blurred screen, and one plate beside it
-       that grows out of the card's edge, with faces for the menu, Change art and Your captures. -->
+       that grows out of the card's edge, with faces for the menu, About, Change art and Your captures. -->
   <div id="lift">
     <canvas id="veil" class="veil"></canvas>
     <div id="card">
@@ -85,12 +85,29 @@
         <div id="captureGrid"></div>
         <p id="captureMeta"></p>
       </section>
+      <section id="about" class="sheet-face" aria-labelledby="aboutTitle">
+        <h2 id="aboutTitle">About this game</h2>
+        <p id="aboutStatus" role="status"></p>
+        <div id="aboutText">
+          <p id="aboutDescription"></p>
+          <p id="aboutMeta"></p>
+          <div id="aboutGenres"></div>
+        </div>
+        <div id="aboutScreens" aria-label="Screenshots"></div>
+      </section>
     </aside>
   </div>
   <div id="captureViewer" role="dialog" aria-label="Capture" aria-modal="true" hidden>
     <img id="captureImage" alt="" draggable="false">
     <p id="captureError" hidden>This capture could not be opened.</p>
     <p id="captureCaption"></p>
+  </div>
+
+  <div id="screenshot" role="dialog" aria-modal="true" aria-label="Game screenshot" hidden>
+    <img id="screenshotImage" alt="">
+    <button id="screenshotPrevious" type="button" aria-label="Previous screenshot">‹</button>
+    <button id="screenshotNext" type="button" aria-label="Next screenshot">›</button>
+    <button id="screenshotClose" type="button" aria-label="Close screenshot">×</button>
   </div>
 
   <!-- Settings, Add a game and Save a report share one plate; its size follows the face it shows. -->

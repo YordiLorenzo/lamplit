@@ -11,7 +11,7 @@ use crate::dock;
 use crate::error::{Error, Result};
 use crate::events::{self, Event};
 use crate::launch::{self, Launcher};
-use crate::library::{self, ArtChoice, Game, Library};
+use crate::library::{self, ArtChoice, Details, Game, Library};
 use crate::prefs::{self, Prefs};
 use crate::report;
 use crate::stores::steam::devtools;
@@ -62,6 +62,12 @@ pub async fn library_set_hidden(app: AppHandle, id: String, on: bool) -> Result<
 #[tauri::command]
 pub async fn library_art_search(app: AppHandle, query: String) -> Result<Vec<library::Candidate>> {
     blocking(move || library::art_candidates(&app, &query)).await?
+}
+
+/// Steam's details and local screenshots, only while Find art online is on.
+#[tauri::command]
+pub async fn library_details(app: AppHandle, id: String) -> Result<Option<Details>> {
+    blocking(move || library::game_details(&app, &id)).await?
 }
 
 /// The art the player chose for a game; None for Lamplit's own match. Returns every game, with the change.

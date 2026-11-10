@@ -2,7 +2,7 @@
 // A game's menu lifts its cover toward the player: the cover grows out of the row and rises to the middle of the
 // screen on a spring, its shadow deepens, a band of light sweeps across it, and it turns a little toward the menu.
 // The menu is one plate that grows out of the card's edge on the side with room, from a sliver to its full size, and
-// Change art and Your captures are faces of the same plate, which grows to fit each (morph.js). The rest of
+// About, Change art and Your captures are faces of the same plate, which grows to fit each (morph.js). The rest of
 // the screen blurs and dims. Lowering plays it back: the plate goes back into the card's edge, the cover settles into
 // its place in the row, and the row shows its own cover again once it has landed. Only transform, clip and opacity
 // change while it moves, so it stays on the compositor at 60 fps on a 4K screen.
@@ -15,7 +15,7 @@ import { paintVeil, releaseStage } from './veil.js';
 
 /** The cover rises on the lift spring (style.css --lift), 1% past its place and back, and lowers on the close one. */
 const CLOSE = SPRINGS.close;
-const faces = { menu: els.details, art: els.artPick, captures: els.capturesFace };
+const faces = { menu: els.details, art: els.artPick, about: els.about, captures: els.capturesFace };
 
 /** @typedef {{ image: string, art: boolean, name: string }} Look  a cover's art (library.js coverLook) */
 
@@ -167,9 +167,9 @@ for (const face of Object.values(faces)) resized.observe(face);
 /**
  * Which face of the plate beside the card shows. Each face is laid out where it shows, so
  * with the menu up only the plate's clip moves, from the face that goes to the one that comes (morph.js `still`):
- * into Change art on the tap spring, back to the menu on the close one. Meanwhile the plate covers both faces, and
+ * into another face on the tap spring, back to the menu on the close one. The plate covers both faces, and
  * takes the size of the one that came once its clip is there.
- * @param {'menu' | 'art' | 'captures'} which
+ * @param {'menu' | 'art' | 'about' | 'captures'} which
  */
 export function showSheet(which) {
   const [from, to] = [fitted(), faces[which]];

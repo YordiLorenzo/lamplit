@@ -53,6 +53,7 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
   const replies = {
     library_games: ${JSON.stringify(games)},
     library_captures: [],
+    library_details: () => window.__prefs.online_art ? ${JSON.stringify(ipc('details'))} : null,
     launch_running: ${JSON.stringify(running)},
     stores_status: [],
     controller_kind: ${JSON.stringify(padKind)},

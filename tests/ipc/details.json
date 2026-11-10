@@ -1,0 +1,18 @@
+{
+  "appid": 1245620,
+  "description": "Rise, Tarnished, and be guided by grace to brandish the power of the Elden Ring.",
+  "developers": ["FromSoftware, Inc."],
+  "publishers": ["Bandai Namco Entertainment Inc."],
+  "released": "24 Feb, 2022",
+  "genres": ["Action", "RPG"],
+  "screenshots": [
+    {
+      "thumb": "http://asset.localhost/C%3A%5Clamplit%5Cart%5C1245620%5Cscreens%5Cthumb.jpg",
+      "full": "http://asset.localhost/C%3A%5Clamplit%5Cart%5C1245620%5Cscreens%5Cfull.jpg"
+    }
+  ],
+  "trailer": {
+    "url": "https://video.fastly.steamstatic.com/store_trailers/1245620/dash_h264.mpd",
+    "poster": "http://asset.localhost/C%3A%5Clamplit%5Cart%5C1245620%5Cscreens%5Cposter.jpg"
+  }
+}
