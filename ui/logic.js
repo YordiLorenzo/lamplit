@@ -531,6 +531,25 @@ export function stepInterfaceSounds(level, dir) {
   return levels[Math.max(0, Math.min(levels.length - 1, levels.indexOf(level) + dir))];
 }
 
+/** @type {Record<import('./api.js').Trailers, string>} */
+const TRAILER_LEVELS = { off: 'Off', muted: 'Muted', with_sound: 'With sound' };
+
+/** @param {import('./api.js').Trailers} level @param {number} dir */
+export function stepTrailers(level, dir) {
+  const levels = /** @type {import('./api.js').Trailers[]} */ (Object.keys(TRAILER_LEVELS));
+  return levels[Math.max(0, Math.min(levels.length - 1, levels.indexOf(level) + dir))];
+}
+
+/**
+ * A trailer needs an idle home screen in front, with the player's permission to fetch it.
+ * @param {{ mode: string, running: string | null, prefs: import('./api.js').Prefs | null }} state
+ * @param {{ front: boolean, reduced: boolean, saver: boolean, dock: boolean }} view
+ */
+export function trailerAllowed(state, view) {
+  return state.mode === 'browse' && !state.running && !!state.prefs?.online_art && state.prefs.trailers !== 'off'
+    && view.front && !view.reduced && !view.saver && !view.dock;
+}
+
 /** The screensaver's settings until Rust's prefs are in, as prefs.rs has them. */
 export const SAVER_DEFAULT = /** @type {const} */ ({ minutes: 5 });
 /** The delays Settings > Screensaver offers, in minutes; 0 is never. */
@@ -660,7 +679,8 @@ export function sectionRows(key, state) {
   const { sound, accessories: acc, prefs } = state;
   if (key === 'sound') {
     const interfaceSounds = { kind: 'interfacesounds', adjust: true, label: 'Interface sounds', value: SOUND_LEVELS[prefs?.interface_sounds ?? 'normal'] };
-    if (!sound) return [interfaceSounds, { label: 'Sound devices', value: 'Not available' }];
+    const trailers = { kind: 'trailers', adjust: true, label: 'Trailers', value: TRAILER_LEVELS[prefs?.trailers ?? 'muted'] };
+    if (!sound) return [interfaceSounds, trailers, { label: 'Sound devices', value: 'Not available' }];
     rows.push({ heading: 'Output' });
     for (const d of sound.outputs) rows.push({ kind: 'device', id: d.id, label: d.name, value: d.default ? 'In use' : '', tone: 'good' });
     rows.push({ kind: 'volume', adjust: true, label: 'Volume', value: sound.muted ? 'Muted' : `${sound.volume ?? '?'}%` });
@@ -670,7 +690,7 @@ export function sectionRows(key, state) {
     rows.push({ kind: 'micmute', label: 'Mute microphone', value: onOff(sound.mic_muted) });
     rows.push({ heading: 'Automatic' });
     rows.push({ kind: 'follows', label: 'Sound follows the headset and controller headphones', value: onOff(prefs?.sound_follows) });
-    rows.push(interfaceSounds);
+    rows.push(interfaceSounds, trailers);
   } else if (key === 'headset') {
     const h = acc?.headset;
     rows.push({ heading: 'Logitech PRO X 2 LIGHTSPEED' });

@@ -41,6 +41,7 @@ ui/
   state.js         the page's state and its elements
   input.js         controller, keyboard and mouse as one set of actions
   library.js       the cover row, the focused game and its menu
+  trailer.js       the focused game's trailer, after 2.5 s without input on the home screen
   lift.js          a game's menu lifting its cover over the blurred screen, with one plate beside it that grows out
                    of the card's edge and holds the menu and Change art as its two faces
   veil.js          the game menu's veil: what was behind it, drawn once small, blurred and dimmed, and scaled up,
@@ -121,7 +122,8 @@ outside any store; 0.1.0's `played.json` is still read for the last-played times
 through), plus the logs. Old `setup.json` files no longer determine startup state. WebView2 keeps its profile in
 `%LOCALAPPDATA%\io.github.yordilorenzo.lamplit`.
 
-`prefs.json` also keeps the interface sound level (`off`, `quiet` or `normal`, the default) and each introductory
+`prefs.json` also keeps the trailer level (`off`, `muted`, the default, or `with_sound`),
+the interface sound level (`off`, `quiet` or `normal`, the default) and each introductory
 hint's shown-start count and completion. A hint counts only when its screen is reached, at most once per app
 process, and stops after three starts or its action. Opening a game's menu completes its hint; a `summoned` event
 with a running game or the dock opening completes the return hint. A WebView profile reset leaves this state intact.
@@ -421,6 +423,7 @@ message is written for the player, and the page shows it.
 | --- | --- | --- |
 | `library_games` | | Every game, or `null` until the first scan has finished |
 | `library_rescan` | | Nothing; scans unless the last scan was under 30 seconds ago |
+| `library_details` | `id` | Game details, screenshots and an optional trailer, or `null` without a known Steam app id or with Find art online off |
 | `library_set_favourite`, `library_set_hidden` | `id`, `on` | Every game, after the change |
 | `launch_start` | `id` | Nothing; `launch-step` and `play` events follow |
 | `launch_anyway` | | Nothing; the launch goes ahead without a confirmed sign-in |
@@ -454,6 +457,7 @@ message is written for the player, and the page shows it.
 | `prefs_set_sound_follows`, `prefs_set_touchpad_mouse`, `prefs_set_steam_devtools`, `prefs_set_steam_guide`, `prefs_set_online_art`, `prefs_set_dock` | `on` | The prefs after the change |
 | `prefs_set_screensaver_minutes` | `minutes` (0 for never) | The prefs after the change |
 | `prefs_set_interface_sounds` | `level`: `off`, `quiet` or `normal` | The prefs after the change; both pages hear the new level |
+| `prefs_set_trailers` | `level`: `off`, `muted` or `with_sound` | The prefs after the change; Muted is the default |
 | `prefs_hint_shown` | `name`: `game_menu` or `return_home` | Whether to show it; counts this start once |
 | `prefs_hint_done` | `name`: `game_menu` or `return_home` | Nothing; the hint stays dismissed |
 | `power_sleep` | | Nothing, once the PC has woken up again |
@@ -476,6 +480,23 @@ finished its first scan so game names can be removed. Only selected fields enter
 do not. Log redaction replaces paths, account and library game names, and device identifiers. Save writes the exact
 preview the player saw, using `SHGetKnownFolderPath(FOLDERID_Downloads)` and `create_new`; another save in the same
 minute gets a numbered suffix. These commands send no network requests and emit no new events.
+
+## Home-screen trailers
+
+`ui/trailer.js` asks `library_details(id)` after the same cover has rested for 2.5 seconds. It uses that command's
+nullable `trailer: { url, poster }`. The poster is a local asset URL and the video streams directly from Steam.
+The video sits over the hero art and below its shade,
+loops, and fades in over 600 ms only after `playing`. Muted is the default; With sound uses 40% volume.
+
+Keyboard, controller and pointer input stop it. The controller also checks the focused game and screen state every
+100 ms: no trailer while a panel, starting screen, screensaver or dock is open, a game runs, Reduce Motion is on,
+the window is behind another one, or Find art online or Trailers is off. Stops mute and pause immediately, fade out
+over 200 ms, then remove the source and release the decoder. An old details answer cannot restart playback after
+input. A failed video or four seconds without `playing` is dropped; a later buffering stall gets the same limit.
+No retry happens until another input or change of focus or screen state.
+
+`prefs_set_trailers` parses the three choices and saves on the blocking pool, like the other preference commands.
+It adds no event. Only the home page plays trailers; the dock never creates a video.
 
 ## Events
 

@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { ipc, known, like, values } from './fixtures.mjs';
 import { dockTests } from './dock.mjs';
 import { probeTests } from './probe.mjs';
+import { trailerTests } from './trailer.mjs';
 import { assetOrigin, commands, cspHeader, emit, idle, open as openPage, pageOrigin, serveFile, settled, until } from './page.mjs';
 import { SCENES } from '../ui/screensaver/scenes.js';
 import { SPRINGS } from '../ui/springs.js';
@@ -4881,6 +4882,8 @@ for (const dismiss of ['ok', 'back']) {
   check('a fresh install or version without highlights shows no card', await page.evaluate(() => document.getElementById('news').hidden));
   await close(page);
 }
+
+await trailerTests({ browser, open, close, game, check, shots, holdClock });
 
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));

@@ -6,7 +6,7 @@ This page lists everything Lamplit changes outside its own data folder (`%LOCALA
 does to other apps, and everything it sends over the network. How to report a security problem is in
 [SECURITY.md](../SECURITY.md).
 
-## Network: game art and app updates
+## Network: game art, trailers and app updates
 
 Lamplit goes online for cover, background and logo art for your games. It does so only while
 **Settings > System > Find art online** is on. That setting is on until you switch it off, so the first scan after
@@ -20,6 +20,20 @@ Steam already keeps on your PC (its library cache) is used without going online.
 | `shared.steamstatic.com` | Requests for the art files themselves. |
 
 Art requests carry the user agent `lamplit/<version>`.
+
+### Trailers
+
+While **Settings > Sound > Trailers** is not **Off** and **Find art online** is on, resting on a cover for 2.5 seconds
+can request that game's details and stream its trailer from Steam's video servers. The trailer setting defaults to
+**Muted**. **With sound** uses 40% volume. A poster is loaded from the local art folder through the asset protocol.
+The details request sends the game's Steam app id to `store.steampowered.com`.
+
+The page's media policy permits only itself, `video.akamai.steamstatic.com` and `video.fastly.steamstatic.com`.
+These servers receive your IP address, the requested trailer URL and WebView2's user agent. Lamplit adds no account
+or device identifiers. The trailer is streamed by WebView2 rather than saved in Lamplit's art folder.
+Input pauses and mutes the video; its source is removed after a 200 ms fade to stop the download. Playback also ends
+when another screen opens, a game runs, or Lamplit leaves the foreground. Reduce Motion disables trailers.
+The trailer sound preference stays in `prefs.json` and is not sent online.
 
 ### App updates
 
