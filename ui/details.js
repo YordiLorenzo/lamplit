@@ -29,7 +29,7 @@ export async function openAbout() {
   if (!online) return;
   try {
     const data = await libraryDetails(id);
-    if (asked !== requests || !state.about.open || state.lifted !== id) return;
+    if (asked !== requests || !state.about.open) return;
     state.about.data = data;
     els.aboutStatus.textContent = data ? '' : 'Lamplit has no details for this game.';
     if (data) {
@@ -47,7 +47,7 @@ export async function openAbout() {
     }
     focusScreenshot();
   } catch (error) {
-    if (asked !== requests || !state.about.open || state.lifted !== id) return;
+    if (asked !== requests || !state.about.open) return;
     els.aboutStatus.textContent = error.kind === 'player' ? error.message : 'Details could not be loaded. Try again in a moment.';
   }
 }
@@ -73,10 +73,7 @@ export function actAbout(action) {
     if (about.fullscreen) {
       about.fullscreen = false;
       focusScreenshot();
-    } else {
-      requests++;
-      backToMenu();
-    }
+    } else backToMenu();
     return;
   }
   const count = about.data?.screenshots.length ?? 0;

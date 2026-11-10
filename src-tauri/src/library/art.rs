@@ -340,7 +340,7 @@ fn offline() -> Error {
 }
 
 /// The error the player reads when a request of Change art failed.
-fn unreached(store: &mut SteamStore, what: &str, e: &ureq::Error) -> Error {
+pub(super) fn unreached(store: &mut SteamStore, what: &str, e: &ureq::Error) -> Error {
     store.failed(what, e);
     Error::Player("Steam's store didn't answer. Try again in a moment.".into())
 }

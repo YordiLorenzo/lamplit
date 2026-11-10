@@ -2,7 +2,7 @@
 // asset URLs after downloading them under art, whose scope already lets the page read them.
 
 use super::Library;
-use super::art::{SteamStore, details_appid};
+use super::art::{SteamStore, details_appid, unreached};
 use crate::data;
 use crate::error::{Error, Result};
 use crate::files::{nonempty, write_atomic};
@@ -79,7 +79,7 @@ fn fetch(app: &AppHandle, appid: u32, store: &mut SteamStore) -> Result<Option<D
         if !store.online() {
             return Ok(None);
         }
-        let body = store.details(appid).map_err(|e| failed(store, "appdetails", &e))?;
+        let body = store.details(appid).map_err(|e| unreached(store, "appdetails", &e))?;
         if !store.online() {
             return Ok(None);
         }
@@ -109,11 +109,6 @@ fn fetch(app: &AppHandle, appid: u32, store: &mut SteamStore) -> Result<Option<D
 
 fn fresh(fetched: u64, now: u64) -> bool {
     now.saturating_sub(fetched) < FRESH_SECS
-}
-
-fn failed(store: &mut SteamStore, what: &str, error: &ureq::Error) -> Error {
-    store.failed(what, error);
-    Error::Player("Steam's store didn't answer. Try again in a moment.".into())
 }
 
 fn image(store: &mut SteamStore, window: &WebviewWindow, dir: &Path, url: &str) -> Result<Option<String>> {

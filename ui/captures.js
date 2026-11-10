@@ -86,9 +86,8 @@ export function actCaptures(action) {
     render();
   } else if (action === 'left' || action === 'right' || action === 'up' || action === 'down') {
     if (captures.fullscreen && (action === 'up' || action === 'down')) return;
-    const next = captures.fullscreen
-      ? Math.max(0, Math.min(captures.items.length - 1, captures.idx + (action === 'left' ? -1 : 1)))
-      : captureStep(captures.idx, captures.items.length, 3, action);
+    // Full screen is one row of every capture.
+    const next = captureStep(captures.idx, captures.items.length, captures.fullscreen ? captures.items.length : 3, action);
     if (next === captures.idx) return sfx.edge();
     captures.idx = next;
     sfx.move();
