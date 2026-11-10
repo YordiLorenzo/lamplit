@@ -3,7 +3,7 @@
 // cover (lift.js).
 
 import { assetUrl, dockCloseGame, dockState, libraryRemoveGame, librarySetFavourite, librarySetHidden } from './api.js';
-import { closeCaptures, readCaptures } from './captures.js';
+import { readCaptures } from './captures.js';
 import { finishHint, showHints, toast } from './hints.js';
 import { hold, holdRing, letGo } from './hold.js';
 import { backToGame } from './launch.js';
@@ -13,6 +13,7 @@ import { reduced } from './morph.js';
 import { stageChanged } from './veil.js';
 import { sfx } from './sounds.js';
 import { byId, els, focused, icon, state, storeName, withStoreLogo } from './state.js';
+import { showPicture } from './viewer.js';
 
 /**
  * @typedef {import('./api.js').Game} Game
@@ -178,18 +179,14 @@ export function openDetails() {
 
 /**
  * Lowers the menu's cover back into the row, or, `away`, lets it drop out of sight: its game is leaving the row.
- * Change art or Your captures, over the menu, closes with it.
+ * Change art, About or Your captures, over the menu, closes with it.
  * @param {boolean} [away]
  */
 export function closeDetails(away = false) {
   // A hold on one of its choices ends with it, also when a game's news closes it (launch.js).
   letGo();
   state.mode = 'browse';
-  state.art.open = false;
-  closeCaptures();
-  state.about.open = false;
-  state.about.fullscreen = false;
-  state.typing = null;
+  closeFaces();
   lower(away);
   sfx.back();
   showHints();
@@ -198,14 +195,22 @@ export function closeDetails(away = false) {
 /** The menu again: its choices, and the cover with the game's own art. */
 export function backToMenu() {
   const g = focused();
-  state.art.open = false;
-  closeCaptures();
-  state.about.open = false;
-  state.typing = null;
+  closeFaces();
   showSheet('menu');
   face(coverLook(g.name, g.art.portrait));
   renderChoices();
   showHints();
+}
+
+/** Change art, About and Your captures close, with a capture or screenshot shown full screen. */
+function closeFaces() {
+  state.art.open = false;
+  state.about.open = false;
+  state.about.fullscreen = false;
+  state.captures.open = false;
+  state.captures.fullscreen = false;
+  state.typing = null;
+  showPicture(null);
 }
 
 /** The choices of the focused game's menu. */

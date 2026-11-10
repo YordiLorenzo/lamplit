@@ -64,13 +64,6 @@ function render() {
   showHints();
 }
 
-/** Also called when a game's news closes the whole menu. */
-export function closeCaptures() {
-  state.captures.open = false;
-  state.captures.fullscreen = false;
-  showPicture(null);
-}
-
 /** @param {import('./api.js').Action} action */
 export function actCaptures(action) {
   const captures = state.captures;
