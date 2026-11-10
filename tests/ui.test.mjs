@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { ipc, known, like, values } from './fixtures.mjs';
 import { dockTests } from './dock.mjs';
 import { probeTests } from './probe.mjs';
+import { trailerTests } from './trailer.mjs';
 import { assetOrigin, commands, cspHeader, emit, idle, open as openPage, pageOrigin, serveFile, settled, until } from './page.mjs';
 import { SCENES } from '../ui/screensaver/scenes.js';
 import { SPRINGS } from '../ui/springs.js';
@@ -4984,12 +4985,12 @@ for (const dismiss of ['ok', 'back']) {
     window.__settings = { library_captures: () => new Promise((resolve) => { window.__capturesReady = resolve; }) };
   });
   await emit(page, 'pad', 'menu');
-  check('the menu opens before captures have answered', (await state(page)).details && await page.locator('#dChoices .row').count() === 4);
-  for (let i = 0; i < 3; i++) await emit(page, 'pad', 'down');
+  check('the menu opens before captures have answered', (await state(page)).details && await page.locator('#dChoices .row').count() === 5);
+  for (let i = 0; i < 4; i++) await emit(page, 'pad', 'down');
   await page.evaluate((items) => window.__capturesReady(items), captures);
   await idle(page);
   check('Your captures appears after Change art without moving focus off Hide',
-    (await page.locator('#dChoices .row').allTextContents()).join('|') === 'Play|Favourite|Change art|Your captures|Hide this game' &&
+    (await page.locator('#dChoices .row').allTextContents()).join('|') === 'Play|About this game|Favourite|Change art|Your captures|Hide this game' &&
     await page.locator('#dChoices .row.focus').textContent() === 'Hide this game');
   await emit(page, 'pad', 'up');
   await emit(page, 'pad', 'ok');
@@ -5039,6 +5040,7 @@ for (const dismiss of ['ok', 'back']) {
   check('a late captures reply cannot add another game\'s captures', !(await page.locator('#dChoices').textContent()).includes('Your captures'));
   await close(page);
 }
+await trailerTests({ browser, open, close, game, check, shots, holdClock });
 
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));

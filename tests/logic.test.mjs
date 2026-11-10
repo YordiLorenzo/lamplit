@@ -35,10 +35,12 @@ import {
   sectionSummary,
   stepAutoOff,
   stepInterfaceSounds,
+  stepTrailers,
   stepSaverMinutes,
   storeChoices,
   storeWarning,
   typed,
+  trailerAllowed,
   updateRow,
   visibleSections,
   words,
@@ -773,6 +775,38 @@ describe('Interface sounds', () => {
       assert.equal(row(level).value, label);
       assert.equal(row(level).adjust, true);
     }
+  });
+});
+
+describe('Trailers', () => {
+  test('steps through the three choices and stops at either end', () => {
+    assert.deepEqual(['off', 'muted', 'with_sound'].map((x) => stepTrailers(x, 1)), ['muted', 'with_sound', 'with_sound']);
+    assert.deepEqual(['off', 'muted', 'with_sound'].map((x) => stepTrailers(x, -1)), ['off', 'off', 'muted']);
+  });
+  test('follows Interface sounds, including without a sound device', () => {
+    for (const sound of [null, ipc('sound')]) {
+      for (const [level, label] of [['off', 'Off'], ['muted', 'Muted'], ['with_sound', 'With sound']]) {
+        const rows = sectionRows('sound', settingsState({ sound, prefs: prefs({ trailers: level }) }));
+        const row = rows[rows.findIndex((r) => r.kind === 'interfacesounds') + 1];
+        assert.deepEqual(row, { kind: 'trailers', label: 'Trailers', adjust: true, value: label });
+      }
+    }
+  });
+  test('requires the home screen, both online choices, and an unobscured window in front', () => {
+    const home = { mode: 'browse', running: null, prefs: ipc('prefs') };
+    const view = { front: true, reduced: false, saver: false, dock: false };
+    assert.equal(trailerAllowed(home, view), true);
+    for (const mode of ['details', 'settings', 'find', 'starting', 'news', 'add', 'report']) {
+      assert.equal(trailerAllowed({ ...home, mode }, view), false, mode);
+    }
+    for (const [key, value] of Object.entries({ front: false, reduced: true, saver: true, dock: true })) {
+      assert.equal(trailerAllowed(home, { ...view, [key]: value }), false, key);
+    }
+    assert.equal(trailerAllowed({ ...home, running: 'steam:1' }, view), false);
+    assert.equal(trailerAllowed({ ...home, prefs: null }, view), false);
+    assert.equal(trailerAllowed({ ...home, prefs: prefs({ trailers: 'off' }) }, view), false);
+    assert.equal(trailerAllowed({ ...home, prefs: prefs({ online_art: false }) }, view), false);
+    assert.equal(trailerAllowed({ ...home, prefs: prefs({ trailers: 'with_sound' }) }, view), true);
   });
 });
 

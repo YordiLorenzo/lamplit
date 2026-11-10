@@ -187,6 +187,7 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  */
 
 /** @typedef {'off' | 'quiet' | 'normal'} InterfaceSounds */
+/** @typedef {'off' | 'muted' | 'with_sound'} Trailers */
 /** @typedef {'game_menu' | 'return_home'} FirstHint */
 /** @typedef {{ starts: number, done: boolean }} HintProgress */
 
@@ -195,6 +196,7 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @typedef {object} Prefs
  * @property {boolean} sound_follows  sound follows the headset and controller headphones
  * @property {InterfaceSounds} interface_sounds
+ * @property {Trailers} trailers
  * @property {Record<FirstHint, HintProgress>} hints
  * @property {boolean} touchpad_mouse
  * @property {boolean} steam_devtools  Lamplit opens Steam's DevTools port (the PS button guard and Steam's pop-ups)
@@ -287,8 +289,6 @@ async function call(cmd, args) {
   }
 }
 
-const invoke = call;
-
 /** The URL the page loads a local file from, through Tauri's asset protocol. @param {string} path */
 export const assetUrl = (path) => /** @type {string} */ (tauri.core.convertFileSrc(path));
 
@@ -307,7 +307,7 @@ export const libraryArtSearch = (query) => call('library_art_search', { query })
 /** @param {string} id @returns {Promise<Capture[]>} newest first, with asset URLs ready to display */
 export const libraryCaptures = (id) => call('library_captures', { id });
 /** @param {string} id @returns {Promise<GameDetails | null>} */
-export const libraryDetails = (id) => invoke('library_details', { id });
+export const libraryDetails = (id) => call('library_details', { id });
 /**
  * The art the player chose, null for Lamplit's own match.
  * @param {string} id @param {ArtChoice | null} choice @returns {Promise<Game[]>} every game, with the change
@@ -423,6 +423,8 @@ export const prefsSetCheckUpdates = (on) => call('prefs_set_check_updates', { on
 export const prefsSetSoundFollows = (on) => call('prefs_set_sound_follows', { on });
 /** @param {InterfaceSounds} level @returns {Promise<Prefs>} */
 export const prefsSetInterfaceSounds = (level) => call('prefs_set_interface_sounds', { level });
+/** @param {Trailers} level @returns {Promise<Prefs>} */
+export const prefsSetTrailers = (level) => call('prefs_set_trailers', { level });
 /** Counts this start once; false after three starts or completing the hint. @param {FirstHint} name @returns {Promise<boolean>} */
 export const prefsHintShown = (name) => call('prefs_hint_shown', { name });
 /** @param {FirstHint} name @returns {Promise<void>} */

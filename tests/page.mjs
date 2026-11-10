@@ -25,7 +25,7 @@ export const commands = Object.fromEntries(rust().defined);
 // in the test.
 // earlyGames: a 'games' event brings this list while the answer to library_games (`games`) is still on its way.
 // padKind: the kind of controller Rust says was used last, before the page listened.
-const fakeTauri = ({ games, running = null, launchError = null, earlyGames = null, padKind = null, prefs = ipc('prefs'), update = { phase: 'idle', version: null, error: null }, news = null }) => `
+const fakeTauri = ({ games, running = null, launchError = null, earlyGames = null, padKind = null, prefs = ipc('prefs'), update = { phase: 'idle', version: null, error: null }, news = null, details = ipc('details') }) => `
   const commands = ${JSON.stringify(commands)};
   const values = ${JSON.stringify(values)};
   const sent = {
@@ -53,7 +53,7 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
   const replies = {
     library_games: ${JSON.stringify(games)},
     library_captures: [],
-    library_details: () => window.__prefs.online_art ? ${JSON.stringify(ipc('details'))} : null,
+    library_details: () => window.__prefs.online_art ? ${JSON.stringify(details)} : null,
     launch_running: ${JSON.stringify(running)},
     stores_status: [],
     controller_kind: ${JSON.stringify(padKind)},
@@ -62,6 +62,11 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
       if (!['off', 'quiet', 'normal'].includes(level)) throw { kind: 'player', message: 'Choose Off, Quiet or Normal for interface sounds.' };
       window.__prefs.interface_sounds = level;
       window.__emit('interface-sounds', level);
+      return window.__prefs;
+    },
+    prefs_set_trailers: ({ level }) => {
+      if (!['off', 'muted', 'with_sound'].includes(level)) throw { kind: 'player', message: 'Choose Off, Muted or With sound for trailers.' };
+      window.__prefs.trailers = level;
       return window.__prefs;
     },
     prefs_hint_shown: ({ name }) => {
@@ -161,6 +166,18 @@ export async function open(browser, uiDir, opts, viewport = { width: 1920, heigh
       'Access-Control-Allow-Origin': pageOrigin,
     })
   );
+  // Steam's video hosts serve tests/media/trailer, a 4-second DASH trailer in Steam's layout (VP9 and Opus, which the
+  // test Chromium decodes), under store_trailers/test/, with the CORS header Steam's servers send; any other trailer,
+  // such as the details fixture's, is not found. No test reaches Steam. Each request lands in opts.trailerRequests.
+  for (const host of ['https://video.akamai.steamstatic.com', 'https://video.fastly.steamstatic.com']) {
+    await page.route(`${host}/**`, async (route) => {
+      const name = new URL(route.request().url()).pathname.split('/store_trailers/test/')[1] ?? '';
+      opts.trailerRequests?.push(name);
+      // A slow network, so a test can stop a trailer while its chunks are still on their way.
+      if (opts.trailerDelayMs) await new Promise((resolve) => setTimeout(resolve, opts.trailerDelayMs));
+      return name ? serveFile(route, path.join(here, 'media', 'trailer', name), { 'Access-Control-Allow-Origin': '*' }) : route.fulfill({ status: 404 });
+    });
+  }
   await page.addInitScript(fakeTauri(opts));
   // A script Rust adds to every page before its own (src-tauri/src/probe.rs), as `init`.
   if (opts.init) await page.addInitScript(opts.init);

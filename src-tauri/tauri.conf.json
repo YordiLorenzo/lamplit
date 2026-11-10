@@ -23,8 +23,9 @@
       "csp": {
         "default-src": "'self'",
         "img-src": "'self' asset: http://asset.localhost",
+        "media-src": "'self' blob:",
         "style-src": "'self'",
-        "connect-src": "ipc: http://ipc.localhost asset: http://asset.localhost"
+        "connect-src": "ipc: http://ipc.localhost asset: http://asset.localhost https://video.akamai.steamstatic.com https://video.fastly.steamstatic.com"
       },
       "assetProtocol": { "enable": true, "scope": [] }
     }

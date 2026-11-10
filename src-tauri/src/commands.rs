@@ -326,6 +326,12 @@ pub async fn prefs_set_interface_sounds(app: AppHandle, level: String) -> Result
 }
 
 #[tauri::command]
+pub async fn prefs_set_trailers(app: AppHandle, level: String) -> Result<Prefs> {
+    let level = prefs::Trailers::parse(&level)?;
+    blocking(move || prefs::change(&app, |p| p.trailers = level).map(|()| prefs::get(&app))).await?
+}
+
+#[tauri::command]
 pub async fn prefs_hint_shown(app: AppHandle, name: String) -> Result<bool> {
     blocking(move || prefs::hint_shown(&app, &name)).await?
 }

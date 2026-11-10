@@ -158,6 +158,7 @@ pub fn run() {
             commands::prefs_set_check_updates,
             commands::prefs_set_sound_follows,
             commands::prefs_set_interface_sounds,
+            commands::prefs_set_trailers,
             commands::prefs_hint_shown,
             commands::prefs_hint_done,
             commands::prefs_set_touchpad_mouse,

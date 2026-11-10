@@ -6,7 +6,7 @@ This page lists everything Lamplit changes outside its own data folder (`%LOCALA
 does to other apps, and everything it sends over the network. How to report a security problem is in
 [SECURITY.md](../SECURITY.md).
 
-## Network: game art, details and app updates
+## Network: game art, details, trailers and app updates
 
 Lamplit goes online for cover, background and logo art for your games. It does so only while
 **Settings > System > Find art online** is on. That setting is on until you switch it off, so the first scan after
@@ -31,6 +31,23 @@ art. Steam data is reduced to plain-text description, developers, publishers, re
 an H.264 DASH trailer manifest URL. The trailer player receives only HTTPS manifest URLs from
 `video.akamai.steamstatic.com` or `video.fastly.steamstatic.com`. HLS and AV1 links are not substituted when the selected
 movie has no H.264 DASH manifest.
+
+### Trailers
+
+While **Settings > Sound > Trailers** is not **Off** and **Find art online** is on, resting on a cover for 2.5 seconds
+can request that game's details and stream its trailer from Steam's video servers. The trailer setting defaults to
+**Muted**. **With sound** uses 40% volume. A poster is loaded from the local art folder through the asset protocol.
+The details request sends the game's Steam app id to `store.steampowered.com`.
+
+Steam serves trailers only as DASH (a manifest and short MP4 chunks), so the page fetches them itself and plays them
+through Media Source Extensions: the 720p video stream, plus the audio stream only for **With sound**, and only the
+first minute. The page's connect policy adds only `video.akamai.steamstatic.com` and `video.fastly.steamstatic.com`;
+its media policy allows only itself and the page's own `blob:` streams. These servers receive your IP address, the
+requested trailer URLs and WebView2's user agent. Lamplit adds no account or device identifiers. The trailer stays in
+memory and is not saved in Lamplit's art folder. Input cancels the downloads at once, pauses and mutes the video, and
+releases it after a 200 ms fade. Playback also ends when another screen opens, a game runs, or Lamplit leaves the
+foreground. Reduce Motion disables trailers.
+The trailer sound preference stays in `prefs.json` and is not sent online.
 
 ### App updates
 
