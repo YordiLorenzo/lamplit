@@ -8,6 +8,7 @@ const read = (page) => page.evaluate(() => {
   const v = document.querySelector('#trailer');
   return {
     requests: window.__calls.filter(([name]) => name === 'library_details'),
+    logs: window.__logs.filter((line) => line.includes('trailer:')),
     exists: !!v, shown: !!v?.classList.contains('on'), paused: v?.paused,
     muted: v?.muted, volume: v?.volume, loop: v?.loop, source: v?.getAttribute('src'),
     fade: v && getComputedStyle(v).transitionDuration,
@@ -49,6 +50,7 @@ export async function trailerTests({ browser, open, close, game, check, shots, h
     await page.locator('#trailer.on').waitFor({ timeout: 5000 });
     let v = await read(page);
     check('a muted trailer fetches the video stream only', page.trailerRequests.includes('dash_h264/init-stream0.m4s') && !page.trailerRequests.includes('dash_h264/init-stream1.m4s'), JSON.stringify(page.trailerRequests));
+    check('a playing trailer is logged once', JSON.stringify(v.logs) === `["info trailer: playing ${details.appid}"]`, JSON.stringify(v.logs));
     check('the idle trailer decodes, loops and fades in muted', v.requests.length === 1 && v.shown && !v.paused && v.muted && v.volume === 0.4 && v.loop && v.fade === '0.6s' && v.fading && v.size[0] === 640, JSON.stringify(v));
     // CSS transitions use Chromium's animation clock, so screenshots let it settle in real time.
     await page.clock.resume();
@@ -151,7 +153,10 @@ export async function trailerTests({ browser, open, close, game, check, shots, h
       check(`${failure} keeps the video for less than four seconds`, (await read(page)).exists);
     }
     await page.clock.runFor(failure === 'timeout' || failure === 'buffering' ? 400 : 250);
-    check(`${failure} releases the video quietly`, !(await read(page)).exists);
+    const gone = await read(page);
+    const why = { timeout: 'stalled for 4 s', error: 'media error unknown', rejected: 'play blocked', buffering: 'stalled for 4 s' }[failure];
+    check(`${failure} releases the video quietly`, !gone.exists);
+    check(`${failure} logs why the trailer stopped`, gone.logs.includes(`warn trailer: ${details.appid} ${why}`), JSON.stringify(gone.logs));
     await page.clock.runFor(5000);
     check(`${failure} does not retry without new input`, (await read(page)).requests.length === 1);
     await close(page);
@@ -177,6 +182,7 @@ export async function trailerTests({ browser, open, close, game, check, shots, h
     const seen = page.trailerRequests.length;
     await new Promise((resolve) => setTimeout(resolve, 1500));
     check('stopping a trailer stops its downloads', page.trailerRequests.length === seen && seen < 5, JSON.stringify(page.trailerRequests));
+    check('stopping a trailer on input logs no failure', !(await read(page)).logs.some((line) => line.startsWith('warn')), JSON.stringify((await read(page)).logs));
     await page.clock.runFor(200);
     await close(page);
   }

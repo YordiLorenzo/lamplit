@@ -79,19 +79,27 @@ async function play(id, expected) {
   video = next;
   fetches = new AbortController();
   const drop = () => { if (video === next) stop(); };
+  // A report then says why a game's trailer didn't play. Stopping on input aborts the downloads, which isn't a failure.
+  const failed = (/** @type {any} */ e) => {
+    if (e?.name !== 'AbortError') api.log.warn(`trailer: ${details.appid} ${e?.message ?? e}`);
+    drop();
+  };
+  let logged = false;
   const stalled = () => {
     if (stalledTimer) return;
-    stalledTimer = setTimeout(drop, STALL_MS);
+    stalledTimer = setTimeout(() => failed(new Error(`stalled for ${STALL_MS / 1000} s`)), STALL_MS);
   };
   next.onplaying = () => {
     if (mine !== generation || target() !== expected) return drop();
     clearTimeout(stalledTimer);
     stalledTimer = 0;
+    if (!logged) api.log.info(`trailer: playing ${details.appid}`);
+    logged = true;
     // A cached video can play before its first paint. Commit its hidden style so it still fades in.
     getComputedStyle(next).opacity;
     next.classList.add('on');
   };
-  next.onerror = drop;
+  next.onerror = () => failed(new Error(`media error ${next.error?.code ?? 'unknown'}`));
   next.onwaiting = stalled;
   next.onstalled = stalled;
   els.stage.querySelector('.shade').before(next);
@@ -100,7 +108,7 @@ async function play(id, expected) {
     if (video !== next) return URL.revokeObjectURL(url);
     objectUrl = url;
     return next.play();
-  }).catch(drop);
+  }).catch(failed);
 }
 
 function check() {
