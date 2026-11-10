@@ -3552,7 +3552,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
       lit: getComputedStyle(rows[0]).backgroundImage.includes('gradient') && !getComputedStyle(rows[1]).backgroundImage.includes('gradient'),
     };
   });
-  check('one plate holds the menu, About, Change art and Your captures', menu.plates === 'sheet,details,artPick,about,capturesFace', menu.plates);
+  check('one plate holds the menu, Change art, Your captures and About', menu.plates === 'sheet,details,artPick,capturesFace,about', menu.plates);
   check('... one line under the name, the folder dim at the bottom', /^[^·]+ · Played yesterday · 31 h$/.test(menu.line) && menu.folderBelow && menu.folderDim, JSON.stringify(menu));
   check('... Play lit and focused first, every row with its icon from the shared set', menu.first && menu.lit && menu.shared && menu.icons === '#i-play,#i-info,#i-star,#i-photo,#i-eye-off', JSON.stringify(menu));
   await page.evaluate((list) => {
