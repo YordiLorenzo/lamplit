@@ -42,6 +42,7 @@ ui/
   input.js         controller, keyboard and mouse as one set of actions
   library.js       the cover row, the focused game and its menu
   trailer.js       the focused game's trailer, after 2.5 s without input on the home screen
+  dash.js          plays Steam's DASH trailers through Media Source Extensions: the 720p stream, its first minute
   lift.js          a game's menu lifting its cover over the blurred screen, with one plate beside it that grows out
                    of the card's edge and holds the menu, About, Change art and Your captures as faces
   veil.js          the game menu's veil: what was behind it, drawn once small, blurred and dimmed, and scaled up,
@@ -456,7 +457,6 @@ message is written for the player, and the page shows it.
 | --- | --- | --- |
 | `library_games` | | Every game, or `null` until the first scan has finished |
 | `library_rescan` | | Nothing; scans unless the last scan was under 30 seconds ago |
-| `library_details` | `id` | Game details, screenshots and an optional trailer, or `null` without a known Steam app id or with Find art online off |
 | `library_set_favourite`, `library_set_hidden` | `id`, `on` | Every game, after the change |
 | `library_captures` | `id` | Up to 60 `{ path, taken, source }` screenshots, newest first; `path` is an asset URL, `taken` an ISO UTC file timestamp, `source` is `steam`, `gamebar` or `nvidia` |
 | `library_details` | `id` | `{ appid, description, developers, publishers, released, genres, screenshots, trailer }`, or `null` when no Steam match is known or Find art online is off |

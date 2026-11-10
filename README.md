@@ -48,8 +48,15 @@ while you play. When the game closes, Lamplit is back on screen.
   finds games outside any store too. There is nothing to import, connect or sign in to.
 - **Favourites first, then last played,** then by name, so the game you're in the middle of is near the front.
 - **A game's menu.** Options lifts the focused game's cover toward you and blurs the rest of the screen. Beside the
-  cover are the game's store, when it was last played, its play time and folder, and its choices: Play, favourites,
-  Change art and Hide this game.
+  cover are the game's store, when it was last played, its play time and folder, and its choices: Play, About this
+  game, favourites, Change art, Your captures and Hide this game.
+- **Trailers.** Stay on a cover for a few seconds and the game's trailer from Steam plays behind it, muted. Any
+  button stops it. **Settings > Sound > Trailers** turns the sound on, or trailers off.
+- **About this game,** in a game's menu: Steam's description, the developers and publisher, the release date, genres
+  and up to eight screenshots. Cross shows a screenshot full screen. Trailers and About this game need **Find art
+  online**.
+- **Your captures,** in a game's menu when you have screenshots of the game: the ones Steam, Game Bar and NVIDIA
+  saved, newest first. Cross shows one full screen, and Left and Right move through them.
 - **Favourites and hidden games.** In a game's menu (Options), add it to your favourites to keep it at the front,
   or hide something Lamplit found that isn't a game. **Settings > Hidden games** shows a hidden game again.
 - **Play time** for each game, on the home screen and in its details. For a Steam game it is Steam's own count, which
@@ -422,8 +429,8 @@ Change art's covers and Add a game's rows and keys take a click too. A click bes
 | Prefs, favourites, hidden games, play time, the art you chose, the games you added, saved originals, logs and art in `%LOCALAPPDATA%\lamplit` | Always; JSON files keep a previous good `.bak` copy, and a damaged file is kept as `.damaged` | Tick **Delete the application data** when you uninstall; pending restoration keeps these files |
 | A plain-text report in Downloads | When you preview and save it in Settings > System | Delete the report when you no longer need it |
 
-Lamplit goes online for game art from Steam's store and app updates from GitHub. You can switch off online art and
-automatic update checks separately. No accounts, no telemetry.
+Lamplit goes online for game art, details and trailers from Steam, and app updates from GitHub. You can switch off
+online art and automatic update checks separately. No accounts, no telemetry.
 [What Lamplit changes on your PC, and what it sends](docs/security-and-privacy.md) has every detail, including the
 risk of Steam's DevTools port.
 
@@ -437,7 +444,7 @@ risk of Steam's DevTools port.
 | Before a game starts | Starts the store apps it needs, waits for sign-in, shows Steam's update progress | Steam updates its own games first | Starts the game through its store or its exe |
 | Controllers | DualSense, Xbox, the new Steam Controller and other controllers Windows knows; keyboard and mouse | Most controllers, through Steam Input | Many controllers, through SDL |
 | Themes, add-ons, emulators | No | No themes or add-ons; emulators as shortcuts you add | Yes, with an add-on browser |
-| Also does | Quiet mode, sound that follows the headset, PRO X 2 headset settings, NVIDIA stats switch | Store, friends and chat, Steam Input remapping, Remote Play | Metadata, filters and collections, play time |
+| Also does | Trailers, a page for each game, your screenshots, quiet mode, sound that follows the headset, PRO X 2 headset settings, NVIDIA stats switch | Store, friends and chat, Steam Input remapping, Remote Play | Metadata, filters and collections, play time |
 
 Choose Big Picture if nearly everything you play is on Steam. Choose Playnite if you want themes, emulators, or a
 library you shape yourself. Lamplit is for a TV PC that already has games in several stores and should show them all
@@ -508,11 +515,12 @@ read them before posting one. If Lamplit cannot open, attach the relevant log in
 
 ### Does it send anything online?
 
-Game art requests go to Steam's store while **Find art online** is on: names of games that aren't from Steam,
-Change art searches, Steam app ids and your country. Update checks go to GitHub while **Check by itself** is on,
-or when you choose a manual check. The automatic check sends no installed version, game names or device identifiers,
-and downloads no installer. Both switches start on. Details are in
-[the privacy section](docs/security-and-privacy.md#network-game-art-and-app-updates).
+Game art requests go to Steam's store while **Find art online** is on: names of games that aren't from Steam, Change
+art searches, Steam app ids and your country. About this game and trailers send the game's Steam app id to Steam's
+store, and trailers stream from Steam's video servers. Update checks go to GitHub while **Check by itself** is on, or
+when you choose a manual check. The automatic check sends no installed version, game names or device identifiers, and
+downloads no installer. Both switches start on. Details are in
+[the privacy section](docs/security-and-privacy.md#network-game-art-details-trailers-and-app-updates).
 
 ## Build from source
 
