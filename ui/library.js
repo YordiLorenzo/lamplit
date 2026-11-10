@@ -3,6 +3,7 @@
 // cover (lift.js).
 
 import { assetUrl, dockCloseGame, dockState, libraryRemoveGame, librarySetFavourite, librarySetHidden } from './api.js';
+import { closeCaptures, readCaptures } from './captures.js';
 import { finishHint, showHints, toast } from './hints.js';
 import { hold, holdRing, letGo } from './hold.js';
 import { backToGame } from './launch.js';
@@ -163,9 +164,11 @@ export function openDetails() {
   els.dTime.textContent = time;
   els.dDir.replaceChildren(...folderParts(g.dir).map((part) => Object.assign(document.createElement('span'), { textContent: part })));
   state.detailsIdx = 0;
+  state.captures = { id: g.id, items: [], open: false, fullscreen: false, idx: 0 };
   renderChoices();
   readCloser(g.id);
   state.mode = 'details';
+  readCaptures();
   showSheet('menu');
   lift(g.id, restingCover(), coverLook(g.name, g.art.portrait));
   layout();
@@ -175,7 +178,7 @@ export function openDetails() {
 
 /**
  * Lowers the menu's cover back into the row, or, `away`, lets it drop out of sight: its game is leaving the row.
- * Change art, over the menu, closes with it.
+ * Change art or Your captures, over the menu, closes with it.
  * @param {boolean} [away]
  */
 export function closeDetails(away = false) {
@@ -183,16 +186,18 @@ export function closeDetails(away = false) {
   letGo();
   state.mode = 'browse';
   state.art.open = false;
+  closeCaptures();
   state.typing = null;
   lower(away);
   sfx.back();
   showHints();
 }
 
-/** The menu again, as it was before Change art: its choices, and the cover with the game's own art. */
+/** The menu again: its choices, and the cover with the game's own art. */
 export function backToMenu() {
   const g = focused();
   state.art.open = false;
+  closeCaptures();
   state.typing = null;
   showSheet('menu');
   face(coverLook(g.name, g.art.portrait));
@@ -201,14 +206,17 @@ export function backToMenu() {
 }
 
 /** The choices of the focused game's menu. */
-const choices = () => detailChoices(focused(), state.running, state.closer);
+const choices = () => detailChoices(focused(), state.running, state.closer, state.captures.items.length > 0);
 
 /**
  * The choices again, as what they offer changed underneath: the game ended, so Close game goes. Focus stays on a
  * choice that is there.
+ * @param {import('./logic.js').DetailChoice['kind']} [keep]
  */
-export function refreshChoices() {
+export function refreshChoices(keep) {
   if (state.mode !== 'details') return;
+  const index = choices().findIndex((c) => c.kind === keep);
+  if (index >= 0) state.detailsIdx = index;
   renderChoices();
   showHints();
 }

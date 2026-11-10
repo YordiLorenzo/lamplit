@@ -52,6 +52,7 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
   let updateState = ${JSON.stringify(update)};
   const replies = {
     library_games: ${JSON.stringify(games)},
+    library_captures: [],
     launch_running: ${JSON.stringify(running)},
     stores_status: [],
     controller_kind: ${JSON.stringify(padKind)},

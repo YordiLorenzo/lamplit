@@ -70,6 +70,12 @@ pub async fn library_set_art(app: AppHandle, id: String, choice: Option<ArtChoic
     blocking(move || library::set_art(&app, &id, choice)).await?
 }
 
+/// The game's screenshots already on the PC, newest first.
+#[tauri::command]
+pub async fn library_captures(app: AppHandle, id: String) -> Result<Vec<library::captures::Capture>> {
+    blocking(move || library::captures::for_game(&app, &id)).await?
+}
+
 /// The installed programs that aren't in the library, for Add a game.
 #[tauri::command]
 pub async fn library_programs(app: AppHandle) -> Result<Vec<library::Program>> {

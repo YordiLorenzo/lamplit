@@ -3,6 +3,7 @@
 // again when Lamplit comes forward, so new installs show up.
 
 mod art;
+pub mod captures;
 mod discover;
 mod game;
 mod manual;

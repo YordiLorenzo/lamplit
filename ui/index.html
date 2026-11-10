@@ -57,7 +57,7 @@
   <main id="row"><div id="track"></div><div id="noMatch" hidden>No games match</div></main>
 
   <!-- A game's menu (library.js, lift.js): the focused cover lifted over the blurred screen, and one plate beside it
-       that grows out of the card's edge, with two faces: the menu, and Change art (art.js). -->
+       that grows out of the card's edge, with faces for the menu, Change art and Your captures. -->
   <div id="lift">
     <canvas id="veil" class="veil"></canvas>
     <div id="card">
@@ -80,7 +80,17 @@
         <div id="artTiles"></div>
         <div id="artChoices" class="choices"></div>
       </section>
+      <section id="capturesFace" class="sheet-face">
+        <h2>Your captures</h2>
+        <div id="captureGrid"></div>
+        <p id="captureMeta"></p>
+      </section>
     </aside>
+  </div>
+  <div id="captureViewer" role="dialog" aria-label="Capture" aria-modal="true" hidden>
+    <img id="captureImage" alt="" draggable="false">
+    <p id="captureError" hidden>This capture could not be opened.</p>
+    <p id="captureCaption"></p>
   </div>
 
   <!-- Settings, Add a game and Save a report share one plate; its size follows the face it shows. -->

@@ -2,7 +2,7 @@
 // A game's menu lifts its cover toward the player: the cover grows out of the row and rises to the middle of the
 // screen on a spring, its shadow deepens, a band of light sweeps across it, and it turns a little toward the menu.
 // The menu is one plate that grows out of the card's edge on the side with room, from a sliver to its full size, and
-// Change art is another face of the same plate, which grows from the menu's size to its own (morph.js). The rest of
+// Change art and Your captures are faces of the same plate, which grows to fit each (morph.js). The rest of
 // the screen blurs and dims. Lowering plays it back: the plate goes back into the card's edge, the cover settles into
 // its place in the row, and the row shows its own cover again once it has landed. Only transform, clip and opacity
 // change while it moves, so it stays on the compositor at 60 fps on a 4K screen.
@@ -15,6 +15,7 @@ import { paintVeil, releaseStage } from './veil.js';
 
 /** The cover rises on the lift spring (style.css --lift), 1% past its place and back, and lowers on the close one. */
 const CLOSE = SPRINGS.close;
+const faces = { menu: els.details, art: els.artPick, captures: els.capturesFace };
 
 /** @typedef {{ image: string, art: boolean, name: string }} Look  a cover's art (library.js coverLook) */
 
@@ -96,8 +97,7 @@ export function lift(id, from, look) {
 export function lower(away = false) {
   els.lift.classList.remove('on');
   els.lift.classList.toggle('away', away);
-  els.details.classList.remove('on');
-  els.artPick.classList.remove('on');
+  for (const face of Object.values(faces)) face.classList.remove('on');
   // The plate goes back into the card's edge as it fades.
   morph(els.sheet, { name: 'sheet-return', from: null, to: sliver(), spring: 'close', hold: true });
   clearTimeout(landing);
@@ -146,36 +146,34 @@ export function face({ image, art, name }, fade = true) {
   /** @type {HTMLElement} */ (els.face.querySelector('.name')).textContent = name;
 }
 
-/** The plate covers both faces while its clip moves from one to the other (showSheet). */
+/** The plate covers the outgoing and incoming faces while its clip moves (showSheet). */
 let held = false;
 
-/** The plate takes the size and place of `face`, the menu or Change art, which is laid out where it shows. */
+/** The plate takes the size and place of `face`, which is laid out where it shows. */
 function fit(/** @type {HTMLElement} */ face) {
-  els.sheet.classList.toggle('art', face === els.artPick);
+  els.sheet.classList.toggle('art', face !== els.details);
   els.sheet.style.setProperty('--sheet-h', `${face.getBoundingClientRect().height}px`);
 }
 
 /** The face whose size the plate has. */
-const fitted = () => (els.sheet.classList.contains('art') ? els.artPick : els.details);
+const fitted = () => Object.values(faces).find((face) => face.classList.contains('on')) ?? els.details;
 
 // A face that changes size (Change art's keyboard opening, the menu's choices changing) takes the plate with it.
 const resized = new ResizeObserver(() => {
   if (!held) fit(fitted());
 });
-resized.observe(els.details);
-resized.observe(els.artPick);
+for (const face of Object.values(faces)) resized.observe(face);
 
 /**
- * Which face of the plate beside the card shows: the menu, or Change art. Each face is laid out where it shows, so
+ * Which face of the plate beside the card shows. Each face is laid out where it shows, so
  * with the menu up only the plate's clip moves, from the face that goes to the one that comes (morph.js `still`):
  * into Change art on the tap spring, back to the menu on the close one. Meanwhile the plate covers both faces, and
  * takes the size of the one that came once its clip is there.
- * @param {'menu' | 'art'} which
+ * @param {'menu' | 'art' | 'captures'} which
  */
 export function showSheet(which) {
-  const art = which === 'art';
-  const up = els.lift.classList.contains('on') && els.details.classList.contains('on') === art;
-  const [from, to] = art ? [els.details, els.artPick] : [els.artPick, els.details];
+  const [from, to] = [fitted(), faces[which]];
+  const up = els.lift.classList.contains('on') && from !== to;
   from.classList.remove('on');
   to.classList.add('on');
   held = false;
@@ -184,10 +182,10 @@ export function showSheet(which) {
   els.sheet.classList.add('turned');
   const [was, will] = [from.getBoundingClientRect(), to.getBoundingClientRect()];
   turn(els.sheet, {
-    name: art ? 'sheet-to-art' : 'sheet-to-menu',
+    name: `sheet-to-${which}`,
     from: was,
     to: will,
-    spring: art ? 'tap' : 'close',
+    spring: which === 'menu' ? 'close' : 'tap',
     // Both faces are centred on the card, and Change art is the wider: its width, and the taller one's height.
     cover: () => {
       held = true;
@@ -196,7 +194,7 @@ export function showSheet(which) {
     },
     settle: () => {
       held = false;
-      fit(els.artPick.classList.contains('on') ? els.artPick : els.details);
+      fit(fitted());
     },
   });
 }

@@ -60,8 +60,8 @@ fn steam_library_cache() -> Option<PathBuf> {
 }
 
 /// Lets the page load files from the two folders art comes from. tauri.conf.json gives the asset protocol no
-/// folder at all, so the page can't read anything else on the PC. Runs with every scan, so a Steam installed while
-/// Lamplit runs is covered too.
+/// folder at all; captures.rs opens only the capture folders a game's menu needs. Runs with every scan, so a Steam
+/// installed while Lamplit runs is covered too.
 pub fn open_folders_to_page(app: &AppHandle) -> tauri::Result<()> {
     let scope = app.asset_protocol_scope();
     scope.allow_directory(downloads(), true)?;

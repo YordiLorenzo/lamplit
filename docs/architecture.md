@@ -22,7 +22,7 @@ src-tauri/
     logging.rs       lamplit.log, supervisor.log, setup.log and restore.log
     report.rs        the local report: selected system facts, redacted warnings, and a plain-text file in Downloads
     library/         the game list: discovery, sorting, art and the art the player chose, favourites, hidden
-                     games, play time, and games added by hand
+                     games, play time, games added by hand and local screenshots (captures.rs)
     stores/          one file per store app; loose.rs finds games outside any store
     launch/          starting a game, watching it, handing the screen over to it, and Lamplit's own window
     dock/            the in-game dock: its window over a game, the news it shows, closing the game
@@ -42,11 +42,12 @@ ui/
   input.js         controller, keyboard and mouse as one set of actions
   library.js       the cover row, the focused game and its menu
   lift.js          a game's menu lifting its cover over the blurred screen, with one plate beside it that grows out
-                   of the card's edge and holds the menu and Change art as its two faces
+                   of the card's edge and holds the menu, Change art and Your captures as faces
   veil.js          the game menu's veil: what was behind it, drawn once small, blurred and dimmed, and scaled up,
                    from art decoded and scaled off the page's thread; and once the menu rests, the hero and its shade
                    under it held still as one opaque copy, which the veil fades out over as the menu closes
   art.js           Change art, in a game's menu
+  captures.js      Your captures, on the game's plate: a thumbnail grid and a full-screen image viewer
   add.js           Add a game, a face of Settings' plate: the programs Lamplit passed over, browsing the drives,
                    naming the game
   keyboard.js      the on-screen keyboards: Find's, and the one for names and art searches
@@ -163,6 +164,36 @@ store's previous games; a missing file counts as absent.
 A Tauri command that isn't `async` runs on the main thread, where waiting freezes the window and controller
 navigation. So every command that touches the disk, the registry, COM, HID, a socket or the process list is `async`
 and does its work on Tauri's pool for blocking work.
+
+## Your captures
+
+Opening a game's menu starts `library_captures` without waiting for it. It returns at most 60 PNG, JPG or JPEG
+files, sorted by file modification time, newest first. The command does its registry and disk work in `blocking`.
+It reads Steam's last signed-in account with the same `last_account` parser as play minutes. Only the game's own
+`steam_appid` selects `userdata\<account>\760\remote\<appid>\screenshots`; chosen or matched art never selects captures.
+Game Bar filenames must start with the game's name at a word boundary. NVIDIA folders must match the name.
+Both comparisons ignore case, trademark signs and punctuation separators. Subfolders and symbolic links to files
+are not followed. Network paths from folder settings are skipped.
+
+Game Bar uses `HKCU\Software\Microsoft\Windows\CurrentVersion\GameDVR\AppCaptureFolder` when present, then the
+Windows `FOLDERID_AppCaptures` location, then `FOLDERID_Videos\Captures`. Known-folder lookups do not create folders.
+NVIDIA checks `Videos\<game>` and `Videos\NVIDIA\<game>`, plus game folders under the configured gallery roots:
+`currentDirectoryV2` in `%LOCALAPPDATA%\NVIDIA Corporation\NVIDIA Overlay\GallerySettings.json`, and GeForce
+Experience's UTF-16 `DefaultPathW` under `HKCU\Software\NVIDIA Corporation\Global\ShadowPlay\NVSPCAPS`.
+
+The folder conventions were checked on 2026-11-10. [Microsoft documents](https://support.microsoft.com/en-us/accessibility/windows/use-a-screen-reader-to-record-your-screen-with-xbox-game-bar)
+`Videos\Captures`, PNG screenshots and game/date/time filenames. [Microsoft's SDK](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/KnownFolders.h)
+defines `FOLDERID_AppCaptures`. [NVIDIA documents](https://www.nvidia.com/en-us/geforce/news/nvidia-app-download-and-features/)
+per-game galleries and configurable storage, but does not publish the on-disk settings schema there. NVIDIA's
+default game subfolders and registry location, and the optional GameDVR setting, are inferred conventions that need
+live Windows verification. The JSON key comes from a [first-hand settings-file report](https://www.reddit.com/r/GeForceExperience/comments/1hoy9lv/how_can_i_change_the_temporary_files_location_on/).
+
+Each containing folder used by the result is allowed in Tauri's asset scope non-recursively. The reply has an asset
+URL, an ISO UTC file timestamp and a source (`steam`, `gamebar`, `nvidia`) per image. No new event is needed.
+Read failures reject and are logged; the page says the captures could not be read. A missing folder returns no images.
+The menu adds Your captures after Change art only for a nonempty reply, retaining its focused choice. Replies from
+an earlier menu opening are dropped. Your captures turns the same plate to a three-column grid; Cross opens the
+focused image over the page, Left and Right browse, and Circle goes back to the grid, then to the menu.
 
 ## App updates
 
@@ -422,6 +453,7 @@ message is written for the player, and the page shows it.
 | `library_games` | | Every game, or `null` until the first scan has finished |
 | `library_rescan` | | Nothing; scans unless the last scan was under 30 seconds ago |
 | `library_set_favourite`, `library_set_hidden` | `id`, `on` | Every game, after the change |
+| `library_captures` | `id` | Up to 60 `{ path, taken, source }` screenshots, newest first; `path` is an asset URL, `taken` an ISO UTC file timestamp, `source` is `steam`, `gamebar` or `nvidia` |
 | `launch_start` | `id` | Nothing; `launch-step` and `play` events follow |
 | `launch_anyway` | | Nothing; the launch goes ahead without a confirmed sign-in |
 | `launch_cancel` | | Nothing |

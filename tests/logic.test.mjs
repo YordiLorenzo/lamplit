@@ -7,6 +7,8 @@ import {
   STORE_ORDER,
   batteryText,
   buttonFace,
+  captureStep,
+  captureText,
   returnHint,
   byName,
   byPlayed,
@@ -45,6 +47,35 @@ import { pageValues } from './contract.mjs';
 import { ipc, known, like, values } from './fixtures.mjs';
 
 const DAY = 86400;
+
+test('Your captures follows Change art only when screenshots were found', () => {
+  const game = ipc('games')[0];
+  assert.ok(!detailChoices(game, null).some((choice) => choice.kind === 'captures'));
+  const choices = detailChoices(game, null, null, true);
+  assert.equal(choices.findIndex((choice) => choice.kind === 'captures'), choices.findIndex((choice) => choice.kind === 'art') + 1);
+});
+
+test('capture grid navigation stays inside rows and reaches a short last row', () => {
+  assert.equal(captureStep(0, 8, 3, 'left'), 0);
+  assert.equal(captureStep(0, 8, 3, 'up'), 0);
+  assert.equal(captureStep(0, 8, 3, 'right'), 1);
+  assert.equal(captureStep(2, 8, 3, 'right'), 2);
+  assert.equal(captureStep(3, 8, 3, 'left'), 3);
+  assert.equal(captureStep(2, 8, 3, 'down'), 5);
+  assert.equal(captureStep(5, 8, 3, 'down'), 7);
+  assert.equal(captureStep(7, 8, 3, 'right'), 7);
+  assert.equal(captureStep(7, 8, 3, 'down'), 7);
+  assert.equal(captureStep(7, 8, 3, 'up'), 4);
+});
+
+test('capture captions name each source and its date', () => {
+  const labels = ['Steam', 'Game Bar', 'NVIDIA'];
+  for (const [index, capture] of ipc('captures').entries()) {
+    const caption = captureText(capture);
+    assert.ok(caption.startsWith(`${labels[index]} · `));
+    assert.ok(caption.includes('Oct 2026'));
+  }
+});
 /** A store app as Rust reports it. */
 const store = (key, name, installed, account) =>
   like(ipc('stores')[0], { store: key, name, installed, running: false, account: known('account', account) });

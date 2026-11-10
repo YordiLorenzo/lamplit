@@ -55,6 +55,22 @@ Lamplit follows only folders on a drive letter from a store's files. A network s
 such as a Steam library folder, a Steam game's folder or an Epic install folder, is skipped, so looking for games
 never signs in to another computer.
 
+## Your captures
+
+Opening a game's menu reads screenshot filenames and modification dates on this PC. Steam captures come from the
+last signed-in account's `userdata\<account>\760\remote\<appid>\screenshots` folder, using that game's own Steam id.
+Game Bar captures come from its configured Captures folder, or `Videos\Captures`; only filenames starting with the
+game's name are shown. NVIDIA captures come from folders matching the game's name under Videos, Videos\NVIDIA or
+its configured gallery locations. Lamplit reads the Windows known-folder locations, GameDVR's capture-folder setting,
+NVIDIA Overlay's `GallerySettings.json` and GeForce Experience's `DefaultPathW` registry value to find these folders.
+It does not change those settings or any capture file.
+
+Only PNG, JPG and JPEG files are shown, at most 60 per game, newest first by file modification time. The date can
+differ from when you took the screenshot if another app edited it. Captures work with Find art online off. Nothing
+from these folders is uploaded or sent online. Only the containing folders of returned images are added to the
+page's local asset scope, without access to their subfolders. Lamplit does not add their parent folders to the scope.
+Network paths named in the folder settings are skipped.
+
 ## Epic's local files
 
 Lamplit reads Epic's installed-game records from the legacy launcher's ProgramData manifests and the Preview's

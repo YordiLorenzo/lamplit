@@ -70,6 +70,13 @@ export const els = {
   artTiles: $('artTiles'),
   artChoices: $('artChoices'),
   artKeys: $('artKeys'),
+  capturesFace: $('capturesFace'),
+  captureGrid: $('captureGrid'),
+  captureMeta: $('captureMeta'),
+  captureViewer: $('captureViewer'),
+  captureImage: /** @type {HTMLImageElement} */ ($('captureImage')),
+  captureCaption: $('captureCaption'),
+  captureError: $('captureError'),
   add: $('add'),
   addTitle: $('addTitle'),
   addPath: $('addPath'),
@@ -129,6 +136,14 @@ export const state = {
   closer: null,
   /** @type {string | null} the game whose cover is lifted (lift.js); its cover in the row hides meanwhile */
   lifted: null,
+  captures: {
+    id: '',
+    /** @type {import('./api.js').Capture[]} */
+    items: [],
+    open: false,
+    fullscreen: false,
+    idx: 0,
+  },
   /**
    * Change art (art.js), over a game's menu. `found` is null while Steam's store is searched; `focus` is the data-id
    * of the focused cover or choice.

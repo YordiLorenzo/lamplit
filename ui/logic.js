@@ -189,7 +189,7 @@ export function byPlayed(a, b) {
 /**
  * A choice in a game's menu. `hold`: it can't be taken back, so Cross is held for it, as the hint says; `note` says
  * beforehand what it does.
- * @typedef {{ kind: 'play' | 'favourite' | 'art' | 'hide' | 'close' | 'remove', label: string, icon: import('./icons.js').IconId,
+ * @typedef {{ kind: 'play' | 'favourite' | 'art' | 'captures' | 'hide' | 'close' | 'remove', label: string, icon: import('./icons.js').IconId,
  *   hold?: string, note?: string }} DetailChoice
  */
 
@@ -201,9 +201,10 @@ export function byPlayed(a, b) {
  * @param {Game} g
  * @param {string | null} running  the id of the game that runs
  * @param {{ id: string, closable: boolean, force_close: boolean } | null} [closer]
+ * @param {boolean} [captures] the game has screenshots on the PC
  * @returns {DetailChoice[]}
  */
-export function detailChoices(g, running, closer = null) {
+export function detailChoices(g, running, closer = null, captures = false) {
   /** @type {DetailChoice[]} */
   const choices = [
     { kind: 'play', label: running === g.id ? 'Back to game' : 'Play', icon: 'i-play' },
@@ -211,6 +212,7 @@ export function detailChoices(g, running, closer = null) {
     { kind: 'art', label: 'Change art', icon: 'i-photo' },
     { kind: 'hide', label: 'Hide this game', icon: 'i-eye-off' },
   ];
+  if (captures) choices.splice(3, 0, { kind: 'captures', label: 'Your captures', icon: 'i-photo' });
   if (running === g.id && closer?.id === g.id && closer.closable) {
     choices.push(
       closer.force_close
@@ -220,6 +222,25 @@ export function detailChoices(g, running, closer = null) {
   }
   if (g.manual) choices.push({ kind: 'remove', label: 'Remove from Lamplit', icon: 'i-remove', hold: 'Hold to remove', note: 'Lamplit forgets it. The files stay.' });
   return choices;
+}
+
+/**
+ * A capture grid keeps horizontal moves on the same row; Down reaches the last item on a short final row.
+ * @param {number} index @param {number} count @param {number} columns
+ * @param {'up' | 'down' | 'left' | 'right'} direction
+ */
+export function captureStep(index, count, columns, direction) {
+  if (direction === 'left') return index % columns ? index - 1 : index;
+  if (direction === 'right') return index % columns < columns - 1 && index + 1 < count ? index + 1 : index;
+  if (direction === 'up') return index >= columns ? index - columns : index;
+  return Math.floor(index / columns) < Math.floor((count - 1) / columns) ? Math.min(index + columns, count - 1) : index;
+}
+
+/** @param {import('./api.js').Capture} capture */
+export function captureText(capture) {
+  const source = { steam: 'Steam', gamebar: 'Game Bar', nvidia: 'NVIDIA' }[capture.source];
+  const date = new Date(capture.taken).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return `${source} · ${date}`;
 }
 
 /**

@@ -3461,7 +3461,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
       lit: getComputedStyle(rows[0]).backgroundImage.includes('gradient') && !getComputedStyle(rows[1]).backgroundImage.includes('gradient'),
     };
   });
-  check('one plate holds the menu and Change art', menu.plates === 'sheet,details,artPick', menu.plates);
+  check('one plate holds the menu, Change art and Your captures', menu.plates === 'sheet,details,artPick,capturesFace', menu.plates);
   check('... one line under the name, the folder dim at the bottom', /^[^·]+ · Played yesterday · 31 h$/.test(menu.line) && menu.folderBelow && menu.folderDim, JSON.stringify(menu));
   check('... Play lit and focused first, every row with its icon from the shared set', menu.first && menu.lit && menu.shared && menu.icons === '#i-play,#i-star,#i-photo,#i-eye-off', JSON.stringify(menu));
   await page.evaluate((list) => {
@@ -4879,6 +4879,72 @@ for (const dismiss of ['ok', 'back']) {
   const page = await open({ games: [game(1)], news: null });
   await idle(page);
   check('a fresh install or version without highlights shows no card', await page.evaluate(() => document.getElementById('news').hidden));
+  await close(page);
+}
+
+// Captures arrive after the menu opens, retain the current choice and share its plate. Full screen keeps grid focus.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  const captures = Array.from({ length: 8 }, (_, i) => like(ipc('captures')[i % 3], {
+    path: `${assetOrigin}/${encodeURIComponent(art[0].hero)}?capture=${i}`,
+  }));
+  await page.evaluate(() => {
+    window.__settings = { library_captures: () => new Promise((resolve) => { window.__capturesReady = resolve; }) };
+  });
+  await emit(page, 'pad', 'menu');
+  check('the menu opens before captures have answered', (await state(page)).details && await page.locator('#dChoices .row').count() === 4);
+  for (let i = 0; i < 3; i++) await emit(page, 'pad', 'down');
+  await page.evaluate((items) => window.__capturesReady(items), captures);
+  await idle(page);
+  check('Your captures appears after Change art without moving focus off Hide',
+    (await page.locator('#dChoices .row').allTextContents()).join('|') === 'Play|Favourite|Change art|Your captures|Hide this game' &&
+    await page.locator('#dChoices .row.focus').textContent() === 'Hide this game');
+  await emit(page, 'pad', 'up');
+  await emit(page, 'pad', 'ok');
+  await settled(page);
+  check('Your captures turns the same plate to a grid', await page.locator('#captureGrid button').count() === 8 &&
+    await page.evaluate(() => document.getElementById('capturesFace').classList.contains('on') && !document.getElementById('details').classList.contains('on')));
+  const focus = () => page.locator('#captureGrid .focus').getAttribute('data-index');
+  check('the first capture is focused and labelled with its source and date', await focus() === '0' && (await page.locator('#captureMeta').textContent()).startsWith('Steam · '));
+  await emit(page, 'pad', 'right');
+  await emit(page, 'pad', 'down');
+  check('the d-pad moves across and down the capture grid', await focus() === '4' && (await page.locator('#captureMeta').textContent()).startsWith('Game Bar · '));
+  await page.screenshot({ path: path.join(shots, 'captures-grid.png') });
+  await emit(page, 'pad', 'ok');
+  await until(page, () => document.getElementById('captureImage').naturalWidth > 0);
+  check('Cross shows the selected capture full screen through the asset protocol',
+    await page.locator('#captureViewer').isVisible() && await page.locator('#captureImage').getAttribute('src') === captures[4].path &&
+    await page.locator('#captureImage').evaluate((image) => image.naturalWidth > 0));
+  await emit(page, 'pad', 'right');
+  check('Right shows the next capture in full screen', await page.locator('#captureImage').getAttribute('src') === captures[5].path);
+  await emit(page, 'pad', 'left');
+  check('Left shows the previous capture', await page.locator('#captureImage').getAttribute('src') === captures[4].path);
+  await page.screenshot({ path: path.join(shots, 'capture-fullscreen.png') });
+  await emit(page, 'pad', 'back');
+  check('Circle returns from full screen to the same grid item', !(await page.locator('#captureViewer').isVisible()) && await focus() === '4');
+  await emit(page, 'pad', 'back');
+  check('Circle on the captures face returns to its menu choice', (await state(page)).details && await page.locator('#dChoices .row.focus').textContent() === 'Your captures');
+  await emit(page, 'pad', 'back');
+  await page.evaluate(() => { window.__settings.library_captures = []; });
+  await emit(page, 'pad', 'right');
+  await emit(page, 'pad', 'menu');
+  await idle(page);
+  check('a game with no captures has no Your captures choice', !(await page.locator('#dChoices').textContent()).includes('Your captures'));
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.evaluate(() => {
+    window.__settings = { library_captures: ({ id }) => id === 'pc:1'
+      ? new Promise((resolve) => { window.__capturesReady = resolve; }) : [] };
+  });
+  await emit(page, 'pad', 'menu');
+  await emit(page, 'pad', 'back');
+  await emit(page, 'pad', 'right');
+  await emit(page, 'pad', 'menu');
+  await page.evaluate((items) => window.__capturesReady(items), ipc('captures'));
+  await idle(page);
+  check('a late captures reply cannot add another game\'s captures', !(await page.locator('#dChoices').textContent()).includes('Your captures'));
   await close(page);
 }
 

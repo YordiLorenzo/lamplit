@@ -4,6 +4,7 @@
 import * as api from './api.js';
 import { actAdd, openAdd } from './add.js';
 import { actArt, openArt } from './art.js';
+import { actCaptures, openCaptures } from './captures.js';
 import { actReport } from './report.js';
 import { backFind, closeFind, moveFind, openFind, pressFind, typeFromKeyboard, typeKey } from './find.js';
 import { showHints, toast } from './hints.js';
@@ -89,6 +90,7 @@ export function act(action, source) {
     return;
   }
   if (state.mode === 'details' && state.art.open) return actArt(action);
+  if (state.mode === 'details' && state.captures.open) return actCaptures(action);
   if (state.mode === 'details') {
     if (action === 'back' || action === 'menu') closeDetails();
     else if (action === 'up' || action === 'down') moveDetails(action === 'up' ? -1 : 1);
@@ -96,6 +98,7 @@ export function act(action, source) {
       closeDetails();
       play();
     } else if (action === 'ok' && detailChoice().kind === 'art') openArt();
+    else if (action === 'ok' && detailChoice().kind === 'captures') openCaptures();
     else if (action === 'ok' && detailChoice().hold) holdChoice();
     else if (action === 'ok') markGame();
     return;

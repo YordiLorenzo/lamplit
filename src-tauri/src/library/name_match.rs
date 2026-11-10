@@ -26,7 +26,7 @@ pub fn best_match(name: &str, items: &[(u32, String)]) -> Option<u32> {
         .map(|(id, _)| id)
 }
 
-fn norm(s: &str) -> String {
+pub(super) fn norm(s: &str) -> String {
     let mapped: String = s.chars().map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { ' ' }).collect();
     mapped.split_whitespace().collect::<Vec<_>>().join(" ")
 }

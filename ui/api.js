@@ -6,6 +6,11 @@
 const tauri = /** @type {any} */ (window).__TAURI__;
 
 /**
+ * A screenshot already on the PC, with its file modification time as an ISO timestamp.
+ * @typedef {{ path: string, taken: string, source: 'steam' | 'gamebar' | 'nvidia' }} Capture
+ */
+
+/**
  * @typedef {'steam' | 'epic' | 'ea' | 'ubisoft' | 'rockstar' | 'battlenet' | 'gog' | 'amazon' | 'itch' | 'xbox'} StoreKey
  */
 
@@ -284,6 +289,8 @@ export const librarySetFavourite = (id, on) => call('library_set_favourite', { i
 export const librarySetHidden = (id, on) => call('library_set_hidden', { id, on });
 /** What Steam's store has for `query`. @param {string} query @returns {Promise<ArtCandidate[]>} */
 export const libraryArtSearch = (query) => call('library_art_search', { query });
+/** @param {string} id @returns {Promise<Capture[]>} newest first, with asset URLs ready to display */
+export const libraryCaptures = (id) => call('library_captures', { id });
 /**
  * The art the player chose, null for Lamplit's own match.
  * @param {string} id @param {ArtChoice | null} choice @returns {Promise<Game[]>} every game, with the change

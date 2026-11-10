@@ -136,7 +136,7 @@ fn play_minutes(root: &Path) -> HashMap<u32, u64> {
 /// The account that signed in last, as its folder in userdata is named: the account id, which is the low 32 bits of
 /// the SteamID64 that loginusers.vdf lists it by. Older Steam marks that account `MostRecent`; newer Steam (as on
 /// 2026-10-26) only gives each account the `timestamp` of its last sign-in.
-fn last_account(loginusers: &str) -> Option<u32> {
+pub(crate) fn last_account(loginusers: &str) -> Option<u32> {
     let users = vdf::parse(loginusers);
     let last = |u: &vdf::Vdf| Some((u.str("MostRecent") == Some("1"), u.str("Timestamp")?.parse::<u64>().ok()?));
     let (_, steam_id) = users.get("users")?.entries().iter().filter_map(|(id, u)| Some((last(u)?, id))).max()?;
