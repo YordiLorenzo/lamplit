@@ -177,7 +177,8 @@ Opening a game's menu starts `library_captures` without waiting for it. It retur
 files, sorted by file modification time, newest first. The command does its registry and disk work in `blocking`.
 It reads Steam's last signed-in account with the same `last_account` parser as play minutes. Only the game's own
 `steam_appid` selects `userdata\<account>\760\remote\<appid>\screenshots`; chosen or matched art never selects captures.
-Game Bar filenames must start with the game's name at a word boundary. NVIDIA folders must match the name.
+A Game Bar filename without its trailing date and time must be the game's name, so a sequel's captures stay out.
+NVIDIA folders must match the name.
 Both comparisons ignore case, trademark signs and punctuation separators. Subfolders and symbolic links to files
 are not followed. Network paths from folder settings are skipped.
 

@@ -157,9 +157,19 @@ fn name_key(name: &str) -> String {
     name_match::norm(&clean_name(name).to_lowercase())
 }
 
-fn starts_with_name(stem: &str, name: &str) -> bool {
-    let stem = name_key(stem);
-    stem == name || stem.strip_prefix(name).is_some_and(|rest| rest.starts_with(' '))
+/// Game Bar names a capture after the game, then the date and time ("Portal 2 2026-11-10 12-30-00", or
+/// "Portal 2 11_10_2026 12_30_00 PM" on older Windows). The whole title has to be the game's, so Portal's captures
+/// leave out Portal 2's.
+fn titled(stem: &str, name: &str) -> bool {
+    let mut title = stem.trim_end();
+    while let Some((rest, last)) = title.rsplit_once(' ') {
+        let stamp = last.contains(['-', '_']) && last.chars().all(|c| c.is_ascii_digit() || c == '-' || c == '_');
+        if !stamp && !last.eq_ignore_ascii_case("am") && !last.eq_ignore_ascii_case("pm") {
+            break;
+        }
+        title = rest.trim_end();
+    }
+    name_key(title) == name
 }
 
 fn images(folder: &Path, source: Source, name: Option<&str>, found: &mut Vec<Found>) -> Result<()> {
@@ -167,7 +177,7 @@ fn images(folder: &Path, source: Source, name: Option<&str>, found: &mut Vec<Fou
         let path = entry.path();
         let extension = path.extension().unwrap_or_default().to_string_lossy().to_ascii_lowercase();
         if !matches!(extension.as_str(), "png" | "jpg" | "jpeg")
-            || name.is_some_and(|n| !starts_with_name(&path.file_stem().unwrap_or_default().to_string_lossy(), n))
+            || name.is_some_and(|n| !titled(&path.file_stem().unwrap_or_default().to_string_lossy(), n))
         {
             continue;
         }
@@ -221,7 +231,7 @@ mod tests {
         image(&steam.join(r"userdata\2\760\remote\71\screenshots\other-game.jpg"), 100);
         let bar = root.join("Captures");
         image(&bar.join("GAME NAME 2026-11-10 12-30-00.PNG"), 20);
-        image(&bar.join("Game Names 2026.png"), 100);
+        image(&bar.join("Game Names 2026-11-10 12-30-00.png"), 100);
         image(&bar.join("Other Game Name.png"), 100);
         image(&bar.join("Game Name clip.mp4"), 100);
         let videos = root.join("Videos");
@@ -246,7 +256,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("lamplit-captures-limit-{}", std::process::id()));
         let bar = root.join("Captures");
         for i in 0..65 {
-            image(&bar.join(format!("Game Name {i}.jpg")), i + 1);
+            image(&bar.join(format!("Game Name 2026-11-10 12-30-{i:02}.jpg")), i + 1);
         }
         let gallery = root.join("Custom gallery");
         image(&gallery.join(r"Game Name\nvidia.png"), 70);
@@ -257,17 +267,20 @@ mod tests {
         assert_eq!(shots.last().unwrap().taken, UNIX_EPOCH + Duration::from_secs(7));
         assert!(shots.windows(2).all(|w| w[0].taken > w[1].taken));
         assert!(collect(&game(), None, &root.join("missing"), &[]).unwrap().is_empty());
-        assert!(collect(&game(), None, &bar.join("Game Name 0.jpg"), &[]).is_err());
+        assert!(collect(&game(), None, &bar.join("Game Name 2026-11-10 12-30-00.jpg"), &[]).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn matches_case_trademarks_and_punctuation_but_not_other_names() {
-        assert!(starts_with_name("Game®: Name 2026-11-10", "game name"));
-        assert!(starts_with_name("Tom Clancy's Game 2026", "tom clancy s game"));
-        assert!(starts_with_name("POKÉMON™ 2026", &name_key("Pokémon")));
-        assert!(!starts_with_name("Game Names 2026", "game name"));
-        assert!(!starts_with_name("Another Game Name", "game name"));
+        assert!(titled("Game®: Name 2026-11-10 12-30-00", "game name"));
+        assert!(titled("Tom Clancy's Game 11_10_2026 12_30_00 PM", "tom clancy s game"));
+        assert!(titled("POKÉMON™ 2026-11-10 12-30-00", &name_key("Pokémon")));
+        assert!(titled("Portal 2 2026-11-10 12-30-00", &name_key("Portal 2")));
+        assert!(!titled("Portal 2 2026-11-10 12-30-00", &name_key("Portal")));
+        assert!(!titled("Portal 2 11_10_2026 12_30_00 PM", &name_key("Portal")));
+        assert!(!titled("Game Names 2026-11-10 12-30-00", "game name"));
+        assert!(!titled("Another Game Name", "game name"));
     }
 
     #[test]
