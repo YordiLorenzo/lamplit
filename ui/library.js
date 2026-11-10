@@ -183,6 +183,10 @@ export function closeDetails(away = false) {
   letGo();
   state.mode = 'browse';
   state.art.open = false;
+  state.about.open = false;
+  state.about.fullscreen = false;
+  els.screenshot.hidden = true;
+  els.screenshotImage.removeAttribute('src');
   state.typing = null;
   lower(away);
   sfx.back();
@@ -193,6 +197,7 @@ export function closeDetails(away = false) {
 export function backToMenu() {
   const g = focused();
   state.art.open = false;
+  state.about.open = false;
   state.typing = null;
   showSheet('menu');
   face(coverLook(g.name, g.art.portrait));
@@ -301,7 +306,7 @@ export function holdChoice() {
 }
 
 /**
- * The menu's choices other than Play and Change art: the focused game in or out of the favourites, hidden, closed
+ * The menu's choices other than Play, About and Change art: the focused game in or out of the favourites, hidden, closed
  * while it runs, or, for a game added by hand, removed. The last two come once Cross has been held (holdChoice), on
  * the game and choice the hold began on.
  * @param {{ g?: Shown, kind?: import('./logic.js').DetailChoice['kind'], closer?: import('./api.js').DockGame | null }} [target]

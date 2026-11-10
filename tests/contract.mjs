@@ -37,7 +37,7 @@ export function rust() {
 /** The page's side: each call with the keys it sends, and the events it listens to. */
 export function page() {
   const api = read('ui/api.js');
-  const calls = [...api.matchAll(/\bcall\('(\w+)'(?:,\s*\{([^}]*)\})?\)/g)].map(([, cmd, keys]) => ({
+  const calls = [...api.matchAll(/\b(?:call|invoke)\('(\w+)'(?:,\s*\{([^}]*)\})?\)/g)].map(([, cmd, keys]) => ({
     cmd,
     keys: (keys ?? '').split(',').map((k) => k.trim()).filter(Boolean),
   }));

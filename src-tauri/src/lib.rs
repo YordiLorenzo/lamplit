@@ -119,6 +119,7 @@ pub fn run() {
             commands::library_set_favourite,
             commands::library_set_hidden,
             commands::library_art_search,
+            commands::library_details,
             commands::library_set_art,
             commands::library_programs,
             commands::library_browse,

@@ -42,11 +42,12 @@ ui/
   input.js         controller, keyboard and mouse as one set of actions
   library.js       the cover row, the focused game and its menu
   lift.js          a game's menu lifting its cover over the blurred screen, with one plate beside it that grows out
-                   of the card's edge and holds the menu and Change art as its two faces
+                   of the card's edge and holds the menu, Change art and About as its faces
   veil.js          the game menu's veil: what was behind it, drawn once small, blurred and dimmed, and scaled up,
                    from art decoded and scaled off the page's thread; and once the menu rests, the hero and its shade
                    under it held still as one opaque copy, which the veil fades out over as the menu closes
   art.js           Change art, in a game's menu
+  details.js       About this game, on the same plate, with local screenshots opened full screen above it
   add.js           Add a game, a face of Settings' plate: the programs Lamplit passed over, browsing the drives,
                    naming the game
   keyboard.js      the on-screen keyboards: Find's, and the one for names and art searches
@@ -115,7 +116,8 @@ Lamplit keeps its files in the data folder, `%LOCALAPPDATA%\lamplit`: `prefs.jso
 favourite, hidden, when it was last played, how long Lamplit saw it run, the art the player chose, and for a game
 added by hand its name and exe, or that it was removed again, which keeps it off the row when a scan finds its exe
 outside any store; 0.1.0's `played.json` is still read for the last-played times), `art.json` and
-`art\<steam appid>\` (art lookups and downloads), `quiet-saved.json` (the settings quiet mode replaced),
+`art\<steam appid>\` (art lookups and downloads), `details\<steam appid>.json` (Steam details and their fetch time),
+`art\<steam appid>\screens\` (screenshots and trailer posters), `quiet-saved.json` (the settings quiet mode replaced),
 `steam-saved.json` (Steam's Guide setting and DevTools flag originals, plus a pending restore), and
 `sound-return.json` (separate output and microphone return endpoints and the last default each was routed
 through), plus the logs. Old `setup.json` files no longer determine startup state. WebView2 keeps its profile in
@@ -422,6 +424,7 @@ message is written for the player, and the page shows it.
 | `library_games` | | Every game, or `null` until the first scan has finished |
 | `library_rescan` | | Nothing; scans unless the last scan was under 30 seconds ago |
 | `library_set_favourite`, `library_set_hidden` | `id`, `on` | Every game, after the change |
+| `library_details` | `id` | `{ appid, description, developers, publishers, released, genres, screenshots, trailer }`, or `null` when no Steam match is known or Find art online is off |
 | `launch_start` | `id` | Nothing; `launch-step` and `play` events follow |
 | `launch_anyway` | | Nothing; the launch goes ahead without a confirmed sign-in |
 | `launch_cancel` | | Nothing |
@@ -469,6 +472,16 @@ message is written for the player, and the page shows it.
 | `dock_glass` | `island`: `{ x, y, width, height, radius }` in the window's pixels, or `null` | Whether real glass is under the island now |
 | `dock_glass_fold` | `fold`: `{ to, ms, curve, after, fade, drop }`, the pill and the spring the page folds the island with | Nothing; Rust squeezes the real glass the same way |
 | `dock_close_game` | `force` | Nothing, once Windows has the request; the game's end follows as after any game |
+
+`library_details` runs on the blocking pool using art's `SteamStore` client, timeouts, image-size limit and online
+preference checks. It uses the player's chosen Steam art app id, otherwise the game's own id or a saved name match.
+Choosing no cover art does not erase a known app id. Metadata, including an unavailable store entry, is cached for
+seven days. The first eight screenshot pairs and a playable trailer's poster are downloaded when details are asked
+for; image URLs are hashed into file names under `art\<appid>\screens\`. The cached metadata keeps Steam URLs, and
+the IPC answer replaces images with Tauri asset URLs. The trailer is the first highlighted movie, or the first movie
+when none is highlighted. Its `url` is the `dash_h264` manifest for the page's trailer player. Only HTTPS URLs on
+`video.akamai.steamstatic.com` and `video.fastly.steamstatic.com`, with no credentials or nonstandard port, are accepted.
+No movie or no accepted H.264 DASH URL produces `trailer: null`; HLS and AV1 are not substituted. No new events are emitted.
 
 Report commands run on the blocking pool. The preview reads the current library and prefs, cached accessories,
 Windows display and version information, sound endpoints, store status and `lamplit.log`. The library must have

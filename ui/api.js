@@ -48,6 +48,19 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  */
 
 /**
+ * Steam's About data. Images are asset URLs of files in Lamplit's art folder; trailer.url is an H.264 DASH manifest.
+ * @typedef {object} GameDetails
+ * @property {number} appid
+ * @property {string} description
+ * @property {string[]} developers
+ * @property {string[]} publishers
+ * @property {string} released
+ * @property {string[]} genres
+ * @property {{ thumb: string, full: string }[]} screenshots
+ * @property {{ url: string, poster: string } | null} trailer
+ */
+
+/**
  * An installed program that isn't in the library, for Add a game.
  * @typedef {object} Program
  * @property {string} name
@@ -269,6 +282,8 @@ async function call(cmd, args) {
   }
 }
 
+const invoke = call;
+
 /** The URL the page loads a local file from, through Tauri's asset protocol. @param {string} path */
 export const assetUrl = (path) => /** @type {string} */ (tauri.core.convertFileSrc(path));
 
@@ -284,6 +299,8 @@ export const librarySetFavourite = (id, on) => call('library_set_favourite', { i
 export const librarySetHidden = (id, on) => call('library_set_hidden', { id, on });
 /** What Steam's store has for `query`. @param {string} query @returns {Promise<ArtCandidate[]>} */
 export const libraryArtSearch = (query) => call('library_art_search', { query });
+/** @param {string} id @returns {Promise<GameDetails | null>} */
+export const libraryDetails = (id) => invoke('library_details', { id });
 /**
  * The art the player chose, null for Lamplit's own match.
  * @param {string} id @param {ArtChoice | null} choice @returns {Promise<Game[]>} every game, with the change

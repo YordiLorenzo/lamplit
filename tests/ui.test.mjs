@@ -143,6 +143,94 @@ const state = (page) =>
     scrollW: document.documentElement.scrollWidth,
   }));
 
+// About uses the same plate, and Cross opens local screenshots above it without losing the selected image.
+for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }]) {
+  const games = [game(1, { name: 'ELDEN RING' })];
+  const data = like(ipc('details'), {
+    screenshots: Array.from({ length: 8 }, (_, idx) => ({
+      thumb: `${assetOrigin}/${encodeURIComponent(art[idx % art.length].hero)}`,
+      full: `${assetOrigin}/${encodeURIComponent(art[idx % art.length].hero)}?shot=${idx}`,
+    })),
+  });
+  const page = await open({ games }, viewport);
+  await page.evaluate((data) => {
+    window.__settings = { library_details: () => new Promise((resolve) => { window.__answerDetails = () => resolve(data); }) };
+  }, data);
+  await emit(page, 'pad', 'menu');
+  await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  check('About opens on its loading message', await page.locator('#aboutStatus').textContent() === 'Looking up this game…' && await page.locator('#about.on').count() === 1);
+  check('About asks about the lifted game', JSON.stringify(await page.evaluate(() => window.__calls.find(([cmd]) => cmd === 'library_details'))) === '["library_details",{"id":"pc:1"}]');
+  await page.evaluate(() => window.__answerDetails());
+  await idle(page);
+  await settled(page);
+  check('About shows the description, credits, date and genres',
+    await page.locator('#aboutDescription').textContent() === data.description &&
+    await page.locator('#aboutMeta').textContent() === 'FromSoftware, Inc. · Bandai Namco Entertainment Inc. · 24 Feb, 2022' &&
+    JSON.stringify(await page.locator('#aboutGenres span').allTextContents()) === '["Action","RPG"]');
+  check('About has eight local thumbnails, with the first in focus', await page.locator('#aboutScreens button').count() === 8 && await page.locator('#aboutScreens .focus').getAttribute('data-idx') === '0');
+  const layout = await page.evaluate(() => {
+    const face = document.getElementById('about').getBoundingClientRect();
+    const plate = document.getElementById('sheet').getBoundingClientRect();
+    const last = document.getElementById('aboutScreens').getBoundingClientRect();
+    return { fits: last.bottom <= face.bottom && face.bottom <= document.getElementById('hint').getBoundingClientRect().top, plate: Math.abs(face.width - plate.width) < 1 && Math.abs(face.height - plate.height) < 1 };
+  });
+  check(`${viewport.width}: About fits its plate and stays above the hints`, layout.fits && layout.plate, JSON.stringify(layout));
+  await page.screenshot({ path: path.join(shots, `about-${viewport.width}.png`) });
+  await emit(page, 'pad', 'right');
+  await emit(page, 'pad', 'ok');
+  check('Cross opens the focused screenshot full screen', await page.locator('#screenshot').isVisible() && (await page.locator('#screenshotImage').getAttribute('src')) === data.screenshots[1].full);
+  await emit(page, 'pad', 'right');
+  check('right still moves through screenshots full screen', await page.locator('#screenshotImage').getAttribute('src') === data.screenshots[2].full);
+  await emit(page, 'pad', 'left');
+  await page.screenshot({ path: path.join(shots, `screenshot-${viewport.width}.png`) });
+  await emit(page, 'pad', 'back');
+  check('Circle returns to About and keeps screenshot focus', !(await page.locator('#screenshot').isVisible()) && await page.locator('#about.on').count() === 1 && await page.locator('#aboutScreens .focus').getAttribute('data-idx') === '1');
+  for (let i = 0; i < 10; i++) await emit(page, 'pad', 'right');
+  check('the screenshot row stops at the last image and scrolls it into view', await page.locator('#aboutScreens .focus').getAttribute('data-idx') === '7' && await page.evaluate(() => document.getElementById('aboutScreens').scrollLeft > 0));
+  await page.locator('#aboutScreens .focus').click();
+  await page.locator('#screenshotClose').click();
+  check('mouse clicks open and close screenshots too', !(await page.locator('#screenshot').isVisible()) && await page.locator('#about.on').count() === 1);
+  await emit(page, 'pad', 'back');
+  check('Circle on About returns to its menu choice', await page.locator('#details.on').count() === 1 && await page.locator('#dChoices .focus').textContent() === 'About this game');
+  await emit(page, 'pad', 'back');
+  check('another Circle closes the menu', await page.locator('#lift.on').count() === 0);
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1)] });
+  await page.evaluate(() => {
+    window.__answersDetails = [];
+    window.__settings = { library_details: () => new Promise((resolve) => window.__answersDetails.push(resolve)) };
+  });
+  await emit(page, 'pad', 'menu');
+  await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  await emit(page, 'pad', 'back');
+  await emit(page, 'pad', 'ok');
+  await page.evaluate((data) => window.__answersDetails[0](data), ipc('details'));
+  check('an older request cannot fill a reopened About face', await page.locator('#aboutStatus').textContent() === 'Looking up this game…');
+  await page.evaluate(() => window.__answersDetails[1](null));
+  await idle(page);
+  check('a game without details has the specific message', await page.locator('#aboutStatus').textContent() === 'Lamplit has no details for this game.');
+  await emit(page, 'pad', 'back');
+  await page.evaluate(() => { window.__settings.library_details = () => { throw { kind: 'player', message: "Steam's store didn't answer. Try again in a moment." }; }; });
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('a failed lookup shows the error rather than claiming no details exist', await page.locator('#aboutStatus').textContent() === "Steam's store didn't answer. Try again in a moment.");
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1)], prefs: like(ipc('prefs'), { online_art: false }) });
+  await emit(page, 'pad', 'menu');
+  await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  check('Find art online off explains the setting and makes no lookup', await page.locator('#aboutStatus').textContent() === 'Turn on Find art online in Settings to see details.' && await page.evaluate(() => !window.__calls.some(([cmd]) => cmd === 'library_details')));
+  await emit(page, 'pad', 'back');
+  check('About can go back with online art off', await page.locator('#details.on').count() === 1);
+  await close(page);
+}
+
 // 1. Discovery not finished yet, then nothing found.
 {
   const page = await open({ games: null });
@@ -1102,7 +1190,8 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   d = await details();
   let s = await state(page);
   check('the menu has one line under the name: store, last played and hours played', d.time === '12 h' && /^[^·]+ · (Played|Not played)[^·]+ · 12 h$/.test(d.line), JSON.stringify(d));
-  check('Details open on Play, with the other choices below', d.focus === 'Play' && JSON.stringify(d.choices) === '["Play","Favourite","Change art","Hide this game"]' && s.hint.includes('✕Play'), `${JSON.stringify(d)} ${s.hint}`);
+  check('Details open on Play, with the other choices below', d.focus === 'Play' && JSON.stringify(d.choices) === '["Play","About this game","Favourite","Change art","Hide this game"]' && s.hint.includes('✕Play'), `${JSON.stringify(d)} ${s.hint}`);
+  await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await idle(page);
@@ -1127,7 +1216,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('i');
   await settled(page);
   const second = await page.evaluate(() => {
-    const r = document.querySelectorAll('#dChoices .row')[1].getBoundingClientRect();
+    const r = document.querySelectorAll('#dChoices .row')[2].getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   });
   await page.mouse.click(second.x, second.y);
@@ -1268,7 +1357,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('i');
   let s = await state(page);
   check('Details of the running game offer Back to game', s.hint.includes('✕Back to game'), s.hint);
-  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await idle(page);
   s = await state(page);
@@ -1508,7 +1597,7 @@ const findView = (page) =>
     };
   }, games);
   await page.keyboard.press('i');
-  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
@@ -1935,6 +2024,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   await page.keyboard.press('i');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await idle(page);
   let p = await picker();
@@ -2101,7 +2191,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   await page.keyboard.press('Escape');
   const choices = await page.evaluate(() => [...document.querySelectorAll('#dChoices .row')].map((r) => r.textContent));
   check('the menu of a game added by hand offers Remove from Lamplit, saying the files stay', choices.at(-1) === 'Remove from LamplitLamplit forgets it. The files stay.' && (await page.evaluate(() => document.getElementById('dStore').textContent)) === 'Added by hand', JSON.stringify(choices));
-  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   s = await state(page);
   check('✕ pressed on Remove removes nothing', s.lastCall?.[0] !== 'library_remove_game' && s.hint.includes('Hold to remove'), `${JSON.stringify(s.lastCall)} ${s.hint}`);
@@ -2684,7 +2774,7 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
       [sheet, rows]
     );
   await page.keyboard.press('i');
-  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await settled(page);
   let f = await fit('details', '#dChoices .row');
@@ -3461,12 +3551,13 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
       lit: getComputedStyle(rows[0]).backgroundImage.includes('gradient') && !getComputedStyle(rows[1]).backgroundImage.includes('gradient'),
     };
   });
-  check('one plate holds the menu and Change art', menu.plates === 'sheet,details,artPick', menu.plates);
+  check('one plate holds the menu, Change art and About', menu.plates === 'sheet,details,artPick,about', menu.plates);
   check('... one line under the name, the folder dim at the bottom', /^[^·]+ · Played yesterday · 31 h$/.test(menu.line) && menu.folderBelow && menu.folderDim, JSON.stringify(menu));
-  check('... Play lit and focused first, every row with its icon from the shared set', menu.first && menu.lit && menu.shared && menu.icons === '#i-play,#i-star,#i-photo,#i-eye-off', JSON.stringify(menu));
+  check('... Play lit and focused first, every row with its icon from the shared set', menu.first && menu.lit && menu.shared && menu.icons === '#i-play,#i-info,#i-star,#i-photo,#i-eye-off', JSON.stringify(menu));
   await page.evaluate((list) => {
     window.__settings.library_set_favourite = ({ id, on }) => list.map((g) => (g.id === id ? { ...g, favourite: on } : g));
   }, await page.evaluate(() => window.__state?.games ?? null) ?? [game(1, { last_played: 0 }), game(2), game(3)]);
+  await emit(page, 'pad', 'down');
   await emit(page, 'pad', 'down');
   await emit(page, 'pad', 'ok');
   await idle(page);
@@ -3552,7 +3643,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     JSON.stringify(m.rows.at(-1)) === JSON.stringify(['Close game', 'Closes Game 001', '#i-close-game', true]) && m.rows.filter((r) => r[3]).length === 1,
     JSON.stringify(m.rows)
   );
-  for (let i = 0; i < 4; i++) await emit(page, 'pad', 'down');
+  for (let i = 0; i < 5; i++) await emit(page, 'pad', 'down');
   m = await menu();
   check('... its hint says to hold', m.focus === 'Close game' && m.hint.includes('Hold to close game'), m.hint);
   const before = m.calls.length;
@@ -4089,7 +4180,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   const removeRow = async () => {
     await emit(page, 'pad', 'menu');
     await settled(page);
-    for (let i = 0; i < 4; i++) await emit(page, 'pad', 'down');
+    for (let i = 0; i < 5; i++) await emit(page, 'pad', 'down');
     await settled(page);
   };
   const focusName = () => page.evaluate(() => document.querySelector('.cover.focus .name')?.textContent);
@@ -4129,7 +4220,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await page.evaluate((reading) => (window.__settings = { dock_state: reading }), like(ipc('dock-game'), { id: 'pc:1', name: 'Game 001', closable: true, force_close: false, responding: true, session: 7 }));
   await emit(page, 'pad', 'menu');
   await until(page, () => [...document.querySelectorAll('#dChoices .row')].some((r) => r.textContent.startsWith('Close game')));
-  for (let i = 0; i < 4; i++) await emit(page, 'pad', 'down');
+  for (let i = 0; i < 5; i++) await emit(page, 'pad', 'down');
   const thrown = await page.evaluate((ended) => {
     try {
       window.__emit('play', ended);
@@ -4292,6 +4383,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     JSON.stringify({ first, later: later.sum })
   );
   // Change art keeps it, and back in the menu it is the same.
+  await emit(page, 'pad', 'down');
   await emit(page, 'pad', 'down');
   await emit(page, 'pad', 'down');
   await emit(page, 'pad', 'ok');

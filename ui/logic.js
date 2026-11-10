@@ -189,7 +189,7 @@ export function byPlayed(a, b) {
 /**
  * A choice in a game's menu. `hold`: it can't be taken back, so Cross is held for it, as the hint says; `note` says
  * beforehand what it does.
- * @typedef {{ kind: 'play' | 'favourite' | 'art' | 'hide' | 'close' | 'remove', label: string, icon: import('./icons.js').IconId,
+ * @typedef {{ kind: 'play' | 'about' | 'favourite' | 'art' | 'hide' | 'close' | 'remove', label: string, icon: import('./icons.js').IconId,
  *   hold?: string, note?: string }} DetailChoice
  */
 
@@ -207,6 +207,7 @@ export function detailChoices(g, running, closer = null) {
   /** @type {DetailChoice[]} */
   const choices = [
     { kind: 'play', label: running === g.id ? 'Back to game' : 'Play', icon: 'i-play' },
+    { kind: 'about', label: 'About this game', icon: 'i-info' },
     { kind: 'favourite', label: 'Favourite', icon: g.favourite ? 'i-star-on' : 'i-star' },
     { kind: 'art', label: 'Change art', icon: 'i-photo' },
     { kind: 'hide', label: 'Hide this game', icon: 'i-eye-off' },
