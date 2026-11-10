@@ -189,8 +189,6 @@ export function closeDetails(away = false) {
   closeCaptures();
   state.about.open = false;
   state.about.fullscreen = false;
-  els.screenshot.hidden = true;
-  els.screenshotImage.removeAttribute('src');
   state.typing = null;
   lower(away);
   sfx.back();
@@ -263,6 +261,7 @@ function renderChoices() {
     return row;
   });
   els.dChoices.replaceChildren(...rows);
+  rows[state.detailsIdx]?.scrollIntoView({ block: 'nearest' });
 }
 
 /**

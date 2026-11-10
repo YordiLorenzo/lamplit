@@ -41,15 +41,11 @@ export function showHints() {
     if (s?.state === 'block') html += b('triangle', 'Try anyway');
     html += b('back', 'Cancel');
   } else if (state.mode === 'details' && state.captures.open) {
-    html = state.captures.fullscreen
-      ? '<span>←→ Browse</span>' + b('back', 'Back')
-      : b('ok', 'View') + b('back', 'Back');
+    html = (state.captures.fullscreen ? b('adjust', 'Browse') : b('ok', 'Full screen')) + b('back', 'Back');
   } else if (state.mode === 'details' && state.about.open) {
-    if (state.about.data?.screenshots.length) {
-      html = b('adjust', 'Screenshots');
-      if (!state.about.fullscreen) html += b('ok', 'Full screen');
-    }
-    html += b('back', state.about.fullscreen ? 'Close' : 'Back');
+    if (state.about.fullscreen) html = b('adjust', 'Browse');
+    else if (state.about.data?.screenshots.length) html = b('adjust', 'Screenshots') + b('ok', 'Full screen');
+    html += b('back', 'Back');
   } else if (state.mode === 'details' && state.art.open) {
     html = state.art.editing
       ? b('ok', 'Select') + b('square', 'Delete') + b('triangle', 'Space') + b('back', 'Cancel')

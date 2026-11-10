@@ -180,18 +180,19 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await page.screenshot({ path: path.join(shots, `about-${viewport.width}.png`) });
   await emit(page, 'pad', 'right');
   await emit(page, 'pad', 'ok');
-  check('Cross opens the focused screenshot full screen', await page.locator('#screenshot').isVisible() && (await page.locator('#screenshotImage').getAttribute('src')) === data.screenshots[1].full);
+  check('Cross opens the focused screenshot full screen', await page.locator('#viewer').isVisible() && (await page.locator('#viewerImage').getAttribute('src')) === data.screenshots[1].full
+    && await page.locator('#viewerCaption').textContent() === 'Screenshot 2 of 8');
   await emit(page, 'pad', 'right');
-  check('right still moves through screenshots full screen', await page.locator('#screenshotImage').getAttribute('src') === data.screenshots[2].full);
+  check('right still moves through screenshots full screen', await page.locator('#viewerImage').getAttribute('src') === data.screenshots[2].full);
   await emit(page, 'pad', 'left');
   await page.screenshot({ path: path.join(shots, `screenshot-${viewport.width}.png`) });
   await emit(page, 'pad', 'back');
-  check('Circle returns to About and keeps screenshot focus', !(await page.locator('#screenshot').isVisible()) && await page.locator('#about.on').count() === 1 && await page.locator('#aboutScreens .focus').getAttribute('data-idx') === '1');
+  check('Circle returns to About and keeps screenshot focus', !(await page.locator('#viewer').isVisible()) && await page.locator('#about.on').count() === 1 && await page.locator('#aboutScreens .focus').getAttribute('data-idx') === '1');
   for (let i = 0; i < 10; i++) await emit(page, 'pad', 'right');
   check('the screenshot row stops at the last image and scrolls it into view', await page.locator('#aboutScreens .focus').getAttribute('data-idx') === '7' && await page.evaluate(() => document.getElementById('aboutScreens').scrollLeft > 0));
   await page.locator('#aboutScreens .focus').click();
-  await page.locator('#screenshotClose').click();
-  check('mouse clicks open and close screenshots too', !(await page.locator('#screenshot').isVisible()) && await page.locator('#about.on').count() === 1);
+  await page.locator('#viewer').click();
+  check('mouse clicks open and close screenshots too', !(await page.locator('#viewer').isVisible()) && await page.locator('#about.on').count() === 1);
   await emit(page, 'pad', 'back');
   check('Circle on About returns to its menu choice', await page.locator('#details.on').count() === 1 && await page.locator('#dChoices .focus').textContent() === 'About this game');
   await emit(page, 'pad', 'back');
@@ -219,6 +220,22 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await emit(page, 'pad', 'ok');
   await idle(page);
   check('a failed lookup shows the error rather than claiming no details exist', await page.locator('#aboutStatus').textContent() === "Steam's store didn't answer. Try again in a moment.");
+  await close(page);
+}
+{
+  // Prefs come with the store status, after the games: About opened before they are in still opens and asks Rust.
+  const page = await open({ games: [game(1)] });
+  await page.evaluate(async () => { (await import('/state.js')).state.prefs = null; });
+  await emit(page, 'pad', 'menu');
+  await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  const early = await page.evaluate(() => ({
+    on: document.getElementById('about').classList.contains('on'),
+    text: document.getElementById('aboutDescription').textContent,
+    errors: window.__errors,
+  }));
+  check('About opens while prefs are still loading', early.on && early.text === ipc('details').description && !early.errors.length, JSON.stringify(early));
   await close(page);
 }
 {
@@ -2793,6 +2810,42 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await close(page);
 }
 
+// Every choice at once (a running game added by hand, with captures, under a three-line name) is taller than the
+// plate on a 1080p screen: the choices scroll, and the focused one stays inside the plate, clear of the hints.
+for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }]) {
+  const g = game(1, { name: 'Tomb Raider: Definitive Edition Game of the Year Collectors Bundle', manual: true });
+  const page = await open({ games: [g], running: 'pc:1' }, viewport);
+  await page.evaluate(([reading, captures]) => (window.__settings = { dock_state: reading, library_captures: captures }), [
+    like(ipc('dock-game'), { id: 'pc:1', name: g.name, closable: true, force_close: false, responding: true, session: 7 }),
+    ipc('captures'),
+  ]);
+  await emit(page, 'pad', 'menu');
+  await until(page, () => document.querySelectorAll('#dChoices .row').length === 8);
+  const seen = async () => page.evaluate(() => {
+    const box = (el) => el.getBoundingClientRect();
+    const plate = box(document.getElementById('details'));
+    const focus = box(document.querySelector('#dChoices .row.focus'));
+    const dir = document.getElementById('dDir');
+    return {
+      folder: dir.scrollHeight <= dir.clientHeight + 1 && box(dir).bottom <= plate.bottom,
+      rows: document.querySelectorAll('#dChoices .row').length,
+      focus: document.querySelector('#dChoices .row.focus').textContent,
+      inside: focus.top >= plate.top - 1 && focus.bottom <= plate.bottom + 1,
+      clear: plate.bottom <= box(document.getElementById('hint')).top,
+    };
+  });
+  for (let i = 0; i < 7; i++) await emit(page, 'pad', 'down');
+  await settled(page);
+  const last = await seen();
+  const at = `${viewport.width}x${viewport.height}`;
+  check(`${at}: the last of eight choices scrolls into the plate, clear of the hints, with the whole folder line`, last.rows === 8 && last.focus.startsWith('Remove from Lamplit') && last.inside && last.clear && last.folder, JSON.stringify(last));
+  await page.screenshot({ path: path.join(shots, `menu-eight-${viewport.width}.png`) });
+  for (let i = 0; i < 7; i++) await emit(page, 'pad', 'up');
+  const first = await seen();
+  check(`${at}: Back to game scrolls back into the plate`, first.focus === 'Back to game' && first.inside, JSON.stringify(first));
+  await close(page);
+}
+
 // 36. Show it now with a mouse (over Moonlight, say): the pointer that clicked moves a pixel or two while the
 // screensaver gets its colours ready, and as the hand settles; that neither calls it off nor ends it. A real move,
 // once the hand has settled, still ends it.
@@ -5004,17 +5057,17 @@ for (const dismiss of ['ok', 'back']) {
   check('the d-pad moves across and down the capture grid', await focus() === '4' && (await page.locator('#captureMeta').textContent()).startsWith('Game Bar · '));
   await page.screenshot({ path: path.join(shots, 'captures-grid.png') });
   await emit(page, 'pad', 'ok');
-  await until(page, () => document.getElementById('captureImage').naturalWidth > 0);
+  await until(page, () => document.getElementById('viewerImage').naturalWidth > 0);
   check('Cross shows the selected capture full screen through the asset protocol',
-    await page.locator('#captureViewer').isVisible() && await page.locator('#captureImage').getAttribute('src') === captures[4].path &&
-    await page.locator('#captureImage').evaluate((image) => image.naturalWidth > 0));
+    await page.locator('#viewer').isVisible() && await page.locator('#viewerImage').getAttribute('src') === captures[4].path &&
+    await page.locator('#viewerImage').evaluate((image) => image.naturalWidth > 0));
   await emit(page, 'pad', 'right');
-  check('Right shows the next capture in full screen', await page.locator('#captureImage').getAttribute('src') === captures[5].path);
+  check('Right shows the next capture in full screen', await page.locator('#viewerImage').getAttribute('src') === captures[5].path);
   await emit(page, 'pad', 'left');
-  check('Left shows the previous capture', await page.locator('#captureImage').getAttribute('src') === captures[4].path);
+  check('Left shows the previous capture', await page.locator('#viewerImage').getAttribute('src') === captures[4].path);
   await page.screenshot({ path: path.join(shots, 'capture-fullscreen.png') });
   await emit(page, 'pad', 'back');
-  check('Circle returns from full screen to the same grid item', !(await page.locator('#captureViewer').isVisible()) && await focus() === '4');
+  check('Circle returns from full screen to the same grid item', !(await page.locator('#viewer').isVisible()) && await focus() === '4');
   await emit(page, 'pad', 'back');
   check('Circle on the captures face returns to its menu choice', (await state(page)).details && await page.locator('#dChoices .row.focus').textContent() === 'Your captures');
   await emit(page, 'pad', 'back');

@@ -7,6 +7,7 @@ import { backToMenu } from './library.js';
 import { showSheet } from './lift.js';
 import { sfx } from './sounds.js';
 import { els, state } from './state.js';
+import { showPicture } from './viewer.js';
 
 let requests = 0;
 
@@ -19,13 +20,13 @@ export async function openAbout() {
   els.aboutMeta.textContent = '';
   els.aboutGenres.replaceChildren();
   els.aboutScreens.replaceChildren();
-  els.aboutStatus.textContent = state.prefs.online_art
-    ? 'Looking up this game…'
-    : 'Turn on Find art online in Settings to see details.';
+  // Prefs can still be on their way just after start; Rust answers null itself while Find art online is off.
+  const online = state.prefs?.online_art !== false;
+  els.aboutStatus.textContent = online ? 'Looking up this game…' : 'Turn on Find art online in Settings to see details.';
   showSheet('about');
   sfx.open();
   showHints();
-  if (!state.prefs.online_art) return;
+  if (!online) return;
   try {
     const data = await libraryDetails(id);
     if (asked !== requests || !state.about.open || state.lifted !== id) return;
@@ -58,14 +59,9 @@ function focusScreenshot() {
     button.setAttribute('aria-current', String(idx === about.idx));
     if (idx === about.idx) button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
-  els.screenshot.hidden = !about.fullscreen;
   const shot = about.data?.screenshots[about.idx];
-  if (about.fullscreen && shot) {
-    els.screenshotImage.src = shot.full;
-    els.screenshotImage.alt = `Screenshot ${about.idx + 1} of ${about.data.screenshots.length}`;
-  } else {
-    els.screenshotImage.removeAttribute('src');
-  }
+  const label = `Screenshot ${about.idx + 1} of ${about.data?.screenshots.length}`;
+  showPicture(about.fullscreen && shot ? { src: shot.full, alt: label, caption: label } : null);
   showHints();
 }
 
@@ -107,8 +103,6 @@ els.aboutScreens.addEventListener('click', (event) => {
   state.about.idx = Number(button.dataset.idx);
   actAbout('ok');
 });
-for (const [id, action] of /** @type {[string, import('./api.js').Action][]} */ ([
-  ['screenshotPrevious', 'left'], ['screenshotNext', 'right'], ['screenshotClose', 'back'],
-])) {
-  document.getElementById(id).addEventListener('click', () => actAbout(action));
-}
+els.viewer.addEventListener('click', () => {
+  if (state.about.fullscreen) actAbout('back');
+});

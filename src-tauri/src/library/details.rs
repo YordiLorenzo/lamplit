@@ -12,8 +12,10 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, WebviewWindow};
 
@@ -49,16 +51,18 @@ struct Cache {
     details: Option<Details>,
 }
 
-/// One fetch at a time: a quick close and reopen must not write the same atomic-write temporary file twice.
-static FETCH: Mutex<()> = Mutex::new(());
+/// One fetch per game at a time: a quick close and reopen must not write the same atomic-write temporary file twice.
+/// Another game's details don't wait for this game's downloads.
+static FETCHING: Mutex<BTreeMap<u32, Arc<Mutex<()>>>> = Mutex::new(BTreeMap::new());
 
 pub fn get(app: &AppHandle, id: &str) -> Result<Option<Details>> {
-    let _fetch = FETCH.lock();
     if !prefs::get(app).online_art {
         return Ok(None);
     }
     let Some(game) = app.state::<Library>().game(id) else { return Ok(None) };
     let Some(appid) = details_appid(&game) else { return Ok(None) };
+    let fetching = FETCHING.lock().entry(appid).or_default().clone();
+    let _fetch = fetching.lock();
     let mut store = SteamStore::new(app);
     let result = fetch(app, appid, &mut store);
     // A setting changed during an HTTP request takes effect before anything reaches the page.

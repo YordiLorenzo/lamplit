@@ -97,17 +97,11 @@
       </section>
     </aside>
   </div>
-  <div id="captureViewer" role="dialog" aria-label="Capture" aria-modal="true" hidden>
-    <img id="captureImage" alt="" draggable="false">
-    <p id="captureError" hidden>This capture could not be opened.</p>
-    <p id="captureCaption"></p>
-  </div>
-
-  <div id="screenshot" role="dialog" aria-modal="true" aria-label="Game screenshot" hidden>
-    <img id="screenshotImage" alt="">
-    <button id="screenshotPrevious" type="button" aria-label="Previous screenshot">‹</button>
-    <button id="screenshotNext" type="button" aria-label="Next screenshot">›</button>
-    <button id="screenshotClose" type="button" aria-label="Close screenshot">×</button>
+  <!-- A capture or a screenshot full screen (viewer.js); a click closes it. -->
+  <div id="viewer" role="dialog" aria-label="Screenshot" aria-modal="true" hidden>
+    <img id="viewerImage" alt="" draggable="false">
+    <p id="viewerError" hidden>This screenshot could not be opened.</p>
+    <p id="viewerCaption"></p>
   </div>
 
   <!-- Settings, Add a game and Save a report share one plate; its size follows the face it shows. -->

@@ -49,8 +49,9 @@ ui/
                    from art decoded and scaled off the page's thread; and once the menu rests, the hero and its shade
                    under it held still as one opaque copy, which the veil fades out over as the menu closes
   art.js           Change art, in a game's menu
-  captures.js      Your captures, on the game's plate: a thumbnail grid and a full-screen image viewer
-  details.js       About this game, on the same plate, with local screenshots opened full screen above it
+  captures.js      Your captures, on the game's plate: a thumbnail grid
+  details.js       About this game, on the same plate: Steam's description, details and a row of screenshots
+  viewer.js        a capture or a screenshot full screen, with its caption
   add.js           Add a game, a face of Settings' plate: the programs Lamplit passed over, browsing the drives,
                    naming the game
   keyboard.js      the on-screen keyboards: Find's, and the one for names and art searches

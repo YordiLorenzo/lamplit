@@ -8,6 +8,7 @@ import { showSheet } from './lift.js';
 import { captureStep, captureText } from './logic.js';
 import { sfx } from './sounds.js';
 import { byId, els, state } from './state.js';
+import { showPicture } from './viewer.js';
 
 /** The menu stays usable while the folders are read. A later opening owns a new state object. */
 export async function readCaptures() {
@@ -59,15 +60,7 @@ function render() {
   }
   const text = `${captureText(capture)} · ${captures.idx + 1} of ${captures.items.length}`;
   els.captureMeta.textContent = text;
-  els.captureCaption.textContent = text;
-  els.captureViewer.hidden = !captures.fullscreen;
-  if (captures.fullscreen) {
-    els.captureError.hidden = true;
-    els.captureImage.src = capture.path;
-    els.captureImage.alt = `Capture from ${byId(captures.id).name}`;
-  } else {
-    els.captureImage.removeAttribute('src');
-  }
+  showPicture(captures.fullscreen ? { src: capture.path, alt: `Capture from ${byId(captures.id).name}`, caption: text } : null);
   showHints();
 }
 
@@ -75,8 +68,7 @@ function render() {
 export function closeCaptures() {
   state.captures.open = false;
   state.captures.fullscreen = false;
-  els.captureViewer.hidden = true;
-  els.captureImage.removeAttribute('src');
+  showPicture(null);
 }
 
 /** @param {import('./api.js').Action} action */
@@ -104,13 +96,12 @@ export function actCaptures(action) {
   }
 }
 
-els.captureImage.addEventListener('error', () => {
-  if (state.captures.fullscreen) els.captureError.hidden = false;
-});
 els.captureGrid.addEventListener('click', (event) => {
   const tile = /** @type {HTMLElement | null} */ (/** @type {Element} */ (event.target).closest('[data-index]'));
   if (!tile || !state.captures.open) return;
   state.captures.idx = Number(tile.dataset.index);
   actCaptures('ok');
 });
-els.captureViewer.addEventListener('click', () => actCaptures('back'));
+els.viewer.addEventListener('click', () => {
+  if (state.captures.fullscreen) actCaptures('back');
+});
