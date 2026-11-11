@@ -29,6 +29,26 @@ impl InterfaceSounds {
     }
 }
 
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Trailers {
+    Off,
+    #[default]
+    Muted,
+    WithSound,
+}
+
+impl Trailers {
+    pub fn parse(level: &str) -> Result<Self> {
+        match level {
+            "off" => Ok(Self::Off),
+            "muted" => Ok(Self::Muted),
+            "with_sound" => Ok(Self::WithSound),
+            _ => Err(Error::Player("Choose Off, Muted or With sound for trailers.".into())),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Hint {
@@ -75,6 +95,7 @@ pub struct Prefs {
     /// Sound follows the headset and controller headphones (accessories.rs).
     pub sound_follows: bool,
     pub interface_sounds: InterfaceSounds,
+    pub trailers: Trailers,
     pub hints: Hints,
     /// The DualSense touchpad moves the mouse (trackpad.rs).
     pub touchpad_mouse: bool,
@@ -104,6 +125,7 @@ impl Default for Prefs {
         Prefs {
             sound_follows: true,
             interface_sounds: InterfaceSounds::Normal,
+            trailers: Trailers::Muted,
             hints: Hints::default(),
             touchpad_mouse: false,
             steam_devtools: false,
@@ -181,7 +203,7 @@ pub fn stop_steam_changes() -> Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Hint, Hints, InterfaceSounds, Prefs};
+    use super::{Hint, Hints, InterfaceSounds, Prefs, Trailers};
 
     #[test]
     fn the_defaults_reach_the_page_as_in_the_fixture() {
@@ -195,6 +217,7 @@ mod tests {
         assert!(!prefs.sound_follows && prefs.touchpad_mouse);
         assert_eq!(prefs.screensaver_minutes, 5);
         assert_eq!(prefs.interface_sounds, InterfaceSounds::Normal);
+        assert_eq!(prefs.trailers, Trailers::Muted);
         assert_eq!(prefs.hints.game_menu.starts, 0);
         assert!(!prefs.hints.return_home.done);
         assert!(prefs.steam_guide);
@@ -217,6 +240,18 @@ mod tests {
             assert_eq!(serde_json::to_value(level).unwrap(), name);
         }
         assert!(InterfaceSounds::parse("loud").is_err());
+    }
+
+    #[test]
+    fn trailer_levels_accept_and_restore_only_the_three_choices() {
+        for (name, level) in [("off", Trailers::Off), ("muted", Trailers::Muted), ("with_sound", Trailers::WithSound)] {
+            assert_eq!(Trailers::parse(name).unwrap(), level);
+            assert_eq!(serde_json::to_value(level).unwrap(), name);
+            let saved = serde_json::json!({ "trailers": level });
+            assert_eq!(serde_json::from_value::<Prefs>(saved).unwrap().trailers, level);
+        }
+        assert!(Trailers::parse("loud").is_err());
+        assert!(serde_json::from_str::<Prefs>(r#"{ "trailers": "loud" }"#).is_err());
     }
 
     #[test]

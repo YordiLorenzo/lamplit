@@ -60,8 +60,8 @@ fn steam_library_cache() -> Option<PathBuf> {
 }
 
 /// Lets the page load files from the two folders art comes from. tauri.conf.json gives the asset protocol no
-/// folder at all, so the page can't read anything else on the PC. Runs with every scan, so a Steam installed while
-/// Lamplit runs is covered too.
+/// folder at all; captures.rs opens only the capture folders a game's menu needs. Runs with every scan, so a Steam
+/// installed while Lamplit runs is covered too.
 pub fn open_folders_to_page(app: &AppHandle) -> tauri::Result<()> {
     let scope = app.asset_protocol_scope();
     scope.allow_directory(downloads(), true)?;
@@ -144,6 +144,14 @@ fn shown_appid(g: &Game, known: Option<u32>) -> Option<u32> {
         Some(ArtChoice::None) => None,
         None => known,
     }
+}
+
+/// Details use a known Steam match even when the player has hidden the cover art.
+pub(super) fn details_appid(g: &Game) -> Option<u32> {
+    if let Some(ArtChoice::Steam(appid)) = g.art_choice {
+        return Some(appid);
+    }
+    g.steam_appid.or_else(|| load().lookups.get(&g.id).and_then(|l| l.appid))
 }
 
 /// Fetches the art still missing from Steam's store, and puts it in the library and tells the page, game by game.
@@ -332,7 +340,7 @@ fn offline() -> Error {
 }
 
 /// The error the player reads when a request of Change art failed.
-fn unreached(store: &mut SteamStore, what: &str, e: &ureq::Error) -> Error {
+pub(super) fn unreached(store: &mut SteamStore, what: &str, e: &ureq::Error) -> Error {
     store.failed(what, e);
     Error::Player("Steam's store didn't answer. Try again in a moment.".into())
 }
@@ -381,7 +389,7 @@ fn parse_store_items(body: &serde_json::Value) -> HashMap<u32, Assets> {
 /// connection) ends the pass's network work, so a dead connection costs one timeout rather than one per game; the
 /// next scan tries again. Any other failure (an error from Steam, a download that stalls) affects only its own
 /// request. The pass also stops going online once the player switches online art off.
-struct SteamStore {
+pub(super) struct SteamStore {
     app: AppHandle,
     agent: ureq::Agent,
     /// The store's country (listings differ per country), from the player's Windows region.
@@ -390,7 +398,7 @@ struct SteamStore {
 }
 
 impl SteamStore {
-    fn new(app: &AppHandle) -> Self {
+    pub(super) fn new(app: &AppHandle) -> Self {
         let agent = ureq::Agent::config_builder()
             // Reaching Steam takes well under a second on a working network.
             .timeout_resolve(Some(Duration::from_secs(10)))
@@ -406,11 +414,11 @@ impl SteamStore {
     }
 
     /// Steam has been reachable so far, and the player still lets Lamplit find art online.
-    fn online(&self) -> bool {
+    pub(super) fn online(&self) -> bool {
         !self.offline && prefs::get(&self.app).online_art
     }
 
-    fn failed(&mut self, what: &str, e: &ureq::Error) {
+    pub(super) fn failed(&mut self, what: &str, e: &ureq::Error) {
         log::warn!("art: {what} failed: {e}");
         if unreachable(e) && !self.offline {
             log::warn!("art: Steam can't be reached, so no more art until the next scan");
@@ -440,6 +448,16 @@ impl SteamStore {
             .body_mut()
             .read_json()?;
         Ok(parse_search(&body))
+    }
+
+    pub(super) fn details(&self, appid: u32) -> Result<serde_json::Value, ureq::Error> {
+        self.agent
+            .get("https://store.steampowered.com/api/appdetails")
+            .query("appids", appid.to_string())
+            .query("l", "english")
+            .call()?
+            .body_mut()
+            .read_json()
     }
 
     /// The art URLs of the `appids` Steam answered for, and those appids, from GetItems calls of ITEMS_PER_CALL each.
@@ -478,7 +496,7 @@ impl SteamStore {
     }
 
     /// A JPEG or PNG, Ok(None) when the store has no such file.
-    fn image(&self, url: &str) -> Result<Option<Vec<u8>>, ureq::Error> {
+    pub(super) fn image(&self, url: &str) -> Result<Option<Vec<u8>>, ureq::Error> {
         let mut resp = match self.agent.get(url).call() {
             Ok(r) => r,
             Err(ureq::Error::StatusCode(404 | 403 | 410)) => return Ok(None),
@@ -540,6 +558,17 @@ mod tests {
         g.art = Art { portrait: Some("old.jpg".into()), hero: None, logo: None };
         from_disk(std::slice::from_mut(&mut g));
         assert_eq!(g.art, Art::default());
+    }
+
+    #[test]
+    fn details_use_the_chosen_app_or_the_games_own_even_without_cover_art() {
+        let mut g = Game::new("steam:70".into(), "Half-Life".into(), None, PathBuf::new(), Launch::Uri(String::new()));
+        g.steam_appid = Some(70);
+        assert_eq!(details_appid(&g), Some(70));
+        g.art_choice = Some(ArtChoice::Steam(1_245_620));
+        assert_eq!(details_appid(&g), Some(1_245_620));
+        g.art_choice = Some(ArtChoice::None);
+        assert_eq!(details_appid(&g), Some(70));
     }
 
     #[test]

@@ -3,6 +3,7 @@
 
 pub mod audio;
 pub mod bluetooth;
+pub mod captures;
 mod com;
 pub mod display;
 pub mod dock;

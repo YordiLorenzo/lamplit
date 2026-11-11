@@ -40,13 +40,19 @@ export function showHints() {
     if (s) html += b('ok', stepAction(s));
     if (s?.state === 'block') html += b('triangle', 'Try anyway');
     html += b('back', 'Cancel');
+  } else if (state.mode === 'details' && state.captures.open) {
+    html = (state.captures.fullscreen ? b('adjust', 'Browse') : b('ok', 'Full screen')) + b('back', 'Back');
+  } else if (state.mode === 'details' && state.about.open) {
+    if (state.about.fullscreen) html = b('adjust', 'Browse');
+    else if (state.about.data?.screenshots.length) html = b('adjust', 'Screenshots') + b('ok', 'Full screen');
+    html += b('back', 'Back');
   } else if (state.mode === 'details' && state.art.open) {
     html = state.art.editing
       ? b('ok', 'Select') + b('square', 'Delete') + b('triangle', 'Space') + b('back', 'Cancel')
       : b('ok', 'Select') + b('square', 'Edit search') + b('back', 'Back');
   } else if (state.mode === 'details') {
     // The choice in focus, or the last one when the one in focus went (a game that ended takes Close game with it).
-    const list = detailChoices(g, state.running, state.closer);
+    const list = detailChoices(g, state.running, state.closer, state.captures.items.length > 0);
     const choice = list[Math.min(state.detailsIdx, list.length - 1)];
     html = b('ok', choice.kind === 'play' ? choice.label : (choice.hold ?? 'Select')) + b('back', 'Close');
   } else if (state.mode === 'add' && state.add.view === 'name') {

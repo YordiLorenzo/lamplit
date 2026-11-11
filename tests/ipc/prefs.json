@@ -1,6 +1,7 @@
 {
   "sound_follows": true,
   "interface_sounds": "normal",
+  "trailers": "muted",
   "hints": {
     "game_menu": { "starts": 0, "done": false },
     "return_home": { "starts": 0, "done": false }

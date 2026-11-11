@@ -189,7 +189,7 @@ export function byPlayed(a, b) {
 /**
  * A choice in a game's menu. `hold`: it can't be taken back, so Cross is held for it, as the hint says; `note` says
  * beforehand what it does.
- * @typedef {{ kind: 'play' | 'favourite' | 'art' | 'hide' | 'close' | 'remove', label: string, icon: import('./icons.js').IconId,
+ * @typedef {{ kind: 'play' | 'about' | 'favourite' | 'art' | 'captures' | 'hide' | 'close' | 'remove', label: string, icon: import('./icons.js').IconId,
  *   hold?: string, note?: string }} DetailChoice
  */
 
@@ -201,16 +201,19 @@ export function byPlayed(a, b) {
  * @param {Game} g
  * @param {string | null} running  the id of the game that runs
  * @param {{ id: string, closable: boolean, force_close: boolean } | null} [closer]
+ * @param {boolean} [captures] the game has screenshots on the PC
  * @returns {DetailChoice[]}
  */
-export function detailChoices(g, running, closer = null) {
+export function detailChoices(g, running, closer = null, captures = false) {
   /** @type {DetailChoice[]} */
   const choices = [
     { kind: 'play', label: running === g.id ? 'Back to game' : 'Play', icon: 'i-play' },
+    { kind: 'about', label: 'About this game', icon: 'i-info' },
     { kind: 'favourite', label: 'Favourite', icon: g.favourite ? 'i-star-on' : 'i-star' },
     { kind: 'art', label: 'Change art', icon: 'i-photo' },
     { kind: 'hide', label: 'Hide this game', icon: 'i-eye-off' },
   ];
+  if (captures) choices.splice(4, 0, { kind: 'captures', label: 'Your captures', icon: 'i-camera' });
   if (running === g.id && closer?.id === g.id && closer.closable) {
     choices.push(
       closer.force_close
@@ -220,6 +223,25 @@ export function detailChoices(g, running, closer = null) {
   }
   if (g.manual) choices.push({ kind: 'remove', label: 'Remove from Lamplit', icon: 'i-remove', hold: 'Hold to remove', note: 'Lamplit forgets it. The files stay.' });
   return choices;
+}
+
+/**
+ * A capture grid keeps horizontal moves on the same row; Down reaches the last item on a short final row.
+ * @param {number} index @param {number} count @param {number} columns
+ * @param {'up' | 'down' | 'left' | 'right'} direction
+ */
+export function captureStep(index, count, columns, direction) {
+  if (direction === 'left') return index % columns ? index - 1 : index;
+  if (direction === 'right') return index % columns < columns - 1 && index + 1 < count ? index + 1 : index;
+  if (direction === 'up') return index >= columns ? index - columns : index;
+  return Math.floor(index / columns) < Math.floor((count - 1) / columns) ? Math.min(index + columns, count - 1) : index;
+}
+
+/** @param {import('./api.js').Capture} capture */
+export function captureText(capture) {
+  const source = { steam: 'Steam', gamebar: 'Game Bar', nvidia: 'NVIDIA' }[capture.source];
+  const date = new Date(capture.taken).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return `${source} · ${date}`;
 }
 
 /**
@@ -531,6 +553,60 @@ export function stepInterfaceSounds(level, dir) {
   return levels[Math.max(0, Math.min(levels.length - 1, levels.indexOf(level) + dir))];
 }
 
+/** @type {Record<import('./api.js').Trailers, string>} */
+const TRAILER_LEVELS = { off: 'Off', muted: 'Muted', with_sound: 'With sound' };
+
+/** @param {import('./api.js').Trailers} level @param {number} dir */
+export function stepTrailers(level, dir) {
+  const levels = /** @type {import('./api.js').Trailers[]} */ (Object.keys(TRAILER_LEVELS));
+  return levels[Math.max(0, Math.min(levels.length - 1, levels.indexOf(level) + dir))];
+}
+
+/**
+ * A trailer needs an idle home screen in front, with the player's permission to fetch it.
+ * @param {{ mode: string, running: string | null, prefs: import('./api.js').Prefs | null }} state
+ * @param {{ front: boolean, reduced: boolean, saver: boolean, dock: boolean }} view
+ */
+export function trailerAllowed(state, view) {
+  return state.mode === 'browse' && !state.running && !!state.prefs?.online_art && state.prefs.trailers !== 'off'
+    && view.front && !view.reduced && !view.saver && !view.dock;
+}
+
+/** Brightest channel value (0 to 255) a row of a trailer frame may reach and still be a black bar: H.264 leaves noise. */
+const BAR_LEVEL = 28;
+
+/**
+ * The black bars a film trailer has inside its picture (a 2.39:1 film in a 16:9 video), as the share of the frame's
+ * height of the thinner of the top and bottom bar. Null for a frame that can't tell: all dark, or a picture shorter
+ * than 55% of the frame (a logo on black looks like a very wide film).
+ * @param {Uint8ClampedArray} rgba @param {number} width @param {number} height
+ */
+export function letterbox(rgba, width, height) {
+  const lit = Array.from({ length: height }, (_, y) => {
+    for (let i = y * width * 4; i < (y + 1) * width * 4; i += 4) {
+      if (Math.max(rgba[i], rgba[i + 1], rgba[i + 2]) > BAR_LEVEL) return true;
+    }
+    return false;
+  });
+  const top = lit.indexOf(true);
+  if (top < 0) return null;
+  const bottom = height - 1 - lit.lastIndexOf(true);
+  if (height - top - bottom < height * 0.55) return null;
+  return Math.min(top, bottom) / height;
+}
+
+/**
+ * How much to enlarge a trailer that covers the screen so its picture, without the black bars, covers it too.
+ * @param {number} bar the share of the video's height each bar takes (letterbox)
+ * @param {{ width: number, height: number }} video @param {{ width: number, height: number }} screen
+ */
+export function trailerZoom(bar, video, screen) {
+  // Thinner bars than this are noise or a frame's own dark edge.
+  if (bar < 0.03) return 1;
+  const shown = Math.max(screen.height, (screen.width * video.height) / video.width);
+  return Math.max(1, screen.height / (shown * (1 - 2 * bar)));
+}
+
 /** The screensaver's settings until Rust's prefs are in, as prefs.rs has them. */
 export const SAVER_DEFAULT = /** @type {const} */ ({ minutes: 5 });
 /** The delays Settings > Screensaver offers, in minutes; 0 is never. */
@@ -660,7 +736,8 @@ export function sectionRows(key, state) {
   const { sound, accessories: acc, prefs } = state;
   if (key === 'sound') {
     const interfaceSounds = { kind: 'interfacesounds', adjust: true, label: 'Interface sounds', value: SOUND_LEVELS[prefs?.interface_sounds ?? 'normal'] };
-    if (!sound) return [interfaceSounds, { label: 'Sound devices', value: 'Not available' }];
+    const trailers = { kind: 'trailers', adjust: true, label: 'Trailers', value: TRAILER_LEVELS[prefs?.trailers ?? 'muted'] };
+    if (!sound) return [interfaceSounds, trailers, { label: 'Sound devices', value: 'Not available' }];
     rows.push({ heading: 'Output' });
     for (const d of sound.outputs) rows.push({ kind: 'device', id: d.id, label: d.name, value: d.default ? 'In use' : '', tone: 'good' });
     rows.push({ kind: 'volume', adjust: true, label: 'Volume', value: sound.muted ? 'Muted' : `${sound.volume ?? '?'}%` });
@@ -670,7 +747,7 @@ export function sectionRows(key, state) {
     rows.push({ kind: 'micmute', label: 'Mute microphone', value: onOff(sound.mic_muted) });
     rows.push({ heading: 'Automatic' });
     rows.push({ kind: 'follows', label: 'Sound follows the headset and controller headphones', value: onOff(prefs?.sound_follows) });
-    rows.push(interfaceSounds);
+    rows.push(interfaceSounds, trailers);
   } else if (key === 'headset') {
     const h = acc?.headset;
     rows.push({ heading: 'Logitech PRO X 2 LIGHTSPEED' });

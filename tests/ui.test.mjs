@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { ipc, known, like, values } from './fixtures.mjs';
 import { dockTests } from './dock.mjs';
 import { probeTests } from './probe.mjs';
+import { trailerTests } from './trailer.mjs';
 import { assetOrigin, commands, cspHeader, emit, idle, open as openPage, pageOrigin, serveFile, settled, until } from './page.mjs';
 import { SCENES } from '../ui/screensaver/scenes.js';
 import { SPRINGS } from '../ui/springs.js';
@@ -142,6 +143,111 @@ const state = (page) =>
     errors: window.__errors,
     scrollW: document.documentElement.scrollWidth,
   }));
+
+// About uses the same plate, and Cross opens local screenshots above it without losing the selected image.
+for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }]) {
+  const games = [game(1, { name: 'ELDEN RING' })];
+  const data = like(ipc('details'), {
+    screenshots: Array.from({ length: 8 }, (_, idx) => ({
+      thumb: `${assetOrigin}/${encodeURIComponent(art[idx % art.length].hero)}`,
+      full: `${assetOrigin}/${encodeURIComponent(art[idx % art.length].hero)}?shot=${idx}`,
+    })),
+  });
+  const page = await open({ games }, viewport);
+  await page.evaluate((data) => {
+    window.__settings = { library_details: () => new Promise((resolve) => { window.__answerDetails = () => resolve(data); }) };
+  }, data);
+  await emit(page, 'pad', 'menu');
+  await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  check('About opens on its loading message', await page.locator('#aboutStatus').textContent() === 'Looking up this game…' && await page.locator('#about.on').count() === 1);
+  check('About asks about the lifted game', JSON.stringify(await page.evaluate(() => window.__calls.find(([cmd]) => cmd === 'library_details'))) === '["library_details",{"id":"pc:1"}]');
+  await page.evaluate(() => window.__answerDetails());
+  await idle(page);
+  await settled(page);
+  check('About shows the description, credits, date and genres',
+    await page.locator('#aboutDescription').textContent() === data.description &&
+    await page.locator('#aboutMeta').textContent() === 'FromSoftware, Inc. · Bandai Namco Entertainment Inc. · 24 Feb, 2022' &&
+    JSON.stringify(await page.locator('#aboutGenres span').allTextContents()) === '["Action","RPG"]');
+  check('About has eight local thumbnails, with the first in focus', await page.locator('#aboutScreens button').count() === 8 && await page.locator('#aboutScreens .focus').getAttribute('data-idx') === '0');
+  const layout = await page.evaluate(() => {
+    const face = document.getElementById('about').getBoundingClientRect();
+    const plate = document.getElementById('sheet').getBoundingClientRect();
+    const last = document.getElementById('aboutScreens').getBoundingClientRect();
+    return { fits: last.bottom <= face.bottom && face.bottom <= document.getElementById('hint').getBoundingClientRect().top, plate: Math.abs(face.width - plate.width) < 1 && Math.abs(face.height - plate.height) < 1 };
+  });
+  check(`${viewport.width}: About fits its plate and stays above the hints`, layout.fits && layout.plate, JSON.stringify(layout));
+  await page.screenshot({ path: path.join(shots, `about-${viewport.width}.png`) });
+  await emit(page, 'pad', 'right');
+  await emit(page, 'pad', 'ok');
+  check('Cross opens the focused screenshot full screen', await page.locator('#viewer').isVisible() && (await page.locator('#viewerImage').getAttribute('src')) === data.screenshots[1].full
+    && await page.locator('#viewerCaption').textContent() === 'Screenshot 2 of 8');
+  await emit(page, 'pad', 'right');
+  check('right still moves through screenshots full screen', await page.locator('#viewerImage').getAttribute('src') === data.screenshots[2].full);
+  await emit(page, 'pad', 'left');
+  await page.screenshot({ path: path.join(shots, `screenshot-${viewport.width}.png`) });
+  await emit(page, 'pad', 'back');
+  check('Circle returns to About and keeps screenshot focus', !(await page.locator('#viewer').isVisible()) && await page.locator('#about.on').count() === 1 && await page.locator('#aboutScreens .focus').getAttribute('data-idx') === '1');
+  for (let i = 0; i < 10; i++) await emit(page, 'pad', 'right');
+  check('the screenshot row stops at the last image and scrolls it into view', await page.locator('#aboutScreens .focus').getAttribute('data-idx') === '7' && await page.evaluate(() => document.getElementById('aboutScreens').scrollLeft > 0));
+  await page.locator('#aboutScreens .focus').click();
+  await page.locator('#viewer').click();
+  check('mouse clicks open and close screenshots too', !(await page.locator('#viewer').isVisible()) && await page.locator('#about.on').count() === 1);
+  await emit(page, 'pad', 'back');
+  check('Circle on About returns to its menu choice', await page.locator('#details.on').count() === 1 && await page.locator('#dChoices .focus').textContent() === 'About this game');
+  await emit(page, 'pad', 'back');
+  check('another Circle closes the menu', await page.locator('#lift.on').count() === 0);
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1)] });
+  await page.evaluate(() => {
+    window.__answersDetails = [];
+    window.__settings = { library_details: () => new Promise((resolve) => window.__answersDetails.push(resolve)) };
+  });
+  await emit(page, 'pad', 'menu');
+  await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  await emit(page, 'pad', 'back');
+  await emit(page, 'pad', 'ok');
+  await page.evaluate((data) => window.__answersDetails[0](data), ipc('details'));
+  check('an older request cannot fill a reopened About face', await page.locator('#aboutStatus').textContent() === 'Looking up this game…');
+  await page.evaluate(() => window.__answersDetails[1](null));
+  await idle(page);
+  check('a game without details has the specific message', await page.locator('#aboutStatus').textContent() === 'Lamplit has no details for this game.');
+  await emit(page, 'pad', 'back');
+  await page.evaluate(() => { window.__settings.library_details = () => { throw { kind: 'player', message: "Steam's store didn't answer. Try again in a moment." }; }; });
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  check('a failed lookup shows the error rather than claiming no details exist', await page.locator('#aboutStatus').textContent() === "Steam's store didn't answer. Try again in a moment.");
+  await close(page);
+}
+{
+  // Prefs come with the store status, after the games: About opened before they are in still opens and asks Rust.
+  const page = await open({ games: [game(1)] });
+  await page.evaluate(async () => { (await import('/state.js')).state.prefs = null; });
+  await emit(page, 'pad', 'menu');
+  await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  await idle(page);
+  const early = await page.evaluate(() => ({
+    on: document.getElementById('about').classList.contains('on'),
+    text: document.getElementById('aboutDescription').textContent,
+    errors: window.__errors,
+  }));
+  check('About opens while prefs are still loading', early.on && early.text === ipc('details').description && !early.errors.length, JSON.stringify(early));
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1)], prefs: like(ipc('prefs'), { online_art: false }) });
+  await emit(page, 'pad', 'menu');
+  await emit(page, 'pad', 'down');
+  await emit(page, 'pad', 'ok');
+  check('Find art online off explains the setting and makes no lookup', await page.locator('#aboutStatus').textContent() === 'Turn on Find art online in Settings to see details.' && await page.evaluate(() => !window.__calls.some(([cmd]) => cmd === 'library_details')));
+  await emit(page, 'pad', 'back');
+  check('About can go back with online art off', await page.locator('#details.on').count() === 1);
+  await close(page);
+}
 
 // 1. Discovery not finished yet, then nothing found.
 {
@@ -1102,7 +1208,8 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   d = await details();
   let s = await state(page);
   check('the menu has one line under the name: store, last played and hours played', d.time === '12 h' && /^[^·]+ · (Played|Not played)[^·]+ · 12 h$/.test(d.line), JSON.stringify(d));
-  check('Details open on Play, with the other choices below', d.focus === 'Play' && JSON.stringify(d.choices) === '["Play","Favourite","Change art","Hide this game"]' && s.hint.includes('✕Play'), `${JSON.stringify(d)} ${s.hint}`);
+  check('Details open on Play, with the other choices below', d.focus === 'Play' && JSON.stringify(d.choices) === '["Play","About this game","Favourite","Change art","Hide this game"]' && s.hint.includes('✕Play'), `${JSON.stringify(d)} ${s.hint}`);
+  await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await idle(page);
@@ -1127,7 +1234,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('i');
   await settled(page);
   const second = await page.evaluate(() => {
-    const r = document.querySelectorAll('#dChoices .row')[1].getBoundingClientRect();
+    const r = document.querySelectorAll('#dChoices .row')[2].getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   });
   await page.mouse.click(second.x, second.y);
@@ -1268,7 +1375,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await page.keyboard.press('i');
   let s = await state(page);
   check('Details of the running game offer Back to game', s.hint.includes('✕Back to game'), s.hint);
-  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await idle(page);
   s = await state(page);
@@ -1508,7 +1615,7 @@ const findView = (page) =>
     };
   }, games);
   await page.keyboard.press('i');
-  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowDown');
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
@@ -1935,6 +2042,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   await page.keyboard.press('i');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await idle(page);
   let p = await picker();
@@ -2101,7 +2209,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   await page.keyboard.press('Escape');
   const choices = await page.evaluate(() => [...document.querySelectorAll('#dChoices .row')].map((r) => r.textContent));
   check('the menu of a game added by hand offers Remove from Lamplit, saying the files stay', choices.at(-1) === 'Remove from LamplitLamplit forgets it. The files stay.' && (await page.evaluate(() => document.getElementById('dStore').textContent)) === 'Added by hand', JSON.stringify(choices));
-  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   s = await state(page);
   check('✕ pressed on Remove removes nothing', s.lastCall?.[0] !== 'library_remove_game' && s.hint.includes('Hold to remove'), `${JSON.stringify(s.lastCall)} ${s.hint}`);
@@ -2684,7 +2792,7 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
       [sheet, rows]
     );
   await page.keyboard.press('i');
-  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   await settled(page);
   let f = await fit('details', '#dChoices .row');
@@ -2699,6 +2807,42 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 21
   await settled(page);
   f = await fit('artPick', '#artKeys [data-id]');
   check(`${at}: Change art's keyboard is inside its panel, clear of the hints`, f.inside && f.clear, JSON.stringify(f));
+  await close(page);
+}
+
+// Every choice at once (a running game added by hand, with captures, under a three-line name) is taller than the
+// plate on a 1080p screen: the choices scroll, and the focused one stays inside the plate, clear of the hints.
+for (const viewport of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }]) {
+  const g = game(1, { name: 'Tomb Raider: Definitive Edition Game of the Year Collectors Bundle', manual: true });
+  const page = await open({ games: [g], running: 'pc:1' }, viewport);
+  await page.evaluate(([reading, captures]) => (window.__settings = { dock_state: reading, library_captures: captures }), [
+    like(ipc('dock-game'), { id: 'pc:1', name: g.name, closable: true, force_close: false, responding: true, session: 7 }),
+    ipc('captures'),
+  ]);
+  await emit(page, 'pad', 'menu');
+  await until(page, () => document.querySelectorAll('#dChoices .row').length === 8);
+  const seen = async () => page.evaluate(() => {
+    const box = (el) => el.getBoundingClientRect();
+    const plate = box(document.getElementById('details'));
+    const focus = box(document.querySelector('#dChoices .row.focus'));
+    const dir = document.getElementById('dDir');
+    return {
+      folder: dir.scrollHeight <= dir.clientHeight + 1 && box(dir).bottom <= plate.bottom,
+      rows: document.querySelectorAll('#dChoices .row').length,
+      focus: document.querySelector('#dChoices .row.focus').textContent,
+      inside: focus.top >= plate.top - 1 && focus.bottom <= plate.bottom + 1,
+      clear: plate.bottom <= box(document.getElementById('hint')).top,
+    };
+  });
+  for (let i = 0; i < 7; i++) await emit(page, 'pad', 'down');
+  await settled(page);
+  const last = await seen();
+  const at = `${viewport.width}x${viewport.height}`;
+  check(`${at}: the last of eight choices scrolls into the plate, clear of the hints, with the whole folder line`, last.rows === 8 && last.focus.startsWith('Remove from Lamplit') && last.inside && last.clear && last.folder, JSON.stringify(last));
+  await page.screenshot({ path: path.join(shots, `menu-eight-${viewport.width}.png`) });
+  for (let i = 0; i < 7; i++) await emit(page, 'pad', 'up');
+  const first = await seen();
+  check(`${at}: Back to game scrolls back into the plate`, first.focus === 'Back to game' && first.inside, JSON.stringify(first));
   await close(page);
 }
 
@@ -3461,12 +3605,13 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
       lit: getComputedStyle(rows[0]).backgroundImage.includes('gradient') && !getComputedStyle(rows[1]).backgroundImage.includes('gradient'),
     };
   });
-  check('one plate holds the menu and Change art', menu.plates === 'sheet,details,artPick', menu.plates);
+  check('one plate holds the menu, Change art, Your captures and About', menu.plates === 'sheet,details,artPick,capturesFace,about', menu.plates);
   check('... one line under the name, the folder dim at the bottom', /^[^·]+ · Played yesterday · 31 h$/.test(menu.line) && menu.folderBelow && menu.folderDim, JSON.stringify(menu));
-  check('... Play lit and focused first, every row with its icon from the shared set', menu.first && menu.lit && menu.shared && menu.icons === '#i-play,#i-star,#i-photo,#i-eye-off', JSON.stringify(menu));
+  check('... Play lit and focused first, every row with its icon from the shared set', menu.first && menu.lit && menu.shared && menu.icons === '#i-play,#i-info,#i-star,#i-photo,#i-eye-off', JSON.stringify(menu));
   await page.evaluate((list) => {
     window.__settings.library_set_favourite = ({ id, on }) => list.map((g) => (g.id === id ? { ...g, favourite: on } : g));
   }, await page.evaluate(() => window.__state?.games ?? null) ?? [game(1, { last_played: 0 }), game(2), game(3)]);
+  await emit(page, 'pad', 'down');
   await emit(page, 'pad', 'down');
   await emit(page, 'pad', 'ok');
   await idle(page);
@@ -3552,7 +3697,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     JSON.stringify(m.rows.at(-1)) === JSON.stringify(['Close game', 'Closes Game 001', '#i-close-game', true]) && m.rows.filter((r) => r[3]).length === 1,
     JSON.stringify(m.rows)
   );
-  for (let i = 0; i < 4; i++) await emit(page, 'pad', 'down');
+  for (let i = 0; i < 5; i++) await emit(page, 'pad', 'down');
   m = await menu();
   check('... its hint says to hold', m.focus === 'Close game' && m.hint.includes('Hold to close game'), m.hint);
   const before = m.calls.length;
@@ -4089,7 +4234,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   const removeRow = async () => {
     await emit(page, 'pad', 'menu');
     await settled(page);
-    for (let i = 0; i < 4; i++) await emit(page, 'pad', 'down');
+    for (let i = 0; i < 5; i++) await emit(page, 'pad', 'down');
     await settled(page);
   };
   const focusName = () => page.evaluate(() => document.querySelector('.cover.focus .name')?.textContent);
@@ -4129,7 +4274,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
   await page.evaluate((reading) => (window.__settings = { dock_state: reading }), like(ipc('dock-game'), { id: 'pc:1', name: 'Game 001', closable: true, force_close: false, responding: true, session: 7 }));
   await emit(page, 'pad', 'menu');
   await until(page, () => [...document.querySelectorAll('#dChoices .row')].some((r) => r.textContent.startsWith('Close game')));
-  for (let i = 0; i < 4; i++) await emit(page, 'pad', 'down');
+  for (let i = 0; i < 5; i++) await emit(page, 'pad', 'down');
   const thrown = await page.evaluate((ended) => {
     try {
       window.__emit('play', ended);
@@ -4292,6 +4437,7 @@ for (const [viewport, scale] of [[{ width: 1920, height: 1080 }, 1], [{ width: 2
     JSON.stringify({ first, later: later.sum })
   );
   // Change art keeps it, and back in the menu it is the same.
+  await emit(page, 'pad', 'down');
   await emit(page, 'pad', 'down');
   await emit(page, 'pad', 'down');
   await emit(page, 'pad', 'ok');
@@ -4881,6 +5027,73 @@ for (const dismiss of ['ok', 'back']) {
   check('a fresh install or version without highlights shows no card', await page.evaluate(() => document.getElementById('news').hidden));
   await close(page);
 }
+
+// Captures arrive after the menu opens, retain the current choice and share its plate. Full screen keeps grid focus.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  const captures = Array.from({ length: 8 }, (_, i) => like(ipc('captures')[i % 3], {
+    path: `${assetOrigin}/${encodeURIComponent(art[0].hero)}?capture=${i}`,
+  }));
+  await page.evaluate(() => {
+    window.__settings = { library_captures: () => new Promise((resolve) => { window.__capturesReady = resolve; }) };
+  });
+  await emit(page, 'pad', 'menu');
+  check('the menu opens before captures have answered', (await state(page)).details && await page.locator('#dChoices .row').count() === 5);
+  for (let i = 0; i < 4; i++) await emit(page, 'pad', 'down');
+  await page.evaluate((items) => window.__capturesReady(items), captures);
+  await idle(page);
+  check('Your captures appears after Change art without moving focus off Hide',
+    (await page.locator('#dChoices .row').allTextContents()).join('|') === 'Play|About this game|Favourite|Change art|Your captures|Hide this game' &&
+    await page.locator('#dChoices .row.focus').textContent() === 'Hide this game');
+  await emit(page, 'pad', 'up');
+  await emit(page, 'pad', 'ok');
+  await settled(page);
+  check('Your captures turns the same plate to a grid', await page.locator('#captureGrid button').count() === 8 &&
+    await page.evaluate(() => document.getElementById('capturesFace').classList.contains('on') && !document.getElementById('details').classList.contains('on')));
+  const focus = () => page.locator('#captureGrid .focus').getAttribute('data-index');
+  check('the first capture is focused and labelled with its source and date', await focus() === '0' && (await page.locator('#captureMeta').textContent()).startsWith('Steam · '));
+  await emit(page, 'pad', 'right');
+  await emit(page, 'pad', 'down');
+  check('the d-pad moves across and down the capture grid', await focus() === '4' && (await page.locator('#captureMeta').textContent()).startsWith('Game Bar · '));
+  await page.screenshot({ path: path.join(shots, 'captures-grid.png') });
+  await emit(page, 'pad', 'ok');
+  await until(page, () => document.getElementById('viewerImage').naturalWidth > 0);
+  check('Cross shows the selected capture full screen through the asset protocol',
+    await page.locator('#viewer').isVisible() && await page.locator('#viewerImage').getAttribute('src') === captures[4].path &&
+    await page.locator('#viewerImage').evaluate((image) => image.naturalWidth > 0));
+  await emit(page, 'pad', 'right');
+  check('Right shows the next capture in full screen', await page.locator('#viewerImage').getAttribute('src') === captures[5].path);
+  await emit(page, 'pad', 'left');
+  check('Left shows the previous capture', await page.locator('#viewerImage').getAttribute('src') === captures[4].path);
+  await page.screenshot({ path: path.join(shots, 'capture-fullscreen.png') });
+  await emit(page, 'pad', 'back');
+  check('Circle returns from full screen to the same grid item', !(await page.locator('#viewer').isVisible()) && await focus() === '4');
+  await emit(page, 'pad', 'back');
+  check('Circle on the captures face returns to its menu choice', (await state(page)).details && await page.locator('#dChoices .row.focus').textContent() === 'Your captures');
+  await emit(page, 'pad', 'back');
+  await page.evaluate(() => { window.__settings.library_captures = []; });
+  await emit(page, 'pad', 'right');
+  await emit(page, 'pad', 'menu');
+  await idle(page);
+  check('a game with no captures has no Your captures choice', !(await page.locator('#dChoices').textContent()).includes('Your captures'));
+  await close(page);
+}
+{
+  const page = await open({ games: [game(1), game(2)] });
+  await page.evaluate(() => {
+    window.__settings = { library_captures: ({ id }) => id === 'pc:1'
+      ? new Promise((resolve) => { window.__capturesReady = resolve; }) : [] };
+  });
+  await emit(page, 'pad', 'menu');
+  await emit(page, 'pad', 'back');
+  await emit(page, 'pad', 'right');
+  await emit(page, 'pad', 'menu');
+  await page.evaluate((items) => window.__capturesReady(items), ipc('captures'));
+  await idle(page);
+  check('a late captures reply cannot add another game\'s captures', !(await page.locator('#dChoices').textContent()).includes('Your captures'));
+  await close(page);
+}
+await trailerTests({ browser, open, close, game, check, shots, holdClock });
 
 check('no page errors or CSP violations on any page', pageErrors.length === 0, JSON.stringify(pageErrors));
 const untested = Object.keys(commands).filter((cmd) => !called.has(cmd));

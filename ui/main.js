@@ -16,6 +16,7 @@ import { nameSprings } from './springs.js';
 import { steady } from './steady.js';
 import { readStatus, startStatus } from './status.js';
 import { els, state } from './state.js';
+import { startTrailers } from './trailer.js';
 
 // The springs and the icons both pages share.
 nameSprings(document.documentElement);
@@ -94,6 +95,7 @@ async function init() {
   let heardKind = false;
   let heardUpdate = false;
   await Promise.all([
+    startTrailers(),
     startSounds(),
     api.onGames((games) => {
       heardGames = true;

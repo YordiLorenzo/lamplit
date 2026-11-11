@@ -57,7 +57,7 @@
   <main id="row"><div id="track"></div><div id="noMatch" hidden>No games match</div></main>
 
   <!-- A game's menu (library.js, lift.js): the focused cover lifted over the blurred screen, and one plate beside it
-       that grows out of the card's edge, with two faces: the menu, and Change art (art.js). -->
+       that grows out of the card's edge, with faces for the menu, About, Change art and Your captures. -->
   <div id="lift">
     <canvas id="veil" class="veil"></canvas>
     <div id="card">
@@ -80,7 +80,28 @@
         <div id="artTiles"></div>
         <div id="artChoices" class="choices"></div>
       </section>
+      <section id="capturesFace" class="sheet-face">
+        <h2>Your captures</h2>
+        <div id="captureGrid"></div>
+        <p id="captureMeta"></p>
+      </section>
+      <section id="about" class="sheet-face" aria-labelledby="aboutTitle">
+        <h2 id="aboutTitle">About this game</h2>
+        <p id="aboutStatus" role="status"></p>
+        <div id="aboutText">
+          <p id="aboutDescription"></p>
+          <p id="aboutMeta"></p>
+          <div id="aboutGenres"></div>
+        </div>
+        <div id="aboutScreens" aria-label="Screenshots"></div>
+      </section>
     </aside>
+  </div>
+  <!-- A capture or a screenshot full screen (viewer.js); a click closes it. -->
+  <div id="viewer" role="dialog" aria-label="Screenshot" aria-modal="true" hidden>
+    <img id="viewerImage" alt="" draggable="false">
+    <p id="viewerError" hidden>This screenshot could not be opened.</p>
+    <p id="viewerCaption"></p>
   </div>
 
   <!-- Settings, Add a game and Save a report share one plate; its size follows the face it shows. -->

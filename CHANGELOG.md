@@ -4,6 +4,26 @@ Every release of Lamplit, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.5.0 - 2026-11-11
+
+### Highlights
+
+- Stay on a game and its trailer plays behind it.
+- About this game: what it is, who made it, screenshots.
+- Your captures: the screenshots you took in a game.
+
+### Added
+
+- Trailers: stay on a cover for 2.5 seconds and the game's trailer from Steam plays behind it, muted, its first
+  minute on a loop. Any input stops it at once. **Settings > Sound > Trailers**: Off, Muted or With sound (40%
+  volume). Trailers need **Find art online**, and don't play with Reduce Motion on, while a game runs or while
+  Lamplit isn't in front.
+- About this game, in a game's menu: Steam's description, the developers and publisher, the release date, genres and
+  up to eight screenshots. Cross shows a screenshot full screen. Lamplit keeps the details for seven days. It needs
+  **Find art online** and a Steam match for the game.
+- Your captures, in a game's menu when you have screenshots of the game: up to 60 that Steam, Game Bar and NVIDIA
+  saved, newest first. Cross shows one full screen, and Left and Right move through them.
+
 ## 0.4.0 - 2026-11-09
 
 ### Highlights

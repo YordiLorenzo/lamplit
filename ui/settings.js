@@ -9,7 +9,7 @@ import * as api from './api.js';
 import { showHints, toast } from './hints.js';
 import { hold, letGo } from './hold.js';
 import { glyph, labelled, setGames, showInfo } from './library.js';
-import { SAVER_DEFAULT, SECTIONS, focusIndex, quietMode, rowKey, sectionRows, sectionSummary, stepAutoOff, stepInterfaceSounds, stepSaverMinutes, visibleSections } from './logic.js';
+import { SAVER_DEFAULT, SECTIONS, focusIndex, quietMode, rowKey, sectionRows, sectionSummary, stepAutoOff, stepInterfaceSounds, stepSaverMinutes, stepTrailers, visibleSections } from './logic.js';
 import { showScreensaver, warmScreensaver } from './screensaver/index.js';
 import { setSoundLevel, sfx } from './sounds.js';
 import { SPRINGS } from './springs.js';
@@ -326,6 +326,7 @@ export async function adjustSetting(dir) {
       state.sound.volume = volume;
     } else if (row.kind === 'saverafter') await adjustScreensaver(dir);
     else if (row.kind === 'interfacesounds') await adjustInterfaceSounds(dir);
+    else if (row.kind === 'trailers') await adjustTrailers(dir);
     else await adjustHeadset(row.kind, dir);
   } catch (e) {
     toast(e.message, { warn: true });
@@ -355,6 +356,20 @@ async function adjustHeadset(kind, dir) {
 let saverBusy = false;
 
 let soundsBusy = false;
+let trailersBusy = false;
+
+/** A held direction steps from the last saved trailer choice. @param {number} dir */
+async function adjustTrailers(dir) {
+  if (trailersBusy || !state.prefs) return;
+  const next = stepTrailers(state.prefs.trailers, dir);
+  if (next === state.prefs.trailers) return;
+  trailersBusy = true;
+  try {
+    state.prefs = await api.prefsSetTrailers(next);
+  } finally {
+    trailersBusy = false;
+  }
+}
 
 /** A held direction must step from the last saved sound level. @param {number} dir */
 async function adjustInterfaceSounds(dir) {

@@ -6,6 +6,11 @@
 const tauri = /** @type {any} */ (window).__TAURI__;
 
 /**
+ * A screenshot already on the PC, with its file modification time as an ISO timestamp.
+ * @typedef {{ path: string, taken: string, source: 'steam' | 'gamebar' | 'nvidia' }} Capture
+ */
+
+/**
  * @typedef {'steam' | 'epic' | 'ea' | 'ubisoft' | 'rockstar' | 'battlenet' | 'gog' | 'amazon' | 'itch' | 'xbox'} StoreKey
  */
 
@@ -45,6 +50,19 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {number} appid
  * @property {string} name
  * @property {string | null} portrait
+ */
+
+/**
+ * Steam's About data. Images are asset URLs of files in Lamplit's art folder; trailer.url is an H.264 DASH manifest.
+ * @typedef {object} GameDetails
+ * @property {number} appid
+ * @property {string} description
+ * @property {string[]} developers
+ * @property {string[]} publishers
+ * @property {string} released
+ * @property {string[]} genres
+ * @property {{ thumb: string, full: string }[]} screenshots
+ * @property {{ url: string, poster: string } | null} trailer
  */
 
 /**
@@ -169,6 +187,7 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  */
 
 /** @typedef {'off' | 'quiet' | 'normal'} InterfaceSounds */
+/** @typedef {'off' | 'muted' | 'with_sound'} Trailers */
 /** @typedef {'game_menu' | 'return_home'} FirstHint */
 /** @typedef {{ starts: number, done: boolean }} HintProgress */
 
@@ -177,6 +196,7 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @typedef {object} Prefs
  * @property {boolean} sound_follows  sound follows the headset and controller headphones
  * @property {InterfaceSounds} interface_sounds
+ * @property {Trailers} trailers
  * @property {Record<FirstHint, HintProgress>} hints
  * @property {boolean} touchpad_mouse
  * @property {boolean} steam_devtools  Lamplit opens Steam's DevTools port (the PS button guard and Steam's pop-ups)
@@ -284,6 +304,10 @@ export const librarySetFavourite = (id, on) => call('library_set_favourite', { i
 export const librarySetHidden = (id, on) => call('library_set_hidden', { id, on });
 /** What Steam's store has for `query`. @param {string} query @returns {Promise<ArtCandidate[]>} */
 export const libraryArtSearch = (query) => call('library_art_search', { query });
+/** @param {string} id @returns {Promise<Capture[]>} newest first, with asset URLs ready to display */
+export const libraryCaptures = (id) => call('library_captures', { id });
+/** @param {string} id @returns {Promise<GameDetails | null>} */
+export const libraryDetails = (id) => call('library_details', { id });
 /**
  * The art the player chose, null for Lamplit's own match.
  * @param {string} id @param {ArtChoice | null} choice @returns {Promise<Game[]>} every game, with the change
@@ -399,6 +423,8 @@ export const prefsSetCheckUpdates = (on) => call('prefs_set_check_updates', { on
 export const prefsSetSoundFollows = (on) => call('prefs_set_sound_follows', { on });
 /** @param {InterfaceSounds} level @returns {Promise<Prefs>} */
 export const prefsSetInterfaceSounds = (level) => call('prefs_set_interface_sounds', { level });
+/** @param {Trailers} level @returns {Promise<Prefs>} */
+export const prefsSetTrailers = (level) => call('prefs_set_trailers', { level });
 /** Counts this start once; false after three starts or completing the hint. @param {FirstHint} name @returns {Promise<boolean>} */
 export const prefsHintShown = (name) => call('prefs_hint_shown', { name });
 /** @param {FirstHint} name @returns {Promise<void>} */

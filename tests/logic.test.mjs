@@ -7,6 +7,8 @@ import {
   STORE_ORDER,
   batteryText,
   buttonFace,
+  captureStep,
+  captureText,
   returnHint,
   byName,
   byPlayed,
@@ -33,10 +35,14 @@ import {
   sectionSummary,
   stepAutoOff,
   stepInterfaceSounds,
+  stepTrailers,
+  letterbox,
+  trailerZoom,
   stepSaverMinutes,
   storeChoices,
   storeWarning,
   typed,
+  trailerAllowed,
   updateRow,
   visibleSections,
   words,
@@ -45,6 +51,35 @@ import { pageValues } from './contract.mjs';
 import { ipc, known, like, values } from './fixtures.mjs';
 
 const DAY = 86400;
+
+test('Your captures follows Change art only when screenshots were found', () => {
+  const game = ipc('games')[0];
+  assert.ok(!detailChoices(game, null).some((choice) => choice.kind === 'captures'));
+  const choices = detailChoices(game, null, null, true);
+  assert.equal(choices.findIndex((choice) => choice.kind === 'captures'), choices.findIndex((choice) => choice.kind === 'art') + 1);
+});
+
+test('capture grid navigation stays inside rows and reaches a short last row', () => {
+  assert.equal(captureStep(0, 8, 3, 'left'), 0);
+  assert.equal(captureStep(0, 8, 3, 'up'), 0);
+  assert.equal(captureStep(0, 8, 3, 'right'), 1);
+  assert.equal(captureStep(2, 8, 3, 'right'), 2);
+  assert.equal(captureStep(3, 8, 3, 'left'), 3);
+  assert.equal(captureStep(2, 8, 3, 'down'), 5);
+  assert.equal(captureStep(5, 8, 3, 'down'), 7);
+  assert.equal(captureStep(7, 8, 3, 'right'), 7);
+  assert.equal(captureStep(7, 8, 3, 'down'), 7);
+  assert.equal(captureStep(7, 8, 3, 'up'), 4);
+});
+
+test('capture captions name each source and its date', () => {
+  const labels = ['Steam', 'Game Bar', 'NVIDIA'];
+  for (const [index, capture] of ipc('captures').entries()) {
+    const caption = captureText(capture);
+    assert.ok(caption.startsWith(`${labels[index]} · `));
+    assert.ok(caption.includes('Oct 2026'));
+  }
+});
 /** A store app as Rust reports it. */
 const store = (key, name, installed, account) =>
   like(ipc('stores')[0], { store: key, name, installed, running: false, account: known('account', account) });
@@ -176,13 +211,13 @@ describe('favourites and hidden games in the row', () => {
 
 describe('detailChoices', () => {
   const labels = (g, running = null) => detailChoices(g, running).map((c) => c.label);
-  test('Play first, then favourites, art and hiding, each with its icon', () => {
-    assert.deepEqual(labels(game('a', 'A')), ['Play', 'Favourite', 'Change art', 'Hide this game']);
-    assert.deepEqual(detailChoices(game('a', 'A'), null).map((c) => c.icon), ['i-play', 'i-star', 'i-photo', 'i-eye-off']);
+  test('Play first, then About, favourites, art and hiding, each with its icon', () => {
+    assert.deepEqual(labels(game('a', 'A')), ['Play', 'About this game', 'Favourite', 'Change art', 'Hide this game']);
+    assert.deepEqual(detailChoices(game('a', 'A'), null).map((c) => c.icon), ['i-play', 'i-info', 'i-star', 'i-photo', 'i-eye-off']);
   });
   test('Favourite is one row that switches: its star is filled while the game is one', () => {
-    assert.deepEqual(labels(game('a', 'A', { favourite: true })), ['Play', 'Favourite', 'Change art', 'Hide this game']);
-    assert.equal(detailChoices(game('a', 'A', { favourite: true }), null)[1].icon, 'i-star-on');
+    assert.deepEqual(labels(game('a', 'A', { favourite: true })), ['Play', 'About this game', 'Favourite', 'Change art', 'Hide this game']);
+    assert.equal(detailChoices(game('a', 'A', { favourite: true }), null)[2].icon, 'i-star-on');
   });
   test('the running game goes back to the game', () => assert.equal(labels(game('a', 'A'), 'a')[0], 'Back to game'));
   test('a game added by hand can be removed: held, and it says the files stay', () => {
@@ -742,6 +777,65 @@ describe('Interface sounds', () => {
       assert.equal(row(level).value, label);
       assert.equal(row(level).adjust, true);
     }
+  });
+});
+
+describe('Trailers', () => {
+  test('steps through the three choices and stops at either end', () => {
+    assert.deepEqual(['off', 'muted', 'with_sound'].map((x) => stepTrailers(x, 1)), ['muted', 'with_sound', 'with_sound']);
+    assert.deepEqual(['off', 'muted', 'with_sound'].map((x) => stepTrailers(x, -1)), ['off', 'off', 'muted']);
+  });
+  test('follows Interface sounds, including without a sound device', () => {
+    for (const sound of [null, ipc('sound')]) {
+      for (const [level, label] of [['off', 'Off'], ['muted', 'Muted'], ['with_sound', 'With sound']]) {
+        const rows = sectionRows('sound', settingsState({ sound, prefs: prefs({ trailers: level }) }));
+        const row = rows[rows.findIndex((r) => r.kind === 'interfacesounds') + 1];
+        assert.deepEqual(row, { kind: 'trailers', label: 'Trailers', adjust: true, value: label });
+      }
+    }
+  });
+  test('requires the home screen, both online choices, and an unobscured window in front', () => {
+    const home = { mode: 'browse', running: null, prefs: ipc('prefs') };
+    const view = { front: true, reduced: false, saver: false, dock: false };
+    assert.equal(trailerAllowed(home, view), true);
+    for (const mode of ['details', 'settings', 'find', 'starting', 'news', 'add', 'report']) {
+      assert.equal(trailerAllowed({ ...home, mode }, view), false, mode);
+    }
+    for (const [key, value] of Object.entries({ front: false, reduced: true, saver: true, dock: true })) {
+      assert.equal(trailerAllowed(home, { ...view, [key]: value }), false, key);
+    }
+    assert.equal(trailerAllowed({ ...home, running: 'steam:1' }, view), false);
+    assert.equal(trailerAllowed({ ...home, prefs: null }, view), false);
+    assert.equal(trailerAllowed({ ...home, prefs: prefs({ trailers: 'off' }) }, view), false);
+    assert.equal(trailerAllowed({ ...home, prefs: prefs({ online_art: false }) }, view), false);
+    assert.equal(trailerAllowed({ ...home, prefs: prefs({ trailers: 'with_sound' }) }, view), true);
+  });
+  // A 10 by 20 frame: each row lit (bright grey) or a black bar with codec noise (a channel at 20).
+  const frame = (rows) => {
+    const rgba = new Uint8ClampedArray(10 * rows.length * 4);
+    rows.forEach((lit, y) => rgba.fill(lit ? 200 : 20, y * 40, (y + 1) * 40));
+    return letterbox(rgba, 10, rows.length);
+  };
+  const rows = (top, bottom) => Array.from({ length: 20 }, (_, y) => y >= top && y < 20 - bottom);
+  test('black bars are measured as a share of the frame, the thinner of top and bottom', () => {
+    assert.equal(frame(rows(3, 3)), 0.15);
+    assert.equal(frame(rows(3, 2)), 0.1);
+    assert.equal(frame(rows(0, 0)), 0);
+    // A dark sky over a lit ground is not a bar: there is none at the bottom.
+    assert.equal(frame(rows(4, 0)), 0);
+  });
+  test('an all-dark frame or a logo on black tells nothing', () => {
+    assert.equal(frame(rows(10, 10)), null);
+    assert.equal(frame(rows(5, 5)), null);
+    assert.equal(frame(rows(4, 5)), 0.2);
+  });
+  test('the zoom fills the screen with the picture between the bars', () => {
+    const tv = { width: 1920, height: 1080 };
+    assert.equal(trailerZoom(46 / 360, { width: 640, height: 360 }, tv).toFixed(3), (360 / 268).toFixed(3));
+    assert.equal(trailerZoom(0.02, { width: 640, height: 360 }, tv), 1);
+    // On an ultrawide screen the video is already cut at top and bottom: less zoom is needed, or none.
+    assert.equal(trailerZoom(46 / 360, { width: 640, height: 360 }, { width: 3440, height: 1440 }), 1);
+    assert.equal(trailerZoom(46 / 360, { width: 640, height: 360 }, { width: 2560, height: 1600 }), 1600 / (1600 * (268 / 360)));
   });
 });
 

@@ -6,7 +6,7 @@ This page lists everything Lamplit changes outside its own data folder (`%LOCALA
 does to other apps, and everything it sends over the network. How to report a security problem is in
 [SECURITY.md](../SECURITY.md).
 
-## Network: game art and app updates
+## Network: game art, details, trailers and app updates
 
 Lamplit goes online for cover, background and logo art for your games. It does so only while
 **Settings > System > Find art online** is on. That setting is on until you switch it off, so the first scan after
@@ -18,8 +18,36 @@ Steam already keeps on your PC (its library cache) is used without going online.
 | `store.steampowered.com` (store search) | The name of each game that isn't from Steam and has no art yet, and the country of your Windows region. A game outside any store is named after its folder. A name that matched nothing is asked about again after 7 days. In **Change art**, the game's name, or the words you type instead. |
 | `api.steampowered.com` (`IStoreBrowseService/GetItems`) | The Steam app ids whose art is missing, or that Change art found, and the country of your Windows region. |
 | `shared.steamstatic.com` | Requests for the art files themselves. |
+| `store.steampowered.com` (`api/appdetails`) | The Steam app id used for a game's About page or trailer, with English requested. No game folders or account details are sent. |
+| Steam's image CDNs (`*.steamstatic.com`, or legacy `steamcdn-a.akamaihd.net`) | Requests for the first eight screenshots and a playable trailer's poster. |
 
 Art requests carry the user agent `lamplit/<version>`.
+
+Details and their images also require **Find art online**. Switching it off stops further requests and hides details,
+including cached details. Requests already sent may finish. Details are cached for seven days in
+`details\<appid>.json`; screenshots and posters stay in `art\<appid>\screens\` and the page loads them from disk through
+the same asset scope as cover art. A known Steam match remains available for details when the player chooses no cover
+art. Steam data is reduced to plain-text description, developers, publishers, release date, genres, screenshots and
+an H.264 DASH trailer manifest URL. The trailer player receives only HTTPS manifest URLs from
+`video.akamai.steamstatic.com` or `video.fastly.steamstatic.com`. HLS and AV1 links are not substituted when the selected
+movie has no H.264 DASH manifest.
+
+### Trailers
+
+While **Settings > Sound > Trailers** is not **Off** and **Find art online** is on, resting on a cover for 2.5 seconds
+can request that game's details and stream its trailer from Steam's video servers. The trailer setting defaults to
+**Muted**. **With sound** uses 40% volume. A poster is loaded from the local art folder through the asset protocol.
+The details request sends the game's Steam app id to `store.steampowered.com`.
+
+Steam serves trailers only as DASH (a manifest and short MP4 chunks), so the page fetches them itself and plays them
+through Media Source Extensions: the 720p video stream, plus the audio stream only for **With sound**, and only the
+first minute. The page's connect policy adds only `video.akamai.steamstatic.com` and `video.fastly.steamstatic.com`;
+its media policy allows only itself and the page's own `blob:` streams. These servers receive your IP address, the
+requested trailer URLs and WebView2's user agent. Lamplit adds no account or device identifiers. The trailer stays in
+memory and is not saved in Lamplit's art folder. Input cancels the downloads at once, pauses and mutes the video, and
+releases it after a 200 ms fade. Playback also ends when another screen opens, a game runs, or Lamplit leaves the
+foreground. Reduce Motion disables trailers.
+The trailer sound preference stays in `prefs.json` and is not sent online.
 
 ### App updates
 
@@ -54,6 +82,22 @@ Two more things go online, but not from Lamplit itself:
 Lamplit follows only folders on a drive letter from a store's files. A network share (`\\server\share`) named there,
 such as a Steam library folder, a Steam game's folder or an Epic install folder, is skipped, so looking for games
 never signs in to another computer.
+
+## Your captures
+
+Opening a game's menu reads screenshot filenames and modification dates on this PC. Steam captures come from the
+last signed-in account's `userdata\<account>\760\remote\<appid>\screenshots` folder, using that game's own Steam id.
+Game Bar captures come from its configured Captures folder, or `Videos\Captures`; only filenames starting with the
+game's name are shown. NVIDIA captures come from folders matching the game's name under Videos, Videos\NVIDIA or
+its configured gallery locations. Lamplit reads the Windows known-folder locations, GameDVR's capture-folder setting,
+NVIDIA Overlay's `GallerySettings.json` and GeForce Experience's `DefaultPathW` registry value to find these folders.
+It does not change those settings or any capture file.
+
+Only PNG, JPG and JPEG files are shown, at most 60 per game, newest first by file modification time. The date can
+differ from when you took the screenshot if another app edited it. Captures work with Find art online off. Nothing
+from these folders is uploaded or sent online. Only the containing folders of returned images are added to the
+page's local asset scope, without access to their subfolders. Lamplit does not add their parent folders to the scope.
+Network paths named in the folder settings are skipped.
 
 ## Epic's local files
 

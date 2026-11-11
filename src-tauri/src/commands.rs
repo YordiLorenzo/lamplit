@@ -11,7 +11,7 @@ use crate::dock;
 use crate::error::{Error, Result};
 use crate::events::{self, Event};
 use crate::launch::{self, Launcher};
-use crate::library::{self, ArtChoice, Game, Library};
+use crate::library::{self, ArtChoice, Details, Game, Library};
 use crate::prefs::{self, Prefs};
 use crate::report;
 use crate::stores::steam::devtools;
@@ -64,10 +64,22 @@ pub async fn library_art_search(app: AppHandle, query: String) -> Result<Vec<lib
     blocking(move || library::art_candidates(&app, &query)).await?
 }
 
+/// Steam's details and local screenshots, only while Find art online is on.
+#[tauri::command]
+pub async fn library_details(app: AppHandle, id: String) -> Result<Option<Details>> {
+    blocking(move || library::game_details(&app, &id)).await?
+}
+
 /// The art the player chose for a game; None for Lamplit's own match. Returns every game, with the change.
 #[tauri::command]
 pub async fn library_set_art(app: AppHandle, id: String, choice: Option<ArtChoice>) -> Result<Vec<Game>> {
     blocking(move || library::set_art(&app, &id, choice)).await?
+}
+
+/// The game's screenshots already on the PC, newest first.
+#[tauri::command]
+pub async fn library_captures(app: AppHandle, id: String) -> Result<Vec<library::captures::Capture>> {
+    blocking(move || library::captures::for_game(&app, &id)).await?
 }
 
 /// The installed programs that aren't in the library, for Add a game.
@@ -311,6 +323,12 @@ pub async fn prefs_set_interface_sounds(app: AppHandle, level: String) -> Result
         Ok(prefs::get(&app))
     })
     .await?
+}
+
+#[tauri::command]
+pub async fn prefs_set_trailers(app: AppHandle, level: String) -> Result<Prefs> {
+    let level = prefs::Trailers::parse(&level)?;
+    blocking(move || prefs::change(&app, |p| p.trailers = level).map(|()| prefs::get(&app))).await?
 }
 
 #[tauri::command]

@@ -8,6 +8,13 @@ undo from the controller, no dialog that needs a mouse, and a TV that is set up 
 
 ## Done
 
+0.5.0 (2026-11-11) brought a trailer behind the focused game, About this game with Steam's description and
+screenshots, and Your captures from Steam, the Game Bar and the NVIDIA app.
+
+0.4.0 (2026-11-09) brought updates from the sofa, Start when I sign in without an admin prompt, Restore
+Lamplit's changes, Save a report, Exit to Windows, interface sounds, two first-minute hints, and Epic's new
+launcher. Lamplit's listing on WinGet waits for Microsoft's review.
+
 0.3.0 (2026-10-30) brought the in-game dock, a screensaver, a game's menu, Change art, Add a game by hand, and
 Battle.net, the Amazon Games app and itch.io.
 
@@ -15,38 +22,7 @@ Battle.net, the Amazon Games app and itch.io.
 
 [CHANGELOG.md](CHANGELOG.md) has every change.
 
-## Next: 0.4, easy to try and easy to trust
-
-- **A signed download.** The installer and the app carry a publisher Windows can check, so it names who made them,
-  and they install, update and uninstall with Smart App Control on.
-- **Updates from the sofa.** Settings > Check for updates downloads the new version and installs it once you're
-  done playing, never during a game. Afterwards a short "What's new" shows the three changes that matter. The check
-  can be switched off.
-- **Start when I sign in,** as a switch in Settings, without an admin prompt. Repairing Steam's settings stays a
-  separate step.
-- **Exit to Windows** from the power menu, instead of Alt+F4.
-- **Undo everything.** Settings > Restore Lamplit's changes puts back quiet mode, Steam's settings and the sign-in
-  task, and uninstalling does the same.
-- **A report for an issue.** When something goes wrong, Save a report writes one file with what's needed to fix it:
-  Lamplit's version, the screen, the controllers and the stores it found. It shows the file before saving and leaves
-  out names and folders.
-- **The first minute.** Two hints you can dismiss: the button that opens a game's menu, and how to come back from a
-  game.
-- **Interface sounds** at Off, Quiet or Normal.
-- **A list of what's been tested:** controllers (Xbox over its adapter, Bluetooth and USB, DualSense Edge, DualShock
-  4, 8BitDo, the new Steam Controller), the dock over real games, and Windows' Xbox mode next to Lamplit.
-- **Lamplit on WinGet,** for installing and updating it from a terminal.
-
-Fixes in the same release:
-
-- Epic's new launcher (in preview since 2026-10-14): its games show up and start as they do from the old one.
-- The new Steam Controller works in Lamplit.
-- When a store's files can't be read for a moment, its games stay in the row instead of disappearing.
-- Lamplit remembers the TV or soundbar to come back to after a restart, not only while it runs.
-- A damaged settings file is kept and the last good copy is used, so favourites and hidden games aren't lost.
-- After Change art, the screen's colours follow the new art.
-
-## 0.5, never reach for the mouse
+## Next: 0.6, never reach for the mouse
 
 - **Control this window.** When a store app shows a sign-in or a question Lamplit can't answer, the stick moves a
   pointer and the on-screen keyboard types into that window, with any controller. One press brings you back.
@@ -58,8 +34,10 @@ Fixes in the same release:
   devices can wake the PC. Hibernate joins the power menu where the PC supports it.
 - **Lamplit through Moonlight.** A tested app entry for Sunshine and Apollo: Lamplit opens on the stream's screen and
   sound, and a game keeps running when the stream drops for a moment.
+- **A list of what's been tested:** controllers (Xbox over its adapter, Bluetooth and USB, DualSense Edge, DualShock
+  4, 8BitDo, the new Steam Controller), the dock over real games, and Windows' Xbox mode next to Lamplit.
 
-## 0.6, the TV, set up once
+## 0.7, the TV, set up once
 
 - **Play on TV.** Choose the TV once. Lamplit moves itself and the sound there, switches the desk monitors off if you
   like, and puts the desk back when you leave. Each change asks "Keep this?" and undoes itself after 15 seconds
@@ -74,7 +52,7 @@ Fixes in the same release:
   Assistant.
 - **A restart waiting for Windows Update** shows in Settings, with a button that opens Windows Update.
 
-## 0.7, your library, your way
+## 0.8, your library, your way
 
 - **Shortcuts you already made.** Steam's non-Steam shortcuts and your own shortcut files, started the way they're set
   up, through Steam when that's how they get Steam Input. Emulator shortcuts made elsewhere come in the same way.
@@ -87,7 +65,7 @@ Fixes in the same release:
 - **Play together:** the games with local co-op or versus, from Steam's store pages, shown only where it's known.
 - **New games show up at once,** while their art still downloads.
 
-## 0.8, readable for everyone
+## 0.9, readable for everyone
 
 - **Bigger text and high contrast,** focus shown by shape as well as colour, and reduced motion as a Lamplit setting.
 - **Screen readers.** Narrator and NVDA read the home screen, the menus and the dock.
@@ -101,6 +79,7 @@ Fixes in the same release:
 
 Ideas we like, in no order and without a date:
 
+- A signed download, so Windows names who made Lamplit and Smart App Control lets it install.
 - Your screenshots as a game's background and in the screensaver.
 - A screenshot or the last 30 seconds as a clip, from the dock, through the NVIDIA app or the Game Bar.
 - Pause and skip the music that's playing, and mute the microphone, from the dock.
@@ -115,15 +94,15 @@ Ideas we like, in no order and without a date:
 If you're looking for one of these, other tools do it well:
 
 - **Themes, add-ons and emulators:** [Playnite](https://playnite.link), or [ES-DE](https://www.es-de.org) for
-  emulators. Emulator shortcuts set up there can come into Lamplit (0.7).
+  emulators. Emulator shortcuts set up there can come into Lamplit (0.8).
 - **A store, friends and chat:** [Steam's Big Picture mode](https://store.steampowered.com/bigpicture).
 - **A streaming app of its own:** [Sunshine](https://github.com/LizardByte/Sunshine) with
   [Moonlight](https://moonlight-stream.org), or [Steam Remote Play](https://store.steampowered.com/remoteplay).
-  Lamplit works as the app they start (0.5).
+  Lamplit works as the app they start (0.6).
 - **Button remapping in games:** Steam Input, in Steam's controller settings. Lamplit leaves your controller to it.
 - **Achievements:** the store apps already show them.
 - **Signing in to stores for you:** Lamplit never asks for or keeps a password. It waits while the store app signs
-  in, and 0.5 lets you type into it.
+  in, and 0.6 lets you type into it.
 - **Replacing the Windows desktop:** Lamplit starts after sign-in and keeps Windows one button away.
 - **Quick Resume, power limits, fans or graphics settings:** the handheld's own app, the NVIDIA app or AMD Software.
 - **Parental controls and separate saves for each person:**

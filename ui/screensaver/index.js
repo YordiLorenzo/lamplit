@@ -40,6 +40,8 @@ let saver = null;
 let showing = false;
 /** Palettes are on their way; the show starts once they are in, unless someone pressed something meanwhile. */
 let preparing = false;
+/** A show being prepared already owns the background, before its first frame appears. */
+export const screensaverShowing = () => showing || preparing;
 let lastInput = performance.now();
 /** What a wake swallows for a moment: more of the same press, and anything else that soon. */
 let swallow = { action: '', until: 0 };

@@ -1,6 +1,6 @@
 [package]
 name = "lamplit"
-version = "0.4.0"
+version = "0.5.0"
 description = "A console-style full-screen game home screen for Windows PCs on a TV"
 license = "PolyForm-Noncommercial-1.0.0"
 repository = "https://github.com/YordiLorenzo/lamplit"
@@ -27,6 +27,8 @@ parking_lot = "0.13"
 log = "0.4"
 # Report redaction: paths, device identifiers and case-insensitive names in log lines. Already used by Tauri.
 regex = "1"
+# Steam descriptions contain HTML and named entities. Reuse Tauri's HTML tokenizer to read them as text.
+html5ever = "0.39"
 # The app's log. Its fern re-export also logs the supervisor and --setup, which run without Tauri.
 tauri-plugin-log = "2"
 # Verifies signed update downloads before handing them to the Windows installer.
@@ -58,6 +60,7 @@ windows = { version = "0.62", features = [
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
   "Win32_System_IO",
+  "Win32_System_Environment",
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Input_KeyboardAndMouse",
   "Win32_UI_Input_XboxController",

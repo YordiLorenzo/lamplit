@@ -60,6 +60,20 @@ body.pointer { cursor: default; }
 .hero.blurred { filter: blur(4vh) saturate(1.3) brightness(.8); }
 #heroB { animation-delay: -20s; }
 
+#trailer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Enlarged past black bars inside the picture (trailer.js). */
+  transform: scale(var(--zoom, 1));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease, transform 600ms ease;
+}
+#trailer.on { opacity: 1; transition-duration: 600ms; }
+
 @keyframes drift {
   from { transform: scale(1.02) translate3d(-1.2%, .4%, 0); }
   to   { transform: scale(1.10) translate3d(1.2%, -.8%, 0); }
@@ -557,9 +571,9 @@ body.launching .cover.focus { scale: 1.1; }
 
 /* The menu's plate beside the card (lift.js): it grows out of the card's edge once the card is most of the way up
    (--grow-after), from a sliver to its full size on the tap spring, and goes back into it on lowering (morph.js). Its
-   two faces, the menu and Change art, take turns. Each is laid out at its own size where it shows, centred on the
-   card and against its edge, and the plate takes the size of the one that shows (lift.js --sheet-h), so the face
-   that goes stays where it was while the plate's clip moves from one to the other. A full face has room above and
+   faces, the menu, About, Change art and Your captures, take turns. Each is laid out at its own size where it shows,
+   centred on the card and against its edge, and the plate takes the size of the one that shows (lift.js --sheet-h), so
+   the face that goes stays where it was while the plate's clip moves from one to the other. A full face has room above and
    below it, between the screen's safe area and the hints (6vh over its bottom edge). */
 #sheet {
   --middle: calc(var(--card-y) + var(--card-h) / 2);
@@ -595,7 +609,7 @@ body.launching .cover.focus { scale: 1.1; }
   pointer-events: none;
   transition: opacity 100ms ease;
 }
-#artPick { --w: var(--wide-w); }
+#artPick, #about, #capturesFace { --w: var(--wide-w); }
 /* What the plate holds fades in from 45% of its way: as it grows out of the card, or into the other face's size. */
 #lift.on .sheet-face.on { opacity: 1; pointer-events: auto; transition: opacity 180ms ease calc(var(--grow-after) + var(--tap-ms) * .45); }
 #lift.on #sheet.turned .sheet-face.on { transition-delay: calc(var(--tap-ms) * .45); }
@@ -606,7 +620,9 @@ body.launching .cover.focus { scale: 1.1; }
 #dMeta { flex: none; display: flex; align-items: center; font-size: 2.3vh; color: var(--ink-dim); white-space: nowrap; overflow: hidden; }
 #dMeta .dot { white-space: pre; }
 #dMeta .dot:has(+ :empty) { display: none; }
-#dChoices { flex: none; display: grid; gap: .8vh; margin-top: 3vh; padding: .4vh; }
+/* A long name with every choice (a running game added by hand, with captures) can be taller than the plate: the
+   choices then scroll, and the focused one stays in view (library.js). */
+#dChoices { flex: 0 1 auto; min-height: 0; overflow-y: auto; display: grid; gap: .8vh; margin-top: 3vh; padding: .4vh; }
 #dChoices .row { justify-content: flex-start; gap: 1.8vh; font-size: 2.6vh; padding: 1.5vh 2vh; }
 #dChoices .row.on .icon { color: rgb(var(--lamp)); }
 #dChoices .row.warn { color: #ffc75e; font-weight: 600; }
@@ -625,8 +641,40 @@ body.launching .cover.focus { scale: 1.1; }
 /* The folder, dim at the bottom, and the first to give way when the menu doesn't fit: in two lines at most, the path
    to it cut short at its end (the middle of the whole path), and the folder's own name, which says the most, cut
    short at its end if it must be. Both on one line when they fit. */
-#dDir { flex: 0 1 auto; min-height: 0; display: flex; flex-wrap: wrap; margin-top: 2.4vh; overflow: hidden; font-size: 1.9vh; color: var(--ink-dim); }
+#dDir { flex: none; display: flex; flex-wrap: wrap; margin-top: 2.4vh; overflow: hidden; font-size: 1.9vh; color: var(--ink-dim); }
 #dDir span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Captures keep their full image in the viewer; the grid crops only its thumbnails. */
+#captureGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.5vh;
+  padding: .5vh;
+  min-height: 0;
+  max-height: 39vh;
+  overflow-y: auto;
+  /* Scrolling stops on whole rows, so the top row is never cut off. */
+  scroll-snap-type: y mandatory;
+  scroll-padding: .5vh;
+}
+#captureGrid button {
+  border: 0;
+  padding: 0;
+  aspect-ratio: 16 / 9;
+  border-radius: 1vh;
+  background: rgb(0 0 0 / .4);
+  overflow: hidden;
+  cursor: pointer;
+}
+#captureGrid button { scroll-snap-align: start; }
+#captureGrid img { display: block; width: 100%; height: 100%; object-fit: cover; }
+#captureGrid .focus { box-shadow: 0 0 0 .3vh #fff; }
+#captureMeta { flex: none; margin-top: 2vh; font-size: 2vh; color: var(--ink-dim); }
+#viewer { position: fixed; inset: 0; z-index: 4; background: #07060b; }
+#viewer[hidden] { display: none; }
+#viewerImage { display: block; width: 100%; height: 88vh; padding: 3vh; object-fit: contain; }
+#viewerCaption { text-align: center; font-size: 2.2vh; color: var(--ink-dim); }
+#viewerError { position: absolute; top: 40%; width: 100%; text-align: center; font-size: 2.6vh; }
 
 /* Change art: the search, then Steam's matches as a row of covers, then no art and back to automatic. */
 #artPick h2 { margin-bottom: 2.4vh; }
@@ -707,6 +755,28 @@ body.launching .cover.focus { scale: 1.1; }
 }
 #artChoices { margin-top: .6vh; }
 #artChoices .choice { letter-spacing: 0; text-transform: none; font-size: 2.2vh; }
+
+/* About keeps its screenshots in reach while long store descriptions can scroll above them. */
+#aboutStatus { font-size: 2.4vh; color: var(--ink-dim); padding: 6vh 0; text-align: center; }
+#aboutStatus:empty, #aboutText:has(#aboutDescription:empty):has(#aboutMeta:empty), #aboutScreens:empty { display: none; }
+#aboutText { min-height: 0; overflow-y: auto; scrollbar-width: none; }
+#aboutDescription { font-size: 2.6vh; line-height: 1.45; }
+#aboutMeta { margin-top: 2vh; color: var(--ink-dim); font-size: 2vh; line-height: 1.45; }
+#aboutGenres { display: flex; flex-wrap: wrap; gap: .8vh; margin-top: 1.5vh; }
+#aboutGenres span { padding: .5vh 1.2vh; border-radius: 99px; background: rgb(255 255 255 / .08); font-size: 1.8vh; }
+#aboutScreens {
+  display: flex;
+  flex: none;
+  gap: 1.6vh;
+  margin: 1vh -1vh -1vh;
+  padding: 1.6vh 1vh;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-padding-inline: 1vh;
+}
+#aboutScreens button { flex: 0 0 23vh; aspect-ratio: 16 / 9; padding: 0; border: 0; border-radius: 1vh; background: #1c1a26; overflow: hidden; }
+#aboutScreens button.focus { box-shadow: 0 0 0 .3vh #fff, 0 0 1vh rgb(var(--accent) / .5); }
+#aboutScreens img { display: block; width: 100%; height: 100%; object-fit: cover; }
 
 @media (prefers-reduced-motion: reduce) {
   #card, #lift.on #card, #lift.away #card { transform: none; transition: opacity 200ms ease; }

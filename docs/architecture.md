@@ -22,7 +22,7 @@ src-tauri/
     logging.rs       lamplit.log, supervisor.log, setup.log and restore.log
     report.rs        the local report: selected system facts, redacted warnings, and a plain-text file in Downloads
     library/         the game list: discovery, sorting, art and the art the player chose, favourites, hidden
-                     games, play time, and games added by hand
+                     games, play time, games added by hand and local screenshots (captures.rs)
     stores/          one file per store app; loose.rs finds games outside any store
     launch/          starting a game, watching it, handing the screen over to it, and Lamplit's own window
     dock/            the in-game dock: its window over a game, the news it shows, closing the game
@@ -41,12 +41,17 @@ ui/
   state.js         the page's state and its elements
   input.js         controller, keyboard and mouse as one set of actions
   library.js       the cover row, the focused game and its menu
+  trailer.js       the focused game's trailer, after 2.5 s without input on the home screen
+  dash.js          plays Steam's DASH trailers through Media Source Extensions: the 720p stream, its first minute
   lift.js          a game's menu lifting its cover over the blurred screen, with one plate beside it that grows out
-                   of the card's edge and holds the menu and Change art as its two faces
+                   of the card's edge and holds the menu, About, Change art and Your captures as faces
   veil.js          the game menu's veil: what was behind it, drawn once small, blurred and dimmed, and scaled up,
                    from art decoded and scaled off the page's thread; and once the menu rests, the hero and its shade
                    under it held still as one opaque copy, which the veil fades out over as the menu closes
   art.js           Change art, in a game's menu
+  captures.js      Your captures, on the game's plate: a thumbnail grid
+  details.js       About this game, on the same plate: Steam's description, details and a row of screenshots
+  viewer.js        a capture or a screenshot full screen, with its caption
   add.js           Add a game, a face of Settings' plate: the programs Lamplit passed over, browsing the drives,
                    naming the game
   keyboard.js      the on-screen keyboards: Find's, and the one for names and art searches
@@ -115,13 +120,15 @@ Lamplit keeps its files in the data folder, `%LOCALAPPDATA%\lamplit`: `prefs.jso
 favourite, hidden, when it was last played, how long Lamplit saw it run, the art the player chose, and for a game
 added by hand its name and exe, or that it was removed again, which keeps it off the row when a scan finds its exe
 outside any store; 0.1.0's `played.json` is still read for the last-played times), `art.json` and
-`art\<steam appid>\` (art lookups and downloads), `quiet-saved.json` (the settings quiet mode replaced),
+`art\<steam appid>\` (art lookups and downloads), `details\<steam appid>.json` (Steam details and their fetch time),
+`art\<steam appid>\screens\` (screenshots and trailer posters), `quiet-saved.json` (the settings quiet mode replaced),
 `steam-saved.json` (Steam's Guide setting and DevTools flag originals, plus a pending restore), and
 `sound-return.json` (separate output and microphone return endpoints and the last default each was routed
 through), plus the logs. Old `setup.json` files no longer determine startup state. WebView2 keeps its profile in
 `%LOCALAPPDATA%\io.github.yordilorenzo.lamplit`.
 
-`prefs.json` also keeps the interface sound level (`off`, `quiet` or `normal`, the default) and each introductory
+`prefs.json` also keeps the trailer level (`off`, `muted`, the default, or `with_sound`),
+the interface sound level (`off`, `quiet` or `normal`, the default) and each introductory
 hint's shown-start count and completion. A hint counts only when its screen is reached, at most once per app
 process, and stops after three starts or its action. Opening a game's menu completes its hint; a `summoned` event
 with a running game or the dock opening completes the return hint. A WebView profile reset leaves this state intact.
@@ -163,6 +170,37 @@ store's previous games; a missing file counts as absent.
 A Tauri command that isn't `async` runs on the main thread, where waiting freezes the window and controller
 navigation. So every command that touches the disk, the registry, COM, HID, a socket or the process list is `async`
 and does its work on Tauri's pool for blocking work.
+
+## Your captures
+
+Opening a game's menu starts `library_captures` without waiting for it. It returns at most 60 PNG, JPG or JPEG
+files, sorted by file modification time, newest first. The command does its registry and disk work in `blocking`.
+It reads Steam's last signed-in account with the same `last_account` parser as play minutes. Only the game's own
+`steam_appid` selects `userdata\<account>\760\remote\<appid>\screenshots`; chosen or matched art never selects captures.
+A Game Bar filename without its trailing date and time must be the game's name, so a sequel's captures stay out.
+NVIDIA folders must match the name.
+Both comparisons ignore case, trademark signs and punctuation separators. Subfolders and symbolic links to files
+are not followed. Network paths from folder settings are skipped.
+
+Game Bar uses `HKCU\Software\Microsoft\Windows\CurrentVersion\GameDVR\AppCaptureFolder` when present, then the
+Windows `FOLDERID_AppCaptures` location, then `FOLDERID_Videos\Captures`. Known-folder lookups do not create folders.
+NVIDIA checks `Videos\<game>` and `Videos\NVIDIA\<game>`, plus game folders under the configured gallery roots:
+`currentDirectoryV2` in `%LOCALAPPDATA%\NVIDIA Corporation\NVIDIA Overlay\GallerySettings.json`, and GeForce
+Experience's UTF-16 `DefaultPathW` under `HKCU\Software\NVIDIA Corporation\Global\ShadowPlay\NVSPCAPS`.
+
+The folder conventions were checked on 2026-11-10. [Microsoft documents](https://support.microsoft.com/en-us/accessibility/windows/use-a-screen-reader-to-record-your-screen-with-xbox-game-bar)
+`Videos\Captures`, PNG screenshots and game/date/time filenames. [Microsoft's SDK](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/KnownFolders.h)
+defines `FOLDERID_AppCaptures`. [NVIDIA documents](https://www.nvidia.com/en-us/geforce/news/nvidia-app-download-and-features/)
+per-game galleries and configurable storage, but does not publish the on-disk settings schema there. NVIDIA's
+default game subfolders and registry location, and the optional GameDVR setting, are inferred conventions that need
+live Windows verification. The JSON key comes from a [first-hand settings-file report](https://www.reddit.com/r/GeForceExperience/comments/1hoy9lv/how_can_i_change_the_temporary_files_location_on/).
+
+Each containing folder used by the result is allowed in Tauri's asset scope non-recursively. The reply has an asset
+URL, an ISO UTC file timestamp and a source (`steam`, `gamebar`, `nvidia`) per image. No new event is needed.
+Read failures reject and are logged; the page says the captures could not be read. A missing folder returns no images.
+The menu adds Your captures after Change art only for a nonempty reply, retaining its focused choice. Replies from
+an earlier menu opening are dropped. Your captures turns the same plate to a three-column grid; Cross opens the
+focused image over the page, Left and Right browse, and Circle goes back to the grid, then to the menu.
 
 ## App updates
 
@@ -422,6 +460,8 @@ message is written for the player, and the page shows it.
 | `library_games` | | Every game, or `null` until the first scan has finished |
 | `library_rescan` | | Nothing; scans unless the last scan was under 30 seconds ago |
 | `library_set_favourite`, `library_set_hidden` | `id`, `on` | Every game, after the change |
+| `library_captures` | `id` | Up to 60 `{ path, taken, source }` screenshots, newest first; `path` is an asset URL, `taken` an ISO UTC file timestamp, `source` is `steam`, `gamebar` or `nvidia` |
+| `library_details` | `id` | `{ appid, description, developers, publishers, released, genres, screenshots, trailer }`, or `null` when no Steam match is known or Find art online is off |
 | `launch_start` | `id` | Nothing; `launch-step` and `play` events follow |
 | `launch_anyway` | | Nothing; the launch goes ahead without a confirmed sign-in |
 | `launch_cancel` | | Nothing |
@@ -454,6 +494,7 @@ message is written for the player, and the page shows it.
 | `prefs_set_sound_follows`, `prefs_set_touchpad_mouse`, `prefs_set_steam_devtools`, `prefs_set_steam_guide`, `prefs_set_online_art`, `prefs_set_dock` | `on` | The prefs after the change |
 | `prefs_set_screensaver_minutes` | `minutes` (0 for never) | The prefs after the change |
 | `prefs_set_interface_sounds` | `level`: `off`, `quiet` or `normal` | The prefs after the change; both pages hear the new level |
+| `prefs_set_trailers` | `level`: `off`, `muted` or `with_sound` | The prefs after the change; Muted is the default |
 | `prefs_hint_shown` | `name`: `game_menu` or `return_home` | Whether to show it; counts this start once |
 | `prefs_hint_done` | `name`: `game_menu` or `return_home` | Nothing; the hint stays dismissed |
 | `power_sleep` | | Nothing, once the PC has woken up again |
@@ -470,12 +511,39 @@ message is written for the player, and the page shows it.
 | `dock_glass_fold` | `fold`: `{ to, ms, curve, after, fade, drop }`, the pill and the spring the page folds the island with | Nothing; Rust squeezes the real glass the same way |
 | `dock_close_game` | `force` | Nothing, once Windows has the request; the game's end follows as after any game |
 
+`library_details` runs on the blocking pool using art's `SteamStore` client, timeouts, image-size limit and online
+preference checks. It uses the player's chosen Steam art app id, otherwise the game's own id or a saved name match.
+Choosing no cover art does not erase a known app id. Metadata, including an unavailable store entry, is cached for
+seven days. The first eight screenshot pairs and a playable trailer's poster are downloaded when details are asked
+for; image URLs are hashed into file names under `art\<appid>\screens\`. The cached metadata keeps Steam URLs, and
+the IPC answer replaces images with Tauri asset URLs. The trailer is the first highlighted movie, or the first movie
+when none is highlighted. Its `url` is the `dash_h264` manifest for the page's trailer player. Only HTTPS URLs on
+`video.akamai.steamstatic.com` and `video.fastly.steamstatic.com`, with no credentials or nonstandard port, are accepted.
+No movie or no accepted H.264 DASH URL produces `trailer: null`; HLS and AV1 are not substituted. No new events are emitted.
+
 Report commands run on the blocking pool. The preview reads the current library and prefs, cached accessories,
 Windows display and version information, sound endpoints, store status and `lamplit.log`. The library must have
 finished its first scan so game names can be removed. Only selected fields enter the report; device names and ids
 do not. Log redaction replaces paths, account and library game names, and device identifiers. Save writes the exact
 preview the player saw, using `SHGetKnownFolderPath(FOLDERID_Downloads)` and `create_new`; another save in the same
 minute gets a numbered suffix. These commands send no network requests and emit no new events.
+
+## Home-screen trailers
+
+`ui/trailer.js` asks `library_details(id)` after the same cover has rested for 2.5 seconds. It uses that command's
+nullable `trailer: { url, poster }`. The poster is a local asset URL and the video streams directly from Steam.
+The video sits over the hero art and below its shade,
+loops, and fades in over 600 ms only after `playing`. Muted is the default; With sound uses 40% volume.
+
+Keyboard, controller and pointer input stop it. The controller also checks the focused game and screen state every
+100 ms: no trailer while a panel, starting screen, screensaver or dock is open, a game runs, Reduce Motion is on,
+the window is behind another one, or Find art online or Trailers is off. Stops mute and pause immediately, fade out
+over 200 ms, then remove the source and release the decoder. An old details answer cannot restart playback after
+input. A failed video or four seconds without `playing` is dropped; a later buffering stall gets the same limit.
+No retry happens until another input or change of focus or screen state.
+
+`prefs_set_trailers` parses the three choices and saves on the blocking pool, like the other preference commands.
+It adds no event. Only the home page plays trailers; the dock never creates a video.
 
 ## Events
 
