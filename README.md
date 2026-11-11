@@ -31,7 +31,7 @@ while you play. When the game closes, Lamplit is back on screen.
   </tr>
   <tr>
     <td width="50%"><img src="docs/images/find.jpg" alt="Find a game: an on-screen keyboard with rdr typed, store and sort choices, and the row narrowed to Red Dead Redemption 2"><br><sub>Find a game: "rdr" finds Red Dead Redemption 2.</sub></td>
-    <td width="50%"><img src="docs/images/details.jpg" alt="A game's menu: its cover lifted over the blurred home screen, and beside it the store, last played, play time and folder, with Play, Favourite, Change art and Hide this game"><br><sub>A game's menu: its cover lifted, its details and choices beside it.</sub></td>
+    <td width="50%"><img src="docs/images/details.jpg" alt="A game's menu: its cover lifted over the blurred home screen, and beside it the store, last played, play time and folder, with Play, About this game, Favourite, Change art and Hide this game"><br><sub>A game's menu: its cover lifted, its details and choices beside it.</sub></td>
   </tr>
   <tr>
     <td width="50%"><img src="docs/images/dock.jpg" alt="The in-game dock over Cyberpunk 2077: the game's cover and play time, the volume, batteries and time, and Resume, TV, Quiet, Stats, Home and Close game"><br><sub>The in-game dock: hold PS over a game.</sub></td>
