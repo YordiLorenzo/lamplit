@@ -71,9 +71,11 @@ jobs:
 
       - run: npm ci
 
-      # The tests launch Playwright's own Chromium (the `chromium` channel), not the headless shell.
+      # The tests launch Playwright's own Chromium (the `chromium` channel), not the headless shell. The runner image
+      # already has the system libraries Chrome needs, so apt isn't used: on 2026-11-11 the runner couldn't resolve
+      # Ubuntu's package servers three times in a row.
       - name: Install Chromium
-        run: npx playwright-core install --with-deps --no-shell chromium
+        run: npx playwright-core install --no-shell chromium
 
       - name: Type check
         run: npm run typecheck
