@@ -3,7 +3,7 @@
 
 import * as api from './api.js';
 import { playDash } from './dash.js';
-import { trailerAllowed } from './logic.js';
+import { letterbox, trailerAllowed, trailerZoom } from './logic.js';
 import { reduced } from './morph.js';
 import { screensaverShowing } from './screensaver/index.js';
 import { els, focused, state } from './state.js';
@@ -41,7 +41,7 @@ function stop() {
   objectUrl = '';
   fetches.abort();
   if (!old) return;
-  old.onplaying = old.onerror = old.onwaiting = old.onstalled = null;
+  old.onplaying = old.onerror = old.onwaiting = old.onstalled = old.ontimeupdate = null;
   old.muted = true;
   old.pause();
   old.classList.remove('on');
@@ -60,6 +60,31 @@ function input() {
   idleAt = performance.now();
   attempted = false;
   stop();
+}
+
+/**
+ * Some trailers are films with black bars inside the picture (Battlefield 6's, 2026-11-11). Every half second of
+ * playback a small copy of the frame is measured, and once three frames agree the trailer is enlarged until its
+ * picture covers the screen. The bars don't change, so twelve measured frames are enough.
+ * @param {HTMLVideoElement} next
+ */
+function fitter(next) {
+  const frame = /** @type {OffscreenCanvasRenderingContext2D} */ (new OffscreenCanvas(96, 54).getContext('2d', { willReadFrequently: true }));
+  /** @type {number[]} */
+  const bars = [];
+  let measured = -1;
+  return () => {
+    if (bars.length >= 12 || !next.videoWidth || Math.abs(next.currentTime - measured) < 0.5) return;
+    measured = next.currentTime;
+    frame.drawImage(next, 0, 0, 96, 54);
+    const bar = letterbox(frame.getImageData(0, 0, 96, 54).data, 96, 54);
+    if (bar === null) return;
+    bars.push(bar);
+    // A dark scene can look like bars for a moment; real bars stay. The thinnest seen counts.
+    if (bars.length < 3) return;
+    const video = { width: next.videoWidth, height: next.videoHeight };
+    next.style.setProperty('--zoom', String(trailerZoom(Math.min(...bars), video, { width: innerWidth, height: innerHeight })));
+  };
 }
 
 /** @param {string} id @param {string} expected */
@@ -100,6 +125,7 @@ async function play(id, expected) {
     next.classList.add('on');
   };
   next.onerror = () => failed(new Error(`media error ${next.error?.code ?? 'unknown'}`));
+  next.ontimeupdate = fitter(next);
   next.onwaiting = stalled;
   next.onstalled = stalled;
   els.stage.querySelector('.shade').before(next);

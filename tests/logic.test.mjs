@@ -36,6 +36,8 @@ import {
   stepAutoOff,
   stepInterfaceSounds,
   stepTrailers,
+  letterbox,
+  trailerZoom,
   stepSaverMinutes,
   storeChoices,
   storeWarning,
@@ -807,6 +809,33 @@ describe('Trailers', () => {
     assert.equal(trailerAllowed({ ...home, prefs: prefs({ trailers: 'off' }) }, view), false);
     assert.equal(trailerAllowed({ ...home, prefs: prefs({ online_art: false }) }, view), false);
     assert.equal(trailerAllowed({ ...home, prefs: prefs({ trailers: 'with_sound' }) }, view), true);
+  });
+  // A 10 by 20 frame: each row lit (bright grey) or a black bar with codec noise (a channel at 20).
+  const frame = (rows) => {
+    const rgba = new Uint8ClampedArray(10 * rows.length * 4);
+    rows.forEach((lit, y) => rgba.fill(lit ? 200 : 20, y * 40, (y + 1) * 40));
+    return letterbox(rgba, 10, rows.length);
+  };
+  const rows = (top, bottom) => Array.from({ length: 20 }, (_, y) => y >= top && y < 20 - bottom);
+  test('black bars are measured as a share of the frame, the thinner of top and bottom', () => {
+    assert.equal(frame(rows(3, 3)), 0.15);
+    assert.equal(frame(rows(3, 2)), 0.1);
+    assert.equal(frame(rows(0, 0)), 0);
+    // A dark sky over a lit ground is not a bar: there is none at the bottom.
+    assert.equal(frame(rows(4, 0)), 0);
+  });
+  test('an all-dark frame or a logo on black tells nothing', () => {
+    assert.equal(frame(rows(10, 10)), null);
+    assert.equal(frame(rows(5, 5)), null);
+    assert.equal(frame(rows(4, 5)), 0.2);
+  });
+  test('the zoom fills the screen with the picture between the bars', () => {
+    const tv = { width: 1920, height: 1080 };
+    assert.equal(trailerZoom(46 / 360, { width: 640, height: 360 }, tv).toFixed(3), (360 / 268).toFixed(3));
+    assert.equal(trailerZoom(0.02, { width: 640, height: 360 }, tv), 1);
+    // On an ultrawide screen the video is already cut at top and bottom: less zoom is needed, or none.
+    assert.equal(trailerZoom(46 / 360, { width: 640, height: 360 }, { width: 3440, height: 1440 }), 1);
+    assert.equal(trailerZoom(46 / 360, { width: 640, height: 360 }, { width: 2560, height: 1600 }), 1600 / (1600 * (268 / 360)));
   });
 });
 

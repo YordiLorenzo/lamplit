@@ -11,9 +11,11 @@ const read = (page) => page.evaluate(() => {
     logs: window.__logs.filter((line) => line.includes('trailer:')),
     exists: !!v, shown: !!v?.classList.contains('on'), paused: v?.paused,
     muted: v?.muted, volume: v?.volume, loop: v?.loop, source: v?.getAttribute('src'),
-    fade: v && getComputedStyle(v).transitionDuration,
+    // The opacity fade's length: transitions list opacity first, then the zoom (style.css).
+    fade: v && getComputedStyle(v).transitionDuration.split(', ')[0],
     fading: v?.getAnimations().some((a) => a.transitionProperty === 'opacity'),
     size: [v?.videoWidth, v?.videoHeight],
+    zoom: v?.style.getPropertyValue('--zoom') ?? '',
   };
 });
 
@@ -172,6 +174,28 @@ export async function trailerTests({ browser, open, close, game, check, shots, h
     if (reason === 'dock') await emit(page, 'dock', { mode: 'open' });
     await page.clock.runFor(400);
     check(`active playback releases its source on ${reason}`, !(await read(page)).exists);
+    await close(page);
+  }
+
+  // A film trailer with black bars inside its picture (tests/media/trailer/letterbox: 2.39:1 in 16:9) is enlarged
+  // until the picture covers the screen; a full-frame one keeps its size. Bars are measured on frames as they play, in
+  // real time, so this waits on the page rather than on its clock.
+  for (const [name, folder, check1] of [
+    ['a full-frame trailer keeps its size', '', (zoom) => zoom === 1],
+    ['a trailer with black bars is enlarged past them', 'letterbox/', (zoom) => zoom > 1.25 && zoom < 1.4],
+  ]) {
+    const url = `https://video.fastly.steamstatic.com/store_trailers/test/${folder}dash_h264.mpd`;
+    const page = await start({ details: { ...details, trailer: { ...details.trailer, url } } });
+    await playing(page);
+    await page.waitForFunction(() => document.querySelector('#trailer')?.style.getPropertyValue('--zoom'), null, { polling: 100, timeout: 10000 }).catch(() => {});
+    const v = await read(page);
+    check(name, check1(Number(v.zoom)), JSON.stringify(v.zoom));
+    if (folder) {
+      await page.clock.resume();
+      await page.waitForTimeout(1200);
+      await holdClock(page);
+      await page.screenshot({ path: path.join(shots, 'trailer-letterbox.png') });
+    }
     await close(page);
   }
 

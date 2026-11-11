@@ -572,6 +572,41 @@ export function trailerAllowed(state, view) {
     && view.front && !view.reduced && !view.saver && !view.dock;
 }
 
+/** Brightest channel value (0 to 255) a row of a trailer frame may reach and still be a black bar: H.264 leaves noise. */
+const BAR_LEVEL = 28;
+
+/**
+ * The black bars a film trailer has inside its picture (a 2.39:1 film in a 16:9 video), as the share of the frame's
+ * height of the thinner of the top and bottom bar. Null for a frame that can't tell: all dark, or a picture shorter
+ * than 55% of the frame (a logo on black looks like a very wide film).
+ * @param {Uint8ClampedArray} rgba @param {number} width @param {number} height
+ */
+export function letterbox(rgba, width, height) {
+  const lit = Array.from({ length: height }, (_, y) => {
+    for (let i = y * width * 4; i < (y + 1) * width * 4; i += 4) {
+      if (Math.max(rgba[i], rgba[i + 1], rgba[i + 2]) > BAR_LEVEL) return true;
+    }
+    return false;
+  });
+  const top = lit.indexOf(true);
+  if (top < 0) return null;
+  const bottom = height - 1 - lit.lastIndexOf(true);
+  if (height - top - bottom < height * 0.55) return null;
+  return Math.min(top, bottom) / height;
+}
+
+/**
+ * How much to enlarge a trailer that covers the screen so its picture, without the black bars, covers it too.
+ * @param {number} bar the share of the video's height each bar takes (letterbox)
+ * @param {{ width: number, height: number }} video @param {{ width: number, height: number }} screen
+ */
+export function trailerZoom(bar, video, screen) {
+  // Thinner bars than this are noise or a frame's own dark edge.
+  if (bar < 0.03) return 1;
+  const shown = Math.max(screen.height, (screen.width * video.height) / video.width);
+  return Math.max(1, screen.height / (shown * (1 - 2 * bar)));
+}
+
 /** The screensaver's settings until Rust's prefs are in, as prefs.rs has them. */
 export const SAVER_DEFAULT = /** @type {const} */ ({ minutes: 5 });
 /** The delays Settings > Screensaver offers, in minutes; 0 is never. */
