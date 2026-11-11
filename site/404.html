@@ -3,14 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- This page answers for any missing path, so relative links need the site's root: /lamplit/ on github.io, / on a custom domain. -->
-  <script>
-    (function () {
-      var base = document.createElement('base');
-      base.href = location.hostname.endsWith('.github.io') ? '/lamplit/' : '/';
-      document.head.appendChild(base);
-    })();
-  </script>
+  <!-- This page answers for any missing path, so relative links start from the site's root. -->
+  <base href="/">
   <title>Page not found: Lamplit</title>
   <meta name="robots" content="noindex">
   <meta name="theme-color" content="#07060B">
