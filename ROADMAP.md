@@ -8,6 +8,9 @@ undo from the controller, no dialog that needs a mouse, and a TV that is set up 
 
 ## Done
 
+0.5.0 (2026-11-11) brought a trailer behind the focused game, About this game with Steam's description and
+screenshots, and Your captures from Steam, the Game Bar and the NVIDIA app.
+
 0.4.0 (2026-11-09) brought updates from the sofa, Start when I sign in without an admin prompt, Restore
 Lamplit's changes, Save a report, Exit to Windows, interface sounds, two first-minute hints, and Epic's new
 launcher. Lamplit's listing on WinGet waits for Microsoft's review.
@@ -19,17 +22,7 @@ Battle.net, the Amazon Games app and itch.io.
 
 [CHANGELOG.md](CHANGELOG.md) has every change.
 
-## Next: 0.5, every game worth a look
-
-- **A trailer on the focused game.** Rest on a cover for a moment and its trailer plays behind it, muted unless
-  you choose sound. Settings can switch it off.
-- **A page for each game,** from its menu: what the game is, who made it, when it came out, and its screenshots.
-- **Your captures,** from the game's menu: the screenshots you took in it with Steam, the Game Bar or the NVIDIA
-  app.
-- **A list of what's been tested:** controllers (Xbox over its adapter, Bluetooth and USB, DualSense Edge, DualShock
-  4, 8BitDo, the new Steam Controller), the dock over real games, and Windows' Xbox mode next to Lamplit.
-
-## 0.6, never reach for the mouse
+## Next: 0.6, never reach for the mouse
 
 - **Control this window.** When a store app shows a sign-in or a question Lamplit can't answer, the stick moves a
   pointer and the on-screen keyboard types into that window, with any controller. One press brings you back.
@@ -41,6 +34,8 @@ Battle.net, the Amazon Games app and itch.io.
   devices can wake the PC. Hibernate joins the power menu where the PC supports it.
 - **Lamplit through Moonlight.** A tested app entry for Sunshine and Apollo: Lamplit opens on the stream's screen and
   sound, and a game keeps running when the stream drops for a moment.
+- **A list of what's been tested:** controllers (Xbox over its adapter, Bluetooth and USB, DualSense Edge, DualShock
+  4, 8BitDo, the new Steam Controller), the dock over real games, and Windows' Xbox mode next to Lamplit.
 
 ## 0.7, the TV, set up once
 
