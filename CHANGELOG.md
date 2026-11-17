@@ -4,6 +4,15 @@ Every release of Lamplit, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.5.1 - Unreleased
+
+### Added
+
+- Add a game takes a .bat or .cmd file as well as an exe, for games that start from a script. Lamplit runs the
+  script in its own folder without a console window, and the game counts as running while the programs the script
+  started run. When the script opens the game through a program that was already running, such as a store app,
+  Lamplit can't tell when the game ends.
+
 ## 0.5.0 - 2026-11-11
 
 ### Highlights

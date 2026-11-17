@@ -8,6 +8,9 @@ undo from the controller, no dialog that needs a mouse, and a TV that is set up 
 
 ## Done
 
+0.5.1 (not released yet) brings games that start from a script: Add a game takes a .bat or .cmd file as well as
+an exe.
+
 0.5.0 (2026-11-11) brought a trailer behind the focused game, About this game with Steam's description and
 screenshots, and Your captures from Steam, the Game Bar and the NVIDIA app.
 

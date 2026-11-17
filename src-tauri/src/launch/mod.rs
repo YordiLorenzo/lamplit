@@ -11,6 +11,7 @@ pub use watch::{game_windows, resume};
 
 use crate::error::{Error, Result};
 use crate::events::{self, Event, LaunchStep, Play, StepState};
+use crate::files::is_script;
 use crate::library::{Game, Launch};
 use crate::prefs;
 use crate::stores::{self, Account, Processes, Store, steam};
@@ -20,6 +21,8 @@ use crate::win::{
 };
 use parking_lot::Mutex;
 use std::ffi::OsStr;
+use std::os::windows::process::CommandExt;
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
@@ -339,11 +342,12 @@ fn not_opened(file: &OsStr, code: isize) -> Error {
     })
 }
 
-/// Opens the game. For a game started from its exe, returns the process that started, kept open, which may start the
-/// game proper and end before the watcher first looks.
+/// Opens the game. For a game started from its exe or script, returns the process that started, kept open, which may
+/// start the game proper and end before the watcher first looks.
 fn open_game(game: &Game) -> Result<Option<Held>> {
     let started = match &game.launch {
         Launch::Uri(_) => shell_open(&game.launch, None).map(|()| None),
+        Launch::Exe(script) if is_script(script) => start_script(script),
         Launch::Exe(exe) | Launch::ExeArgs(exe, _) => {
             let args = if let Launch::ExeArgs(_, args) = &game.launch { Some(args.as_str()) } else { None };
             win::window::allow_any_foreground();
@@ -365,9 +369,50 @@ fn open_game(game: &Game) -> Result<Option<Held>> {
     Ok(started)
 }
 
+/// Runs the script of a game added by hand in its own folder, as a double-click in Explorer does, but without a console
+/// window on the TV: CREATE_NO_WINDOW gives cmd.exe a console that has none, and the console programs the script runs
+/// share it. The game's own windows show as usual. Returns cmd's process, kept open: what it starts is the game
+/// (`watch.rs`), and cmd itself, one of Windows' own programs, isn't.
+fn start_script(script: &Path) -> Result<Option<Held>> {
+    if !script.is_file() {
+        return Err(not_opened(script.as_os_str(), 2));
+    }
+    win::window::allow_any_foreground();
+    // std starts a .bat or .cmd file through cmd.exe from the system folder, with the script's path quoted.
+    let child = std::process::Command::new(script)
+        .current_dir(script.parent().unwrap_or(script))
+        .creation_flags(windows::Win32::System::Threading::CREATE_NO_WINDOW.0)
+        .spawn()
+        .map_err(|e| Error::Player(format!("Windows couldn't start {}: {e}", script.display())))?;
+    Ok(Held::of(child.into()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_script_runs_in_its_own_folder() {
+        // A space and an ampersand, which cmd.exe would split the command at if the path weren't quoted.
+        let dir = std::env::temp_dir().join(format!("lamplit-test-script & co {}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("Play Game.bat");
+        std::fs::write(&script, "@echo off\r\ncd > here.txt\r\n").unwrap();
+        let started = start_script(&script).unwrap();
+        assert!(started.is_some(), "the watch would have nothing to follow the game by");
+        let here = dir.join("here.txt");
+        let until = Instant::now() + Duration::from_secs(10);
+        while !crate::files::nonempty(&here) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let ran_in = std::fs::read_to_string(&here).unwrap();
+        assert_eq!(crate::files::folder_key(Path::new(ran_in.trim())), crate::files::folder_key(&dir));
+        drop(started);
+        let gone = start_script(&dir.join("gone.bat")).map(|_| ());
+        assert!(matches!(&gone, Err(Error::Player(m)) if m.ends_with("isn't there any more.")), "{gone:?}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn update_lines() {

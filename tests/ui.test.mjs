@@ -2228,7 +2228,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   await page.keyboard.press('Enter');
   await idle(page);
   a = await add();
-  check('Browse starts at the drives', a.title === "Choose the game's exe" && a.path === 'This PC' && JSON.stringify(a.rows) === '["C:","D:"]' && JSON.stringify(a.lastCall) === '["library_browse",{"path":null}]', JSON.stringify(a));
+  check('Browse starts at the drives', a.title === "Choose the game's exe or script" && a.path === 'This PC' && JSON.stringify(a.rows) === '["C:","D:"]' && JSON.stringify(a.lastCall) === '["library_browse",{"path":null}]', JSON.stringify(a));
   // A folder with nothing to open or choose: ✕ does nothing there.
   await page.keyboard.press('Enter');
   await idle(page);
@@ -2236,7 +2236,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   await page.keyboard.press('Enter');
   await idle(page);
   a = await add();
-  check('✕ in a folder with no folders or exes does nothing', a.path === 'C:\\' && JSON.stringify(a.rows) === '["No folders or exes here"]' && (await page.evaluate(() => window.__errors.length)) === errors, JSON.stringify(a) + JSON.stringify(await page.evaluate(() => window.__errors)));
+  check('✕ in a folder with nothing to choose does nothing', a.path === 'C:\\' && JSON.stringify(a.rows) === '["No folders, exes or scripts here"]' && (await page.evaluate(() => window.__errors.length)) === errors, JSON.stringify(a) + JSON.stringify(await page.evaluate(() => window.__errors)));
   await page.keyboard.press('Escape');
   await idle(page);
   await page.keyboard.press('ArrowDown');
@@ -2245,8 +2245,18 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   await page.keyboard.press('Enter');
   await idle(page);
   a = await add();
-  check('folders open with ✕ or →, folders first, then exes', a.path === 'D:\\Games' && JSON.stringify(a.rows) === '["Racer","tetris.exe"]' && a.hint === '✕Open○Back', JSON.stringify(a));
+  check('folders open with ✕ or →, folders first, then exes and scripts', a.path === 'D:\\Games' && JSON.stringify(a.rows) === '["Racer","tetris.exe","windowed.bat"]' && a.hint === '✕Open○Back', JSON.stringify(a));
   await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  a = await add();
+  const scriptIcon = await page.evaluate(() => document.querySelector('#addList .row.focus use')?.getAttribute('href'));
+  check('a script is chosen like an exe, with the same icon', a.focus === 'windowed.bat' && a.hint === '✕Choose○Back' && scriptIcon === '#i-app', `${a.hint} ${scriptIcon}`);
+  await page.keyboard.press('Enter');
+  a = await add();
+  check('a script goes to naming, with the name Lamplit suggests', a.naming && a.name === 'Windowed' && a.path === 'D:\\Games\\windowed.bat', JSON.stringify(a));
+  await page.keyboard.press('Escape');
+  await idle(page);
+  await page.keyboard.press('ArrowUp');
   a = await add();
   check('an exe is chosen, not opened', a.focus === 'tetris.exe' && a.hint === '✕Choose○Back', a.hint);
   await settled(page);

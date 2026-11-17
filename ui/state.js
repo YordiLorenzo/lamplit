@@ -186,8 +186,8 @@ export const state = {
     /** @type {import('./api.js').Folder | null} */
     folder: null,
     /**
-     * A heading, or a row: `kind` is what ✕ does there ('browse', 'program', 'drive', 'folder', 'exe'; '' for none),
-     * `path` the exe or folder, `title` the name an exe's game would get.
+     * A heading, or a row: `kind` is what ✕ does there ('browse', 'program', 'drive', 'folder', 'exe', 'script'; ''
+     * for none), `path` the exe, script or folder, `title` the name its game would get.
      * @type {{ heading?: string, kind?: string, label?: string, value?: string, path?: string, title?: string }[]}
      */
     rows: [],

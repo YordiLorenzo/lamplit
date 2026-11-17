@@ -59,7 +59,7 @@ export function showHints() {
     html = b('ok', 'Select') + b('square', 'Delete') + b('triangle', 'Space') + b('back', 'Back');
   } else if (state.mode === 'add') {
     const kind = state.add.rows.filter((r) => r.kind)[state.add.idx]?.kind;
-    if (kind) html += b('ok', kind === 'exe' || kind === 'program' ? 'Choose' : 'Open');
+    if (kind) html += b('ok', kind === 'exe' || kind === 'script' || kind === 'program' ? 'Choose' : 'Open');
     html += b('back', 'Back');
   } else if (state.mode === 'report') {
     html = '<span>↑↓ Scroll</span>';

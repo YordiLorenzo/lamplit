@@ -40,7 +40,8 @@ pub struct Watch {
     dirs: Vec<String>,
     names: Vec<String>,
     /// A game outside any store, added by hand or found (Windows' game list may name an exe in Downloads): the exe
-    /// Lamplit starts, and the processes seen coming from it. Its folder can hold other programs too, so the game is
+    /// Lamplit starts, and the processes seen coming from it. A script added by hand runs in no process of its own:
+    /// the cmd.exe that runs it, from `seed`, starts the game. Its folder can hold other programs too, so the game is
     /// that exe and what it started, wherever that runs from (a launcher in `Launcher\` starts the game in `bin\`), and
     /// not everything in the folder, as for a store's game. Shared by the copies of a watch: the watcher's looks add to
     /// it (`track`), and the dock's close requests read it.
@@ -728,6 +729,26 @@ mod tests {
         assert!(watch.track(&game).is_empty(), "nothing else leads to it");
         watch.seed(launcher);
         assert_eq!(watch.track(&game), HashSet::from([2]));
+    }
+
+    #[test]
+    fn a_script_added_by_hand_is_what_cmd_started_for_it() {
+        // play.bat starts the emulator beside it and a frame counter from another folder, then ends.
+        let watch = racer(r"D:\Games\Emu\play.bat", r"D:\Games\Emu");
+        // The cmd.exe that runs the script: this test's own process stands in for it.
+        let cmd = launcher();
+        let (pid, at) = (cmd.pid, cmd.started);
+        watch.seed(cmd);
+        let shell = proc(pid, r"C:\Windows\System32\cmd.exe", at, Some(900));
+        let console = proc(3, r"C:\Windows\System32\conhost.exe", at, Some(pid));
+        assert!(watch.track(&[shell, console]).is_empty(), "cmd and its console host are Windows' own, not the game");
+        let emu = proc(4, r"D:\Games\Emu\emu.exe", at + 1, Some(pid));
+        let counter = proc(5, r"D:\Tools\fps.exe", at + 1, Some(pid));
+        assert_eq!(watch.track(&[shell, console, emu, counter]), [4, 5].into());
+        assert_eq!(watch.own_pids(&[shell, console, emu, counter]), [4, 5].into());
+        // The script has ended: the game runs on.
+        assert_eq!(watch.track(&[emu, counter]), [4, 5].into(), "Lamplit would take the game for ended");
+        assert_eq!(watch.track(&[emu]), [4].into());
     }
 
     #[test]
