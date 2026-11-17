@@ -120,6 +120,7 @@ impl Others {
                 connection: if wireless { Connection::Wireless } else { Connection::Usb },
                 battery: battery(&raw),
                 headphones: None,
+                edge_buttons: false,
                 address: None,
             },
         );

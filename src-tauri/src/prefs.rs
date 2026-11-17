@@ -49,6 +49,65 @@ impl Trailers {
     }
 }
 
+/// The Lamplit button a DualSense Edge's back or Fn button acts as, chosen in Settings > Controllers. Nothing by
+/// default: a player who gives those buttons to games in Steam Input doesn't want them to move Lamplit's menus too.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(strum::VariantArray))]
+#[serde(rename_all = "lowercase")]
+pub enum EdgeTarget {
+    #[default]
+    Nothing,
+    Cross,
+    Circle,
+    Triangle,
+    Square,
+    L1,
+    R1,
+    Options,
+}
+
+impl EdgeTarget {
+    pub fn parse(name: &str) -> Result<Self> {
+        match name {
+            "nothing" => Ok(Self::Nothing),
+            "cross" => Ok(Self::Cross),
+            "circle" => Ok(Self::Circle),
+            "triangle" => Ok(Self::Triangle),
+            "square" => Ok(Self::Square),
+            "l1" => Ok(Self::L1),
+            "r1" => Ok(Self::R1),
+            "options" => Ok(Self::Options),
+            _ => Err(Error::Player("Choose Nothing, Cross, Circle, Triangle, Square, L1, R1 or Options.".into())),
+        }
+    }
+}
+
+/// What a DualSense Edge's two back buttons and two Fn buttons do in Lamplit. One choice for every Edge.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EdgeButtons {
+    pub left_back: EdgeTarget,
+    pub right_back: EdgeTarget,
+    pub left_fn: EdgeTarget,
+    pub right_fn: EdgeTarget,
+}
+
+/// One of the four buttons' choices, picked out of an EdgeButtons.
+pub type EdgeButton = fn(&mut EdgeButtons) -> &mut EdgeTarget;
+
+impl EdgeButtons {
+    /// The button by the name the page gives it.
+    pub fn button(name: &str) -> Result<EdgeButton> {
+        match name {
+            "left_back" => Ok(|b| &mut b.left_back),
+            "right_back" => Ok(|b| &mut b.right_back),
+            "left_fn" => Ok(|b| &mut b.left_fn),
+            "right_fn" => Ok(|b| &mut b.right_fn),
+            _ => Err(Error::Player("A DualSense Edge has no such button.".into())),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Hint {
@@ -99,6 +158,8 @@ pub struct Prefs {
     pub hints: Hints,
     /// The DualSense touchpad moves the mouse (trackpad.rs).
     pub touchpad_mouse: bool,
+    /// The DualSense Edge's back and Fn buttons as other buttons (devices/pad/dualsense.rs).
+    pub edge_buttons: EdgeButtons,
     /// Lamplit opens Steam's DevTools port, which the PS button guard and Steam's part of quiet mode need. Any program
     /// on the PC can control Steam through that port, so it is off until the player switches it on (devtools.rs).
     pub steam_devtools: bool,
@@ -128,6 +189,7 @@ impl Default for Prefs {
             trailers: Trailers::Muted,
             hints: Hints::default(),
             touchpad_mouse: false,
+            edge_buttons: EdgeButtons::default(),
             steam_devtools: false,
             steam_guide: true,
             online_art: true,
@@ -203,7 +265,7 @@ pub fn stop_steam_changes() -> Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Hint, Hints, InterfaceSounds, Prefs, Trailers};
+    use super::{EdgeButtons, EdgeTarget, Hint, Hints, InterfaceSounds, Prefs, Trailers};
 
     #[test]
     fn the_defaults_reach_the_page_as_in_the_fixture() {
@@ -221,6 +283,7 @@ mod tests {
         assert_eq!(prefs.hints.game_menu.starts, 0);
         assert!(!prefs.hints.return_home.done);
         assert!(prefs.steam_guide);
+        assert_eq!(prefs.edge_buttons, EdgeButtons::default());
     }
 
     #[test]
@@ -252,6 +315,29 @@ mod tests {
         }
         assert!(Trailers::parse("loud").is_err());
         assert!(serde_json::from_str::<Prefs>(r#"{ "trailers": "loud" }"#).is_err());
+    }
+
+    #[test]
+    fn edge_buttons_take_only_the_page_s_names_and_choices() {
+        let values = ipc_fixture!("values");
+        let targets = <EdgeTarget as strum::VariantArray>::VARIANTS;
+        assert_eq!(serde_json::to_value(targets).unwrap(), values["edge_target"]);
+        for &target in targets {
+            assert_eq!(EdgeTarget::parse(serde_json::to_value(target).unwrap().as_str().unwrap()).unwrap(), target);
+        }
+        assert!(EdgeTarget::parse("ps").is_err());
+        // Each name the page sends sets its own button, saved in prefs.json under that name.
+        for name in values["edge_button"].as_array().unwrap() {
+            let name = name.as_str().unwrap();
+            let mut chosen = EdgeButtons::default();
+            *EdgeButtons::button(name).unwrap()(&mut chosen) = EdgeTarget::Cross;
+            let saved = serde_json::to_value(chosen).unwrap();
+            let crosses = saved.as_object().unwrap().iter().filter(|(_, target)| *target == "cross");
+            assert_eq!(crosses.map(|(key, _)| key.as_str()).collect::<Vec<_>>(), [name]);
+            assert_eq!(serde_json::from_value::<EdgeButtons>(saved).unwrap(), chosen);
+        }
+        assert_eq!(values["edge_button"].as_array().unwrap().len(), 4);
+        assert!(EdgeButtons::button("touchpad").is_err());
     }
 
     #[test]

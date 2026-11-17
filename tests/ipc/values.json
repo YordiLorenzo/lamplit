@@ -10,5 +10,7 @@
   "entry_kind": ["drive", "folder", "exe", "script"],
   "dock_icon": ["headset", "controller"],
   "dock_release": ["ok-up"],
+  "edge_button": ["left_back", "right_back", "left_fn", "right_fn"],
+  "edge_target": ["nothing", "cross", "circle", "triangle", "square", "l1", "r1", "options"],
   "update_phase": ["idle", "checking", "current", "available", "downloading", "ready", "installing", "error"]
 }

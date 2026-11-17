@@ -140,6 +140,7 @@ mod tests {
             connection: Connection::Bluetooth,
             battery,
             headphones: None,
+            edge_buttons: false,
             address: None,
         }
     }

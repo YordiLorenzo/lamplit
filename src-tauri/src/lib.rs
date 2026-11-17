@@ -162,6 +162,7 @@ pub fn run() {
             commands::prefs_hint_shown,
             commands::prefs_hint_done,
             commands::prefs_set_touchpad_mouse,
+            commands::prefs_set_edge_button,
             commands::prefs_set_steam_devtools,
             commands::prefs_set_steam_guide,
             commands::prefs_set_online_art,

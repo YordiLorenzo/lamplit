@@ -7,6 +7,7 @@
     "return_home": { "starts": 0, "done": false }
   },
   "touchpad_mouse": false,
+  "edge_buttons": { "left_back": "nothing", "right_back": "nothing", "left_fn": "nothing", "right_fn": "nothing" },
   "steam_devtools": false,
   "steam_guide": true,
   "online_art": true,

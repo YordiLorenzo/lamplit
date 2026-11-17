@@ -53,6 +53,8 @@ test("the page's types allow exactly the values Rust sends", () => {
     dock_icon: 'DockIcon',
     dock_release: 'DockRelease',
     update_phase: 'Update.phase',
+    edge_button: 'EdgeButton',
+    edge_target: 'EdgeTarget',
   };
   for (const [kind, type] of Object.entries(types)) assert.deepEqual(sorted(pageValues(type)), sorted(values[kind]), type);
 });

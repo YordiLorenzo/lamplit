@@ -376,7 +376,8 @@ mod tests {
                 headset: headset::Status::default(),
                 controllers: vec![pad::Controller {
                     id: "private-id".into(), name: "Alice's controller".into(), kind: pad::Kind::Xbox,
-                    connection: pad::Connection::Wireless, battery: None, headphones: None, address: Some(123),
+                    connection: pad::Connection::Wireless, battery: None, headphones: None, edge_buttons: false,
+                    address: Some(123),
                 }],
             },
             sound: Some(audio::Sound {

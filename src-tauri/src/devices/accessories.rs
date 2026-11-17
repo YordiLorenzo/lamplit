@@ -295,6 +295,7 @@ mod tests {
             connection: pad::Connection::Bluetooth,
             battery: Some(pad::Battery { percent: Some(60), level: None, charge: Some(Charge::Battery) }),
             headphones: Some(false),
+            edge_buttons: false,
             address: Some(1),
         };
         let xbox = Controller {
@@ -304,6 +305,7 @@ mod tests {
             connection: pad::Connection::Wireless,
             battery: Some(pad::Battery { percent: None, level: Some(pad::Level::Medium), charge: None }),
             headphones: None,
+            edge_buttons: false,
             address: None,
         };
         let accessories = Accessories { headset, controllers: vec![dualsense, xbox] };
