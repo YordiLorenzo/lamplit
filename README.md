@@ -76,7 +76,10 @@ while you play. When the game closes, Lamplit is back on screen.
 - **Add a game by hand.** **Settings > Add a game** lists the installed programs Lamplit didn't take for games, and
   lets you browse the PC's drives and folders for a game's exe, all with a controller. Name the game on the on-screen
   keyboard, then choose its art. Lamplit starts it from its exe, as it does games outside any store, and its menu has
-  **Remove from Lamplit**. When Lamplit finds no games at all, Cross on the empty home screen adds one.
+  **Remove from Lamplit**. When Lamplit finds no games at all, Cross on the empty home screen adds one. For a game
+  that starts from a script, choose its .bat or .cmd file: Lamplit runs it in its own folder without a console
+  window, and the game counts as running while the programs the script started run. When the script opens the game
+  through a program that was already running, such as a store app, Lamplit can't tell when the game ends.
 - **New installs show up by themselves.** Lamplit looks again every time it comes back to the front. If a store's
   list cannot be read, its games stay in the row until a later scan can read it.
 - **Steam's install and update state** on the game: "Installing" or "Update pending".
@@ -229,7 +232,7 @@ How it works, and its limits:
 | Amazon Games app | The app's list of installed games | Starts the Amazon Games app |
 | itch.io (the itch app) | The itch app's list of installed games | Nothing: itch.io games start from their own exe, as the game's launch manifest names it. A game set to run in itch's sandbox, that asks itch for an API key, that may still need prerequisites itch installs (on its first start, say), or that has a command template set in itch starts through the itch app's launcher (itch 26.20 or newer) |
 | Xbox app, including PC Game Pass | The Xbox games installed for your Windows account | Nothing: Xbox games start without the app |
-| No store | Folders in `<drive>:\Games`, installed programs that look like games, games Windows' Game Bar has seen, and games you add by hand | Starts the game's exe |
+| No store | Folders in `<drive>:\Games`, installed programs that look like games, games Windows' Game Bar has seen, and games you add by hand | Starts the game's exe, or the script you added it by |
 
 Steam says live who is signed in, and Battle.net's own log says whether it has signed in. For the other store apps
 Lamplit checks whether they keep a saved sign-in, and if it can't confirm one, it lets you go ahead anyway. Lamplit
@@ -408,9 +411,10 @@ press Cross once more to remove the game. In Change art, the d-pad moves between
 them, Cross picks one, Square (X) edits the search, and Circle goes back to the menu.
 
 In Add a game, Up and Down move through the list, and L1 and R1 (LB and RB) jump eight rows. Cross or Right opens a
-drive or folder; Circle or Left goes up a level. Cross on an exe or a program goes on to its name. The keyboard for a
-name or a search works as Find's does, with two more keys: **Shift** switches the next letter between a capital and a
-small letter (each word starts with a capital), and **Done** takes what you typed. Circle goes back without it.
+drive or folder; Circle or Left goes up a level. Cross on an exe, a script or a program goes on to its name. The
+keyboard for a name or a search works as Find's does, with two more keys: **Shift** switches the next letter between a
+capital and a small letter (each word starts with a capital), and **Done** takes what you typed. Circle goes back
+without it.
 
 With a mouse, click a cover to select it and click it again to play. Settings rows, the choices in a game's menu,
 Change art's covers and Add a game's rows and keys take a click too. A click beside a game's menu closes it.

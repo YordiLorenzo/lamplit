@@ -217,6 +217,8 @@ These don't change any setting, but you may notice them:
   that the itch app runs in its sandbox (a Windows account of its own, with less access than yours) starts through
   the app's launcher, `itch-setup --run-game <id>`, which keeps it in the sandbox; Lamplit never starts such a game
   from its exe. So does a game that asks the itch app for an itch.io API key, which only the app hands out.
+- A game you added by hand as a .bat or .cmd script starts through `cmd.exe` from Windows' system folder, in the
+  script's folder, with a console that has no window. Force close ends what the script started, not `cmd.exe`.
 - While **Keep the Guide button for Lamplit** is on, it closes Steam's Big Picture mode whenever it opens.
   It minimises Steam's main window when Lamplit takes the screen back after a Steam game.
 - It keeps the PC and the screen awake while a game is starting or Steam is updating it, and lets them sleep again

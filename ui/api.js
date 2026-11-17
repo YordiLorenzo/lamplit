@@ -78,15 +78,15 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @typedef {object} Folder
  * @property {string | null} path
  * @property {string | null} parent  null at a drive's root: back goes to the drives
- * @property {FolderEntry[]} entries  folders first, then exes
+ * @property {FolderEntry[]} entries  folders first, then exes and scripts
  */
 
 /**
  * @typedef {object} FolderEntry
  * @property {string} name
  * @property {string} path
- * @property {'drive' | 'folder' | 'exe'} kind
- * @property {string | null} title  for an exe, the name its game would get
+ * @property {'drive' | 'folder' | 'exe' | 'script'} kind  a script is a .bat or .cmd file
+ * @property {string | null} title  for an exe or a script, the name its game would get
  */
 
 /**

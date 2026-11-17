@@ -1,6 +1,6 @@
 // @ts-check
 // Add a game, with a controller alone, from Settings or the empty home screen: an installed program Lamplit passed
-// over, or an exe found by browsing the PC's drives and folders; then its name, typed on the names keyboard, and its
+// over, or an exe or a script (.bat, .cmd) found by browsing the PC's drives and folders; then its name, typed on the names keyboard, and its
 // art through Change art.
 
 import * as api from './api.js';
@@ -91,7 +91,7 @@ function rows() {
   const { view, programs, folder } = state.add;
   if (view === 'browse') {
     const entries = folder.entries.map((e) => ({ kind: e.kind, label: e.name, path: e.path, title: e.title ?? '' }));
-    return entries.length ? entries : [{ kind: '', label: 'No folders or exes here' }];
+    return entries.length ? entries : [{ kind: '', label: 'No folders, exes or scripts here' }];
   }
   /** @type {AddRow[]} */
   const list = [{ kind: 'browse', label: 'Browse drives and folders' }, { heading: 'Programs on this PC' }];
@@ -102,14 +102,14 @@ function rows() {
 }
 
 /** Icons in front of a row, by its kind. */
-const ICONS = { browse: 'i-drive', drive: 'i-drive', folder: 'i-folder', exe: 'i-app', program: 'i-app' };
+const ICONS = { browse: 'i-drive', drive: 'i-drive', folder: 'i-folder', exe: 'i-app', script: 'i-app', program: 'i-app' };
 
 function render() {
   const a = state.add;
   els.add.classList.toggle('naming', a.view === 'name');
-  els.addTitle.textContent = { list: 'Add a game', browse: "Choose the game's exe", name: 'Name the game' }[a.view];
+  els.addTitle.textContent = { list: 'Add a game', browse: "Choose the game's exe or script", name: 'Name the game' }[a.view];
   els.addPath.textContent =
-    a.view === 'browse' ? (a.folder.path ?? 'This PC') : a.view === 'name' ? a.exe : 'A program on this PC, or an exe on its drives';
+    a.view === 'browse' ? (a.folder.path ?? 'This PC') : a.view === 'name' ? a.exe : 'A program on this PC, or an exe or script on its drives';
   if (a.view !== 'name') {
     a.rows = rows();
     const focusable = a.rows.filter((r) => r.kind);
@@ -155,11 +155,11 @@ function move(delta) {
 /** ✕ on the focused row. */
 function press() {
   const row = addRow();
-  // A folder with no folders or exes has only a line saying so.
+  // A folder with nothing to open or choose has only a line saying so.
   if (!row) return;
   if (row.kind === 'browse') browse(null);
   else if (row.kind === 'drive' || row.kind === 'folder') browse(row.path);
-  else if (row.kind === 'exe' || row.kind === 'program') name(row.path, row.title);
+  else if (row.kind === 'exe' || row.kind === 'script' || row.kind === 'program') name(row.path, row.title);
 }
 
 /**

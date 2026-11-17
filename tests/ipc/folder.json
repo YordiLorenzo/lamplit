@@ -3,6 +3,7 @@
   "parent": "D:\\",
   "entries": [
     { "name": "Racer", "path": "D:\\Games\\Racer", "kind": "folder", "title": null },
-    { "name": "tetris.exe", "path": "D:\\Games\\tetris.exe", "kind": "exe", "title": "Tetris" }
+    { "name": "tetris.exe", "path": "D:\\Games\\tetris.exe", "kind": "exe", "title": "Tetris" },
+    { "name": "windowed.bat", "path": "D:\\Games\\windowed.bat", "kind": "script", "title": "Windowed" }
   ]
 }

@@ -55,6 +55,12 @@ pub fn file_name(p: &Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
+/// A batch script (.bat or .cmd), which cmd.exe runs. Some games start from one: an emulator with its options, or a
+/// game that needs something set first.
+pub fn is_script(p: &Path) -> bool {
+    p.extension().is_some_and(|x| x.eq_ignore_ascii_case("bat") || x.eq_ignore_ascii_case("cmd"))
+}
+
 /// The file exists and has something in it.
 pub fn nonempty(p: &Path) -> bool {
     std::fs::metadata(p).is_ok_and(|m| m.len() > 0)

@@ -4,6 +4,23 @@ Every release of Lamplit, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.5.1 - Unreleased
+
+### Added
+
+- Add a game takes a .bat or .cmd file as well as an exe, for games that start from a script. Lamplit runs the
+  script in its own folder without a console window, and the game counts as running while the programs the script
+  started run. When the script opens the game through a program that was already running, such as a store app,
+  Lamplit can't tell when the game ends.
+
+### Fixed
+
+- A folder in `<drive>:\Games` that sorts your games into folders, such as `Games\PC\<game>`, is no longer taken for
+  one game named after it. When it holds two or more games and none at its top, Lamplit finds each game in it.
+- Add a game adds a game in or inside a folder where Lamplit found a game outside any store, which makes way for it.
+  So a game found by its exe can start from the script beside it instead. It said "That folder belongs to ..."
+  before.
+
 ## 0.5.0 - 2026-11-11
 
 ### Highlights

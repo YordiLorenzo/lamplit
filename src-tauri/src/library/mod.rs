@@ -262,7 +262,7 @@ pub fn add_game(app: &AppHandle, exe: &str, name: &str) -> Result<Added> {
         // Under the list's lock, so a scan can't add a game in that folder meanwhile.
         let library = app.state::<Library>();
         let mut list = library.games.lock();
-        manual::check(exe, list.as_deref().unwrap_or_default())?;
+        let replaced = manual::check(exe, list.as_deref().unwrap_or_default())?;
         let entry = app.state::<UserData>().change(&id, |e| {
             e.manual = Some(added.clone());
             e.removed = false;
@@ -271,8 +271,15 @@ pub fn add_game(app: &AppHandle, exe: &str, name: &str) -> Result<Added> {
         user_data::apply(&mut game, &entry);
         stores::set_requirements(std::slice::from_mut(&mut game));
         let games = list.get_or_insert_default();
+        games.retain(|g| !replaced.contains(&g.id));
         games.push(game);
         games.sort_by(by_played);
+        if !replaced.is_empty() {
+            log::info!(
+                "{id}: takes the place of {}, found outside any store in its folder or around it",
+                replaced.join(", ")
+            );
+        }
     }
     log::info!("{id}: added by hand as {}", added.name);
     // Its art, found by name.

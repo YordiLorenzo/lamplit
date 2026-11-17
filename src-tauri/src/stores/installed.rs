@@ -96,6 +96,12 @@ pub(super) fn skip_exe(path: &Path) -> bool {
     SKIP_EXE.iter().any(|s| name.contains(s))
 }
 
+/// A folder (`name` in lower case) that comes with a game but holds no exe that starts it: redistributables, an
+/// installer, anti-cheat and the like.
+pub(super) fn skip_dir(name: &str) -> bool {
+    SKIP_DIR.contains(&name) || name.starts_with("__")
+}
+
 /// The exe to start for a folder: the one Windows has seen run as a game, else the hint (the installed-programs
 /// icon), else the largest likely one.
 pub fn pick_exe(dir: &Path, game_exes: &[PathBuf], hint: Option<&Path>) -> Option<PathBuf> {
@@ -114,8 +120,7 @@ pub fn pick_exe(dir: &Path, game_exes: &[PathBuf], hint: Option<&Path>) -> Optio
             let path = e.path();
             let Ok(t) = e.file_type() else { continue };
             if t.is_dir() {
-                let n = file_name(&path).to_lowercase();
-                if depth < 3 && !SKIP_DIR.contains(&n.as_str()) && !n.starts_with("__") {
+                if depth < 3 && !skip_dir(&file_name(&path).to_lowercase()) {
                     stack.push((path, depth + 1));
                 }
             } else if path.extension().is_some_and(|x| x.eq_ignore_ascii_case("exe")) && !skip_exe(&path) {

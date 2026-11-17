@@ -1,10 +1,10 @@
 // Games the player adds by hand (Settings > Add a game): picked from the installed programs discovery passed over, or
-// found by browsing the PC's drives for an exe. They are kept in games.json, and launched by their exe like games
-// outside any store.
+// found by browsing the PC's drives for an exe or a script. They are kept in games.json, and launched by their exe
+// like games outside any store, or by cmd.exe running their script.
 
 use super::{Game, Launch};
 use crate::error::{Error, Result};
-use crate::files::{file_name, folder_key, on_a_drive};
+use crate::files::{file_name, folder_key, is_script, on_a_drive};
 use crate::stores::Installed;
 use crate::stores::loose::{game_folder, is_container, name_for, passed_over};
 use crate::win;
@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Manual {
     pub name: String,
+    /// The exe, or the .bat or .cmd script, that starts the game.
     pub exe: PathBuf,
 }
 
@@ -37,11 +38,15 @@ pub fn game(id: &str, m: &Manual) -> Game {
     g
 }
 
-/// Whether `exe` can be added as a game next to `games`, or what the player reads when it can't.
-pub fn check(exe: &Path, games: &[Game]) -> Result<()> {
+/// Whether `exe` can be added as a game next to `games`, or what the player reads when it can't. Ok has the ids of the
+/// games Lamplit guessed outside any store in the new game's folder (found by its exe, and the player picks the script
+/// beside it) or around it (a folder that sorts games, taken for one, as "D:\Games\PC"): the new game takes their
+/// place, and the next scan finds it instead (`stores::loose::games`). A store's game or one added by hand keeps its
+/// folder.
+pub fn check(exe: &Path, games: &[Game]) -> Result<Vec<String>> {
     let is_exe = exe.extension().is_some_and(|x| x.eq_ignore_ascii_case("exe"));
-    if !on_a_drive(exe) || !is_exe || !exe.is_file() {
-        return Err(Error::Player(format!("{} isn't an exe on this PC's drives.", exe.display())));
+    if !on_a_drive(exe) || !(is_exe || is_script(exe)) || !exe.is_file() {
+        return Err(Error::Player(format!("{} isn't an exe or a script on this PC's drives.", exe.display())));
     }
     let dir = game_folder(exe);
     // Taken for the game's folder, every program in it would count as the game while it runs.
@@ -52,15 +57,22 @@ pub fn check(exe: &Path, games: &[Game]) -> Result<()> {
         )));
     }
     let key = folder_key(&dir);
-    let overlaps = |d: &PathBuf| {
+    // The new game's folder, or one around it.
+    let holds_new = |d: &Path| {
         let other = folder_key(d);
-        key == other || key.starts_with(&format!("{other}\\")) || other.starts_with(&format!("{key}\\"))
+        key == other || key.starts_with(&format!("{other}\\"))
     };
-    if let Some(g) = games.iter().find(|g| std::iter::once(&g.dir).chain(&g.extra_dirs).any(overlaps)) {
+    let overlaps = |d: &PathBuf| holds_new(d) || folder_key(d).starts_with(&format!("{key}\\"));
+    let mut replaced = Vec::new();
+    for g in games.iter().filter(|g| std::iter::once(&g.dir).chain(&g.extra_dirs).any(overlaps)) {
+        if g.store.is_none() && !g.manual && holds_new(&g.dir) {
+            replaced.push(g.id.clone());
+            continue;
+        }
         let hidden = if g.hidden { " It is hidden: Settings > Hidden games shows it again." } else { "" };
         return Err(Error::Player(format!("That folder belongs to {}, which Lamplit already has.{hidden}", g.name)));
     }
-    Ok(())
+    Ok(replaced)
 }
 
 /// An installed program that isn't in the library.
@@ -95,7 +107,7 @@ pub struct FolderEntry {
     pub name: String,
     pub path: String,
     pub kind: EntryKind,
-    /// For an exe: the name the game would get, as discovery names a game outside any store.
+    /// For an exe or a script: the name the game would get, as discovery names a game outside any store.
     pub title: Option<String>,
 }
 
@@ -106,9 +118,11 @@ pub enum EntryKind {
     Drive,
     Folder,
     Exe,
+    /// A .bat or .cmd file.
+    Script,
 }
 
-/// The folders and exes in `path`, folders first, each A to Z; with no path, the PC's fixed drives. Hidden and
+/// The folders, exes and scripts in `path`, folders first, each A to Z; with no path, the PC's fixed drives. Hidden and
 /// system files and folders are left out, as Explorer does.
 pub fn browse(path: Option<&str>) -> Result<Folder> {
     let Some(path) = path else {
@@ -149,10 +163,12 @@ fn entry(path: &Path, meta: &std::fs::Metadata) -> Option<FolderEntry> {
         EntryKind::Folder
     } else if exe {
         EntryKind::Exe
+    } else if is_script(path) {
+        EntryKind::Script
     } else {
         return None;
     };
-    let title = (kind == EntryKind::Exe).then(|| name_for(path));
+    let title = (kind != EntryKind::Folder).then(|| name_for(path));
     Some(FolderEntry { name: file_name(path), path: path_string(path), kind, title })
 }
 
@@ -179,7 +195,7 @@ mod tests {
         p
     }
 
-    fn message(r: Result<()>) -> String {
+    fn message<T: std::fmt::Debug>(r: Result<T>) -> String {
         match r {
             Err(Error::Player(m)) => m,
             other => panic!("expected a message for the player, got {other:?}"),
@@ -211,8 +227,57 @@ mod tests {
         let loose = file(root.join(r"Games\tetris.exe"));
         assert!(message(check(&loose, &[])).contains("holds other programs too"));
         assert!(check(&holder, &[]).is_ok());
-        assert!(message(check(&root.join(r"Old Games\Racer\readme.txt"), &[])).contains("isn't an exe"));
-        assert!(message(check(Path::new(r"\\nas\games\x.exe"), &[])).contains("isn't an exe on this PC's drives"));
+        // A game that starts from a script, in a folder of its own.
+        let script = file(root.join(r"Old Games\Emu\Play.CMD"));
+        assert!(check(&script, &[]).is_ok());
+        assert_eq!(game("id", &Manual { name: "Emu".into(), exe: script }).dir, root.join(r"Old Games\Emu"));
+        let readme = file(root.join(r"Old Games\Racer\readme.txt"));
+        assert!(message(check(&readme, &[])).contains("isn't an exe or a script"));
+        assert!(message(check(&root.join(r"Old Games\Racer\gone.bat"), &[])).contains("isn't an exe or a script"));
+        let nas = message(check(Path::new(r"\\nas\games\x.exe"), &[]));
+        assert!(nas.contains("isn't an exe or a script on this PC's drives"), "{nas}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn adds_a_game_inside_a_folder_lamplit_took_for_one_game() {
+        let root = scratch("manual-guessed");
+        let games_dir = root.join("Games");
+        // The player keeps their games in Games\PC, which so far holds one: discovery takes PC for that game.
+        let exe = file(games_dir.join(r"PC\Racer\racer.exe"));
+        let pc = games_dir.join("PC");
+        let mut guessed = crate::stores::loose::games(&[], &[], std::slice::from_ref(&games_dir), &[]);
+        assert!(guessed.len() == 1 && guessed[0].dir == pc, "{:?}", guessed.iter().map(|g| &g.dir).collect::<Vec<_>>());
+        guessed[0].hidden = true;
+        assert_eq!(check(&exe, &guessed).unwrap(), [guessed[0].id.clone()]);
+        // Once it is added, the next scan no longer takes PC for a game.
+        let added = game(&id(&exe), &Manual { name: "Racer".into(), exe: exe.clone() });
+        assert!(crate::stores::loose::games(&[added], &[], std::slice::from_ref(&games_dir), &[]).is_empty());
+
+        // A guess inside the new game's folder would become part of it.
+        let racer = games_dir.join(r"PC\Racer");
+        let inside = Game::new("pc:racer".into(), "Racer".into(), None, racer, Launch::Exe(exe.clone()));
+        let around = file(pc.join("menu.exe"));
+        assert!(message(check(&around, &[inside])).starts_with("That folder belongs to Racer"));
+        // A store's game or one added by hand keeps its folder.
+        let store_game =
+            Game::new("epic:pc".into(), "PC".into(), Some(Store::Epic), pc.clone(), Launch::Uri("x".into()));
+        let by_hand = game("manual:pc", &Manual { name: "PC Menu".into(), exe: around });
+        assert!(message(check(&exe, &[store_game])).starts_with("That folder belongs to PC"));
+        assert!(message(check(&exe, &[by_hand])).starts_with("That folder belongs to PC Menu"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_script_takes_the_place_of_the_exe_lamplit_found_beside_it() {
+        let root = scratch("manual-beside");
+        let games_dir = root.join("Games");
+        file(games_dir.join(r"Racer\racer.exe"));
+        let script = file(games_dir.join(r"Racer\Play.bat"));
+        let found = crate::stores::loose::games(&[], &[], std::slice::from_ref(&games_dir), &[]);
+        assert_eq!(check(&script, &found).unwrap(), [found[0].id.clone()]);
+        let added = game(&id(&script), &Manual { name: "Racer".into(), exe: script });
+        assert!(crate::stores::loose::games(&[added], &[], &[games_dir], &[]).is_empty());
         let _ = fs::remove_dir_all(root);
     }
 
@@ -224,6 +289,9 @@ mod tests {
         file(root.join("Game.EXE"));
         file(root.join("notes.txt"));
         file(root.join("b.exe"));
+        file(root.join("start.bat"));
+        file(root.join("Run.CMD"));
+        file(root.join("setup.ps1"));
         fs::create_dir_all(root.join("Secret")).unwrap();
         let secret = std::process::Command::new("attrib").arg("+h").arg(root.join("Secret")).status().unwrap();
         assert!(secret.success());
@@ -235,13 +303,21 @@ mod tests {
                 ("alpha", EntryKind::Folder),
                 ("Zed", EntryKind::Folder),
                 ("b.exe", EntryKind::Exe),
-                ("Game.EXE", EntryKind::Exe)
+                ("Game.EXE", EntryKind::Exe),
+                ("Run.CMD", EntryKind::Script),
+                ("start.bat", EntryKind::Script)
             ]
         );
         assert_eq!(folder.parent, root.parent().map(path_string));
         // The title an exe in its own folder gets is the folder's.
         let zed = browse(Some(&path_string(&root.join("Zed")))).unwrap();
         assert_eq!(zed.entries[0].title.as_deref(), Some("Zed"));
+        // A script's too, and right in a folder that holds other programs, the script's own.
+        file(root.join(r"Zed\z.bat"));
+        let zed = browse(Some(&path_string(&root.join("Zed")))).unwrap();
+        assert_eq!(zed.entries.iter().find(|e| e.name == "z.bat").unwrap().title.as_deref(), Some("Zed"));
+        let games = file(root.join(r"Games\RetroArcade.bat"));
+        assert_eq!(entry(&games, &fs::metadata(&games).unwrap()).unwrap().title.as_deref(), Some("Retro Arcade"));
         assert!(browse(Some(r"\\nas\games")).is_err());
         let drives = browse(None).unwrap();
         assert!(drives.path.is_none() && drives.entries.iter().any(|d| d.name == "C:" && d.kind == EntryKind::Drive));
@@ -265,6 +341,12 @@ mod tests {
                     path: r"D:\Games\tetris.exe".into(),
                     kind: EntryKind::Exe,
                     title: Some("Tetris".into()),
+                },
+                FolderEntry {
+                    name: "windowed.bat".into(),
+                    path: r"D:\Games\windowed.bat".into(),
+                    kind: EntryKind::Script,
+                    title: Some("Windowed".into()),
                 },
             ],
         };
