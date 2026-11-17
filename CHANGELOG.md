@@ -17,8 +17,9 @@ Every release of Lamplit, newest first. The format follows
 
 - A folder in `<drive>:\Games` that sorts your games into folders, such as `Games\PC\<game>`, is no longer taken for
   one game named after it. When it holds two or more games and none at its top, Lamplit finds each game in it.
-- Add a game adds a game inside a folder that Lamplit took for one game outside any store. It said "That folder
-  belongs to ..." before. That folder is then no longer a game in Lamplit.
+- Add a game adds a game in or inside a folder where Lamplit found a game outside any store, which makes way for it.
+  So a game found by its exe can start from the script beside it instead. It said "That folder belongs to ..."
+  before.
 
 ## 0.5.0 - 2026-11-11
 

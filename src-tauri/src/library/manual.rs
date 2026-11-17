@@ -39,9 +39,10 @@ pub fn game(id: &str, m: &Manual) -> Game {
 }
 
 /// Whether `exe` can be added as a game next to `games`, or what the player reads when it can't. Ok has the ids of the
-/// games Lamplit guessed outside any store whose folder holds the new game's (a folder that sorts games, taken for
-/// one, as "D:\Games\PC"): the new game takes their place, and the next scan looks into that folder
-/// (`stores::loose::games`). A store's game or one added by hand keeps its folder.
+/// games Lamplit guessed outside any store in the new game's folder (found by its exe, and the player picks the script
+/// beside it) or around it (a folder that sorts games, taken for one, as "D:\Games\PC"): the new game takes their
+/// place, and the next scan finds it instead (`stores::loose::games`). A store's game or one added by hand keeps its
+/// folder.
 pub fn check(exe: &Path, games: &[Game]) -> Result<Vec<String>> {
     let is_exe = exe.extension().is_some_and(|x| x.eq_ignore_ascii_case("exe"));
     if !on_a_drive(exe) || !(is_exe || is_script(exe)) || !exe.is_file() {
@@ -56,11 +57,12 @@ pub fn check(exe: &Path, games: &[Game]) -> Result<Vec<String>> {
         )));
     }
     let key = folder_key(&dir);
-    let holds_new = |d: &Path| key.starts_with(&format!("{}\\", folder_key(d)));
-    let overlaps = |d: &PathBuf| {
+    // The new game's folder, or one around it.
+    let holds_new = |d: &Path| {
         let other = folder_key(d);
-        key == other || holds_new(d) || other.starts_with(&format!("{key}\\"))
+        key == other || key.starts_with(&format!("{other}\\"))
     };
+    let overlaps = |d: &PathBuf| holds_new(d) || folder_key(d).starts_with(&format!("{key}\\"));
     let mut replaced = Vec::new();
     for g in games.iter().filter(|g| std::iter::once(&g.dir).chain(&g.extra_dirs).any(overlaps)) {
         if g.store.is_none() && !g.manual && holds_new(&g.dir) {
@@ -252,18 +254,30 @@ mod tests {
         let added = game(&id(&exe), &Manual { name: "Racer".into(), exe: exe.clone() });
         assert!(crate::stores::loose::games(&[added], &[], std::slice::from_ref(&games_dir), &[]).is_empty());
 
-        // A guess of the same folder already is the game, and one inside the new game's folder would become part of it.
+        // A guess inside the new game's folder would become part of it.
         let racer = games_dir.join(r"PC\Racer");
-        let same = Game::new("pc:racer".into(), "Racer".into(), None, racer, Launch::Exe(exe.clone()));
-        assert!(message(check(&exe, std::slice::from_ref(&same))).starts_with("That folder belongs to Racer"));
+        let inside = Game::new("pc:racer".into(), "Racer".into(), None, racer, Launch::Exe(exe.clone()));
         let around = file(pc.join("menu.exe"));
-        assert!(message(check(&around, &[same])).starts_with("That folder belongs to Racer"));
+        assert!(message(check(&around, &[inside])).starts_with("That folder belongs to Racer"));
         // A store's game or one added by hand keeps its folder.
         let store_game =
             Game::new("epic:pc".into(), "PC".into(), Some(Store::Epic), pc.clone(), Launch::Uri("x".into()));
         let by_hand = game("manual:pc", &Manual { name: "PC Menu".into(), exe: around });
         assert!(message(check(&exe, &[store_game])).starts_with("That folder belongs to PC"));
         assert!(message(check(&exe, &[by_hand])).starts_with("That folder belongs to PC Menu"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_script_takes_the_place_of_the_exe_lamplit_found_beside_it() {
+        let root = scratch("manual-beside");
+        let games_dir = root.join("Games");
+        file(games_dir.join(r"Racer\racer.exe"));
+        let script = file(games_dir.join(r"Racer\Play.bat"));
+        let found = crate::stores::loose::games(&[], &[], std::slice::from_ref(&games_dir), &[]);
+        assert_eq!(check(&script, &found).unwrap(), [found[0].id.clone()]);
+        let added = game(&id(&script), &Manual { name: "Racer".into(), exe: script });
+        assert!(crate::stores::loose::games(&[added], &[], &[games_dir], &[]).is_empty());
         let _ = fs::remove_dir_all(root);
     }
 
