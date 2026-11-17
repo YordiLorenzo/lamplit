@@ -408,7 +408,6 @@ mod tests {
         }
         let ran_in = std::fs::read_to_string(&here).unwrap();
         assert_eq!(crate::files::folder_key(Path::new(ran_in.trim())), crate::files::folder_key(&dir));
-        drop(started);
         let gone = start_script(&dir.join("gone.bat")).map(|_| ());
         assert!(matches!(&gone, Err(Error::Player(m)) if m.ends_with("isn't there any more.")), "{gone:?}");
         let _ = std::fs::remove_dir_all(dir);

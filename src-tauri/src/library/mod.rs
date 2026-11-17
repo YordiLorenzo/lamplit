@@ -275,7 +275,10 @@ pub fn add_game(app: &AppHandle, exe: &str, name: &str) -> Result<Added> {
         games.push(game);
         games.sort_by(by_played);
         if !replaced.is_empty() {
-            log::info!("{id}: takes the place of {}, found outside any store around it", replaced.join(", "));
+            log::info!(
+                "{id}: takes the place of {}, found outside any store in its folder or around it",
+                replaced.join(", ")
+            );
         }
     }
     log::info!("{id}: added by hand as {}", added.name);
