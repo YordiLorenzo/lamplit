@@ -7,7 +7,8 @@
       "name": "DualSense",
       "connection": "bluetooth",
       "battery": { "percent": 60, "level": null, "charge": "battery" },
-      "headphones": false
+      "headphones": false,
+      "edge_buttons": false
     },
     {
       "id": "xinput:0",
@@ -15,7 +16,8 @@
       "name": "Xbox controller",
       "connection": "wireless",
       "battery": { "percent": null, "level": "medium", "charge": null },
-      "headphones": null
+      "headphones": null,
+      "edge_buttons": false
     }
   ]
 }

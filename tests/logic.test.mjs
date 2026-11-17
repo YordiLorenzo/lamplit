@@ -36,6 +36,7 @@ import {
   stepAutoOff,
   stepInterfaceSounds,
   stepTrailers,
+  stepEdgeTarget,
   letterbox,
   trailerZoom,
   stepSaverMinutes,
@@ -599,6 +600,43 @@ describe('Controllers', () => {
   });
   test('the summary gives each battery', () => {
     assert.deepEqual(sectionSummary('controllers', state(pad(true, false), xbox('wireless', 'medium'), xbox('usb', null))), ['3 connected · 60%, medium, ?']);
+  });
+  describe('DualSense Edge', () => {
+    const edge = (id) => like(pad(true, false), { id, name: 'DualSense Edge', edge_buttons: true });
+    const edgeRows = (list) => list.filter((r) => r.kind === 'edgebutton');
+    test('its section has a row per back and Fn button, Nothing until chosen, above Turn off', () => {
+      const list = rows(edge('bt'));
+      assert.deepEqual(edgeRows(list).map((r) => [r.label, r.key, r.value, r.adjust]), [
+        ['Left back button', 'left_back', 'Nothing', true],
+        ['Right back button', 'right_back', 'Nothing', true],
+        ['Left Fn button', 'left_fn', 'Nothing', true],
+        ['Right Fn button', 'right_fn', 'Nothing', true],
+      ]);
+      assert.deepEqual(edgeRows(list).map((r) => r.key), values.edge_button);
+      assert.equal(list.at(-1).kind, 'padoff');
+    });
+    test('a plain DualSense and an Xbox controller have no such rows', () => {
+      assert.deepEqual(edgeRows(rows(pad(true, false), xbox('wireless', 'low'))), []);
+    });
+    test('each row shows what the prefs give its button, for every Edge', () => {
+      const chosen = { left_back: 'cross', right_back: 'circle', left_fn: 'l1', right_fn: 'options' };
+      const list = sectionRows('controllers', settingsState({ accessories: { headset: headset(), controllers: [edge('a'), edge('b')] }, prefs: prefs({ edge_buttons: chosen }) }));
+      assert.deepEqual(edgeRows(list).map((r) => r.value), ['Cross', 'Circle', 'L1', 'Options', 'Cross', 'Circle', 'L1', 'Options']);
+      // Each row keeps its own focus, also with two Edges connected.
+      const keys = edgeRows(list).map(rowKey);
+      assert.equal(new Set(keys).size, 8);
+      for (const r of edgeRows(list)) assert.equal(focusIndex(list, rowKey(r)), list.indexOf(r));
+    });
+    test('← and → step through the choices and stop at either end', () => {
+      assert.deepEqual(values.edge_target.map((x) => stepEdgeTarget(x, 1)), [...values.edge_target.slice(1), 'options']);
+      assert.deepEqual(values.edge_target.map((x) => stepEdgeTarget(x, -1)), ['nothing', ...values.edge_target.slice(0, -1)]);
+      // Every choice has its name on the row.
+      const named = (target) => {
+        const chosen = prefs({ edge_buttons: { ...ipc('prefs').edge_buttons, left_back: target } });
+        return edgeRows(sectionRows('controllers', settingsState({ accessories: { headset: headset(), controllers: [edge('bt')] }, prefs: chosen })))[0].value;
+      };
+      assert.deepEqual(values.edge_target.map(named), ['Nothing', 'Cross', 'Circle', 'Triangle', 'Square', 'L1', 'R1', 'Options']);
+    });
   });
 });
 

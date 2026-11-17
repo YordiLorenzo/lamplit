@@ -9,7 +9,7 @@ import * as api from './api.js';
 import { showHints, toast } from './hints.js';
 import { hold, letGo } from './hold.js';
 import { glyph, labelled, setGames, showInfo } from './library.js';
-import { SAVER_DEFAULT, SECTIONS, focusIndex, quietMode, rowKey, sectionRows, sectionSummary, stepAutoOff, stepInterfaceSounds, stepSaverMinutes, stepTrailers, visibleSections } from './logic.js';
+import { SAVER_DEFAULT, SECTIONS, focusIndex, quietMode, rowKey, sectionRows, sectionSummary, stepAutoOff, stepEdgeTarget, stepInterfaceSounds, stepSaverMinutes, stepTrailers, visibleSections } from './logic.js';
 import { showScreensaver, warmScreensaver } from './screensaver/index.js';
 import { setSoundLevel, sfx } from './sounds.js';
 import { SPRINGS } from './springs.js';
@@ -327,6 +327,7 @@ export async function adjustSetting(dir) {
     } else if (row.kind === 'saverafter') await adjustScreensaver(dir);
     else if (row.kind === 'interfacesounds') await adjustInterfaceSounds(dir);
     else if (row.kind === 'trailers') await adjustTrailers(dir);
+    else if (row.kind === 'edgebutton') await adjustEdgeButton(/** @type {import('./api.js').EdgeButton} */ (row.key), dir);
     else await adjustHeadset(row.kind, dir);
   } catch (e) {
     toast(e.message, { warn: true });
@@ -368,6 +369,25 @@ async function adjustTrailers(dir) {
     state.prefs = await api.prefsSetTrailers(next);
   } finally {
     trailersBusy = false;
+  }
+}
+
+let edgeBusy = false;
+
+/**
+ * A held direction steps from the last saved choice for that button.
+ * @param {import('./api.js').EdgeButton} button @param {number} dir
+ */
+async function adjustEdgeButton(button, dir) {
+  if (edgeBusy || !state.prefs) return;
+  const now = state.prefs.edge_buttons[button];
+  const next = stepEdgeTarget(now, dir);
+  if (next === now) return;
+  edgeBusy = true;
+  try {
+    state.prefs = await api.prefsSetEdgeButton(button, next);
+  } finally {
+    edgeBusy = false;
   }
 }
 

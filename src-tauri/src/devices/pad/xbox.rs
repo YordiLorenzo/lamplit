@@ -126,6 +126,7 @@ fn controller(slot: u32, ids: Option<(u16, u16)>) -> Controller {
         connection: if wireless { Connection::Wireless } else { Connection::Usb },
         battery: xinput::battery(slot).and_then(battery),
         headphones: None,
+        edge_buttons: false,
         address: None,
     }
 }

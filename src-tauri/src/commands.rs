@@ -331,6 +331,14 @@ pub async fn prefs_set_trailers(app: AppHandle, level: String) -> Result<Prefs> 
     blocking(move || prefs::change(&app, |p| p.trailers = level).map(|()| prefs::get(&app))).await?
 }
 
+/// One of a DualSense Edge's back or Fn buttons (`left_back`, `right_back`, `left_fn`, `right_fn`) acts as `target`
+/// from the next report on.
+#[tauri::command]
+pub async fn prefs_set_edge_button(app: AppHandle, button: String, target: String) -> Result<Prefs> {
+    let (button, target) = (prefs::EdgeButtons::button(&button)?, prefs::EdgeTarget::parse(&target)?);
+    blocking(move || prefs::change(&app, |p| *button(&mut p.edge_buttons) = target).map(|()| prefs::get(&app))).await?
+}
+
 #[tauri::command]
 pub async fn prefs_hint_shown(app: AppHandle, name: String) -> Result<bool> {
     blocking(move || prefs::hint_shown(&app, &name)).await?

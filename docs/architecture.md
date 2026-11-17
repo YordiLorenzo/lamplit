@@ -238,6 +238,7 @@ Controller presses reach the page as `pad` events only while Lamplit's window is
 `dock-pad` events only while the dock is open, so a game never moves the menu behind it. Holding PS, or View and
 Menu, is the exception: over a running game it opens the dock, and anywhere else it brings Lamplit forward. Each kind of
 controller is read into the same buttons, by position (south is Cross or A), so navigation doesn't care which it is.
+A DualSense Edge's back and Fn buttons are added to those buttons as the ones prefs give them, before navigation.
 
 ## Sound routing
 
@@ -497,6 +498,7 @@ message is written for the player, and the page shows it.
 | `prefs_set_screensaver_minutes` | `minutes` (0 for never) | The prefs after the change |
 | `prefs_set_interface_sounds` | `level`: `off`, `quiet` or `normal` | The prefs after the change; both pages hear the new level |
 | `prefs_set_trailers` | `level`: `off`, `muted` or `with_sound` | The prefs after the change; Muted is the default |
+| `prefs_set_edge_button` | `button`: `left_back`, `right_back`, `left_fn` or `right_fn`; `target`: `nothing`, `cross`, `circle`, `triangle`, `square`, `l1`, `r1` or `options` | The prefs after the change; every DualSense Edge's button acts as that target from its next report |
 | `prefs_hint_shown` | `name`: `game_menu` or `return_home` | Whether to show it; counts this start once |
 | `prefs_hint_done` | `name`: `game_menu` or `return_home` | Nothing; the hint stays dismissed |
 | `power_sleep` | | Nothing, once the PC has woken up again |

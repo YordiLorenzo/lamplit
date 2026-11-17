@@ -21,6 +21,7 @@ use crate::dock;
 use crate::error::{Error, Result};
 use crate::events::{self, Event};
 use crate::launch::window;
+use crate::prefs;
 use crate::win::bluetooth;
 use hidapi::{BusType, DeviceInfo, HidApi, HidDevice};
 use navigation::{Action, Navigation};
@@ -112,6 +113,8 @@ pub struct Controller {
     pub battery: Option<Battery>,
     /// Headphones in a DualSense's jack, once a full report said; None for other controllers.
     pub headphones: Option<bool>,
+    /// A DualSense Edge, whose back and Fn buttons Settings can give a Lamplit button.
+    pub edge_buttons: bool,
     #[serde(skip)]
     pub address: Option<u64>,
 }
@@ -217,6 +220,7 @@ fn attach(
     let path = info.path().to_owned();
     let id = path.to_string_lossy().into_owned();
     let bluetooth = matches!(info.bus_type(), BusType::Bluetooth) || id.to_lowercase().contains(BLUETOOTH_HID_SERVICE);
+    let edge = dualsense::is_edge(info.product_id());
     log::info!("controller: opened {id} ({})", if bluetooth { "Bluetooth" } else { "USB" });
     list(
         app,
@@ -227,12 +231,13 @@ fn attach(
             connection: if bluetooth { Connection::Bluetooth } else { Connection::Usb },
             battery: None,
             headphones: None,
+            edge_buttons: edge,
             address: dualsense::address(info.serial_number()),
         },
     );
     let (app, api, reading) = (app.clone(), api.clone(), reading.clone());
     std::thread::spawn(move || {
-        read(dev, &api, &path, bluetooth, &id, &app);
+        read(dev, &api, &path, bluetooth, edge, &id, &app);
         unlist(&app, &id);
         reading.lock().remove(&path);
     });
@@ -247,6 +252,7 @@ fn attach_steam(app: &AppHandle, reading: &Arc<Mutex<HashSet<CString>>>, info: &
         connection: steam::connection(info.product_id()),
         battery: None,
         headphones: None,
+        edge_buttons: false,
         address: None,
     };
     let (app, reading) = (app.clone(), reading.clone());
@@ -282,8 +288,8 @@ fn set_battery(app: &AppHandle, id: &str, battery: Option<Battery>) {
 }
 
 /// Reads one controller until it is gone. A handle that read nothing for a while is reopened in place, so the
-/// controller stays in the list meanwhile.
-fn read(mut dev: HidDevice, api: &Mutex<HidApi>, path: &CStr, bluetooth: bool, id: &str, app: &AppHandle) {
+/// controller stays in the list meanwhile. `edge`: it is a DualSense Edge.
+fn read(mut dev: HidDevice, api: &Mutex<HidApi>, path: &CStr, bluetooth: bool, edge: bool, id: &str, app: &AppHandle) {
     let mut buf = [0u8; 128];
     let mut navigation = Navigation::default();
     let mut trackpad = Trackpad::default();
@@ -305,8 +311,9 @@ fn read(mut dev: HidDevice, api: &Mutex<HidApi>, path: &CStr, bluetooth: bool, i
             Ok(0) => {}
             Ok(n) => {
                 last_data = Instant::now();
-                if let Some(report) = dualsense::parse(&buf[..n], bluetooth) {
-                    for action in navigation.update(report.input, last_data) {
+                if let Some(report) = dualsense::parse(&buf[..n], bluetooth, edge) {
+                    let input = report.extra.onto(report.input, prefs::get(app).edge_buttons);
+                    for action in navigation.update(input, last_data) {
                         act(app, Kind::DualSense, action);
                     }
                     if let Some(touch) = report.touch {

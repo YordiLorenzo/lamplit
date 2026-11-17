@@ -178,6 +178,7 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {'usb' | 'bluetooth' | 'wireless'} connection  wireless: Bluetooth or Microsoft's adapter
  * @property {PadBattery | null} battery  null while the controller reports none over this link
  * @property {boolean | null} headphones  a DualSense's jack, once a full report came; null for other controllers
+ * @property {boolean} edge_buttons  a DualSense Edge, whose back and Fn buttons can be given a Lamplit button
  */
 
 /**
@@ -189,6 +190,8 @@ const tauri = /** @type {any} */ (window).__TAURI__;
 /** @typedef {'off' | 'quiet' | 'normal'} InterfaceSounds */
 /** @typedef {'off' | 'muted' | 'with_sound'} Trailers */
 /** @typedef {'game_menu' | 'return_home'} FirstHint */
+/** A DualSense Edge's back and Fn buttons. @typedef {'left_back' | 'right_back' | 'left_fn' | 'right_fn'} EdgeButton */
+/** What one of them acts as in Lamplit. @typedef {'nothing' | 'cross' | 'circle' | 'triangle' | 'square' | 'l1' | 'r1' | 'options'} EdgeTarget */
 /** @typedef {{ starts: number, done: boolean }} HintProgress */
 
 /**
@@ -199,6 +202,7 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {Trailers} trailers
  * @property {Record<FirstHint, HintProgress>} hints
  * @property {boolean} touchpad_mouse
+ * @property {Record<EdgeButton, EdgeTarget>} edge_buttons  the same for every DualSense Edge
  * @property {boolean} steam_devtools  Lamplit opens Steam's DevTools port (the PS button guard and Steam's pop-ups)
  * @property {boolean} steam_guide  Lamplit keeps Steam's Guide Button Focuses Steam setting off
  * @property {boolean} online_art  art comes from Steam's store too
@@ -431,6 +435,8 @@ export const prefsHintShown = (name) => call('prefs_hint_shown', { name });
 export const prefsHintDone = (name) => call('prefs_hint_done', { name });
 /** @param {boolean} on @returns {Promise<Prefs>} */
 export const prefsSetTouchpadMouse = (on) => call('prefs_set_touchpad_mouse', { on });
+/** @param {EdgeButton} button @param {EdgeTarget} target @returns {Promise<Prefs>} */
+export const prefsSetEdgeButton = (button, target) => call('prefs_set_edge_button', { button, target });
 /** Steam opens its DevTools port from its next start, or doesn't. @param {boolean} on @returns {Promise<Prefs>} */
 export const prefsSetSteamDevtools = (on) => call('prefs_set_steam_devtools', { on });
 /** @param {boolean} on @returns {Promise<Prefs>} */
