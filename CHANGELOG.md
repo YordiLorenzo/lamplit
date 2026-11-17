@@ -4,7 +4,13 @@ Every release of Lamplit, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow
 [Semantic Versioning](https://semver.org/).
 
-## 0.5.1 - Unreleased
+## 0.5.1 - 2026-11-17
+
+### Highlights
+
+- Add a game takes .bat and .cmd scripts too.
+- Each game in a folder like Games\PC shows up on its own.
+- DualSense Edge: the back and Fn buttons can act as Cross, Circle and more.
 
 ### Added
 

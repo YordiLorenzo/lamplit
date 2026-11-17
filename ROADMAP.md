@@ -8,7 +8,7 @@ undo from the controller, no dialog that needs a mouse, and a TV that is set up 
 
 ## Done
 
-0.5.1 (not released yet) brings games that start from a script: Add a game takes a .bat or .cmd file as well as
+0.5.1 (2026-11-17) brought games that start from a script: Add a game takes a .bat or .cmd file as well as
 an exe. Lamplit also finds each game in a folder that sorts games, such as `Games\PC`, and a DualSense Edge's back
 and Fn buttons can each act as a button in Lamplit.
 
