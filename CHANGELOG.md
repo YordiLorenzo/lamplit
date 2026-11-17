@@ -13,6 +13,13 @@ Every release of Lamplit, newest first. The format follows
   started run. When the script opens the game through a program that was already running, such as a store app,
   Lamplit can't tell when the game ends.
 
+### Fixed
+
+- A folder in `<drive>:\Games` that sorts your games into folders, such as `Games\PC\<game>`, is no longer taken for
+  one game named after it. When it holds two or more games and none at its top, Lamplit finds each game in it.
+- Add a game adds a game inside a folder that Lamplit took for one game outside any store. It said "That folder
+  belongs to ..." before. That folder is then no longer a game in Lamplit.
+
 ## 0.5.0 - 2026-11-11
 
 ### Highlights

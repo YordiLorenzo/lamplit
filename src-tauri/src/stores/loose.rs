@@ -2,9 +2,9 @@
 // has seen run as games.
 
 use super::gog;
-use super::installed::{Installed, Program, pick_exe, skip_exe};
+use super::installed::{Installed, Program, pick_exe, skip_dir, skip_exe};
 use super::names::{clean_name, prettify};
-use crate::files::{file_name, folder_key, subdirs};
+use crate::files::{file_name, folder_key, is_script, subdirs};
 use crate::library::{Game, Launch};
 use std::path::{Path, PathBuf};
 
@@ -26,6 +26,8 @@ const GAME_FILES: &[&str] = &[
     "binkw32.dll", "binkw64.dll", "bink2w64.dll", "eossdk-win64-shipping.dll",
 ];
 const GAME_DIRS: &[&str] = &["easyanticheat", "battleye"];
+/// Folders a game keeps its exe in that say nothing of the game: it is named after the folder above.
+const GENERIC_DIRS: &[&str] = &["bin", "bin64", "x64", "win64", "binaries", "retail", "game", "sp", "mp"];
 
 fn in_launcher_dir(path: &Path) -> bool {
     let key = format!("{}\\", folder_key(path));
@@ -60,12 +62,48 @@ fn looks_like_game(dir: &Path) -> bool {
                 if depth == 0 {
                     stack.push((e.path(), 1));
                 }
-            } else if GAME_FILES.contains(&name.as_str()) || (name.starts_with("goggame-") && name.ends_with(".info")) {
+            } else if is_game_file(&name) {
                 return true;
             }
         }
     }
     false
+}
+
+/// A file (its name in lower case) that only games ship.
+fn is_game_file(name: &str) -> bool {
+    GAME_FILES.contains(&name) || (name.starts_with("goggame-") && name.ends_with(".info"))
+}
+
+/// A folder of the player's own that sorts games rather than being one, as `D:\Games\PC\<game>`. Taken for one game,
+/// it would be named after the folder, launch one of the games in it, and keep the player from adding the others by
+/// hand. It holds nothing of a game at its top (an exe or a script, a file only games ship, an Unreal Engine folder,
+/// or an exe in bin and the like, which `game_folder` counts as this folder's), and two or more other folders in it
+/// hold an exe. A game whose own folders hold exes (Mods, Tools) has its exe at the top or in bin.
+fn sorts_games(dir: &Path) -> bool {
+    if dir.join(r"Engine\Binaries").is_dir() {
+        return false;
+    }
+    let Ok(rd) = std::fs::read_dir(dir) else { return false };
+    let mut folders = Vec::new();
+    for e in rd.flatten() {
+        let (name, path) = (e.file_name().to_string_lossy().to_lowercase(), e.path());
+        if e.file_type().is_ok_and(|t| t.is_dir()) {
+            if GAME_DIRS.contains(&name.as_str()) {
+                return false;
+            }
+            if !skip_dir(&name) {
+                folders.push((GENERIC_DIRS.contains(&name.as_str()), path));
+            }
+        } else if name.ends_with(".exe") || is_script(&path) || is_game_file(&name) {
+            return false;
+        }
+    }
+    let holds_exe = |d: &Path| pick_exe(d, &[], None).is_some();
+    if folders.iter().any(|(generic, d)| *generic && holds_exe(d)) {
+        return false;
+    }
+    folders.iter().filter(|(generic, d)| !generic && holds_exe(d)).take(2).count() == 2
 }
 
 struct Taken(Vec<String>);
@@ -99,9 +137,11 @@ pub fn games(claimed: &[Game], game_exes: &[PathBuf], roots: &[PathBuf], program
         |dir: &Path| programs.iter().find(|p| p.folder.as_deref().is_some_and(|f| folder_key(f) == folder_key(dir)));
     let mut out = Vec::new();
 
-    // 1. Folders in <drive>:\Games. A folder that holds other games (a store library, "GOG Games") is looked into.
+    // 1. Folders in <drive>:\Games. A folder that holds other games (a store library, "GOG Games", the player's own
+    // "PC") is looked into.
     for dir in roots.iter().flat_map(|r| subdirs(r)) {
-        let candidates = if is_container(&dir) || taken.inside(&dir) { subdirs(&dir) } else { vec![dir] };
+        let looked_into = is_container(&dir) || taken.inside(&dir) || sorts_games(&dir);
+        let candidates = if looked_into { subdirs(&dir) } else { vec![dir] };
         for dir in candidates {
             if taken.covers(&dir) || taken.inside(&dir) {
                 continue;
@@ -147,10 +187,7 @@ pub fn games(claimed: &[Game], game_exes: &[PathBuf], roots: &[PathBuf], program
 /// The game folder an exe belongs to: its own folder, or above generic subfolders (bin, x64 and the like) so the game
 /// is named after its own folder, but never a container.
 pub fn game_folder(exe: &Path) -> PathBuf {
-    let generic = |dir: &Path| {
-        let name = file_name(dir).to_lowercase();
-        ["bin", "bin64", "x64", "win64", "binaries", "retail", "game", "sp", "mp"].contains(&name.as_str())
-    };
+    let generic = |dir: &Path| GENERIC_DIRS.contains(&file_name(dir).to_lowercase().as_str());
     let mut dir = exe.parent().map(Path::to_path_buf).unwrap_or_default();
     while generic(&dir)
         && let Some(parent) = dir.parent().filter(|p| !is_container(p))
@@ -286,6 +323,39 @@ mod tests {
                 ("Alpha".into(), "alpha.exe".into()),
                 ("Beta".into(), "beta.exe".into()),
                 ("Epsilon".into(), "epsilon.exe".into())
+            ]
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_folder_that_sorts_games_is_looked_into() {
+        let root = scratch("sorted");
+        let games_dir = root.join("Games");
+        // The player's own sorting: no game of its own, two games in it.
+        file(games_dir.join(r"PC\desktop.ini"), 10);
+        file(games_dir.join(r"PC\GameA\GameA.exe"), 100);
+        file(games_dir.join(r"PC\GameB\bin\gameb.exe"), 100);
+        // One game: its exe in bin, beside data and an editor of its own.
+        file(games_dir.join(r"SomeGame\bin\some.exe"), 100);
+        file(games_dir.join(r"SomeGame\data\level1.pak"), 100);
+        file(games_dir.join(r"SomeGame\tools\editor.exe"), 50);
+        // One game: its exe at the top, mods with exes of their own beside it.
+        file(games_dir.join(r"GameWithMods\GameWithMods.exe"), 1000);
+        file(games_dir.join(r"GameWithMods\Mods\ModA\moda.exe"), 100);
+        file(games_dir.join(r"GameWithMods\Plugins\loader.exe"), 100);
+        // One game: Unreal Engine's folder, with an exe of its own, beside the game's.
+        file(games_dir.join(r"Shooter\Engine\Binaries\Win64\UnrealCEFSubProcess.exe"), 100);
+        file(games_dir.join(r"Shooter\Shooter\Binaries\Win64\Shooter-Win64-Shipping.exe"), 1000);
+        let list = games(&[], &[], &[games_dir], &[]);
+        assert_eq!(
+            found(&list),
+            vec![
+                ("Game With Mods".into(), "GameWithMods.exe".into()),
+                ("Game A".into(), "GameA.exe".into()),
+                ("Game B".into(), "gameb.exe".into()),
+                ("Shooter".into(), "Shooter-Win64-Shipping.exe".into()),
+                ("Some Game".into(), "some.exe".into())
             ]
         );
         let _ = fs::remove_dir_all(root);

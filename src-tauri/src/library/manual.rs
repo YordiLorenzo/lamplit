@@ -38,8 +38,11 @@ pub fn game(id: &str, m: &Manual) -> Game {
     g
 }
 
-/// Whether `exe` can be added as a game next to `games`, or what the player reads when it can't.
-pub fn check(exe: &Path, games: &[Game]) -> Result<()> {
+/// Whether `exe` can be added as a game next to `games`, or what the player reads when it can't. Ok has the ids of the
+/// games Lamplit guessed outside any store whose folder holds the new game's (a folder that sorts games, taken for
+/// one, as "D:\Games\PC"): the new game takes their place, and the next scan looks into that folder
+/// (`stores::loose::games`). A store's game or one added by hand keeps its folder.
+pub fn check(exe: &Path, games: &[Game]) -> Result<Vec<String>> {
     let is_exe = exe.extension().is_some_and(|x| x.eq_ignore_ascii_case("exe"));
     if !on_a_drive(exe) || !(is_exe || is_script(exe)) || !exe.is_file() {
         return Err(Error::Player(format!("{} isn't an exe or a script on this PC's drives.", exe.display())));
@@ -53,15 +56,21 @@ pub fn check(exe: &Path, games: &[Game]) -> Result<()> {
         )));
     }
     let key = folder_key(&dir);
+    let holds_new = |d: &Path| key.starts_with(&format!("{}\\", folder_key(d)));
     let overlaps = |d: &PathBuf| {
         let other = folder_key(d);
-        key == other || key.starts_with(&format!("{other}\\")) || other.starts_with(&format!("{key}\\"))
+        key == other || holds_new(d) || other.starts_with(&format!("{key}\\"))
     };
-    if let Some(g) = games.iter().find(|g| std::iter::once(&g.dir).chain(&g.extra_dirs).any(overlaps)) {
+    let mut replaced = Vec::new();
+    for g in games.iter().filter(|g| std::iter::once(&g.dir).chain(&g.extra_dirs).any(overlaps)) {
+        if g.store.is_none() && !g.manual && holds_new(&g.dir) {
+            replaced.push(g.id.clone());
+            continue;
+        }
         let hidden = if g.hidden { " It is hidden: Settings > Hidden games shows it again." } else { "" };
         return Err(Error::Player(format!("That folder belongs to {}, which Lamplit already has.{hidden}", g.name)));
     }
-    Ok(())
+    Ok(replaced)
 }
 
 /// An installed program that isn't in the library.
@@ -184,7 +193,7 @@ mod tests {
         p
     }
 
-    fn message(r: Result<()>) -> String {
+    fn message<T: std::fmt::Debug>(r: Result<T>) -> String {
         match r {
             Err(Error::Player(m)) => m,
             other => panic!("expected a message for the player, got {other:?}"),
@@ -223,7 +232,38 @@ mod tests {
         let readme = file(root.join(r"Old Games\Racer\readme.txt"));
         assert!(message(check(&readme, &[])).contains("isn't an exe or a script"));
         assert!(message(check(&root.join(r"Old Games\Racer\gone.bat"), &[])).contains("isn't an exe or a script"));
-        assert!(message(check(Path::new(r"\\nas\games\x.exe"), &[])).contains("isn't an exe on this PC's drives"));
+        let nas = message(check(Path::new(r"\\nas\games\x.exe"), &[]));
+        assert!(nas.contains("isn't an exe or a script on this PC's drives"), "{nas}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn adds_a_game_inside_a_folder_lamplit_took_for_one_game() {
+        let root = scratch("manual-guessed");
+        let games_dir = root.join("Games");
+        // The player keeps their games in Games\PC, which so far holds one: discovery takes PC for that game.
+        let exe = file(games_dir.join(r"PC\Racer\racer.exe"));
+        let pc = games_dir.join("PC");
+        let mut guessed = crate::stores::loose::games(&[], &[], std::slice::from_ref(&games_dir), &[]);
+        assert!(guessed.len() == 1 && guessed[0].dir == pc, "{:?}", guessed.iter().map(|g| &g.dir).collect::<Vec<_>>());
+        guessed[0].hidden = true;
+        assert_eq!(check(&exe, &guessed).unwrap(), [guessed[0].id.clone()]);
+        // Once it is added, the next scan no longer takes PC for a game.
+        let added = game(&id(&exe), &Manual { name: "Racer".into(), exe: exe.clone() });
+        assert!(crate::stores::loose::games(&[added], &[], std::slice::from_ref(&games_dir), &[]).is_empty());
+
+        // A guess of the same folder already is the game, and one inside the new game's folder would become part of it.
+        let racer = games_dir.join(r"PC\Racer");
+        let same = Game::new("pc:racer".into(), "Racer".into(), None, racer, Launch::Exe(exe.clone()));
+        assert!(message(check(&exe, std::slice::from_ref(&same))).starts_with("That folder belongs to Racer"));
+        let around = file(pc.join("menu.exe"));
+        assert!(message(check(&around, &[same])).starts_with("That folder belongs to Racer"));
+        // A store's game or one added by hand keeps its folder.
+        let store_game =
+            Game::new("epic:pc".into(), "PC".into(), Some(Store::Epic), pc.clone(), Launch::Uri("x".into()));
+        let by_hand = game("manual:pc", &Manual { name: "PC Menu".into(), exe: around });
+        assert!(message(check(&exe, &[store_game])).starts_with("That folder belongs to PC"));
+        assert!(message(check(&exe, &[by_hand])).starts_with("That folder belongs to PC Menu"));
         let _ = fs::remove_dir_all(root);
     }
 
