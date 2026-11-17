@@ -15,7 +15,7 @@
  * @typedef {object} Row
  * @property {string} [heading]
  * @property {string} [kind]
- * @property {string} [key]  the section a section row opens
+ * @property {string} [key]  the section a section row opens, or the DualSense Edge button an edgebutton row sets
  * @property {string} [id]  the device or controller the row is about
  * @property {StoreKey} [store]
  * @property {string} [label]

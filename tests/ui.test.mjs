@@ -743,6 +743,85 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await close(page);
 }
 
+// 11b. Settings > Controllers on a DualSense Edge: ← and → choose what each back and Fn button does, saved through
+// Rust, and the choice is there the next time Settings opens.
+{
+  const page = await open({ games: [game(1), game(2)] });
+  const accessories = ipc('accessories');
+  const edge = like(accessories.controllers[0], { id: 'usb-edge', name: 'DualSense Edge', connection: known('connection', 'usb'), edge_buttons: true });
+  await page.evaluate((data) => {
+    const s = (window.__settings = data);
+    s.accessories_state = () => s.accessories;
+  }, { accessories: like(accessories, { controllers: [edge] }) });
+  const view = () =>
+    page.evaluate(() => ({
+      title: document.getElementById('settingsTitle').textContent,
+      rows: [...document.querySelectorAll('#settingsList .row')].map((r) => r.textContent),
+      focus: document.querySelector('#settingsList .row.focus')?.textContent ?? null,
+      hint: document.getElementById('hint').textContent,
+      sent: window.__calls.filter((c) => c[0] === 'prefs_set_edge_button').map((c) => c[1]),
+      saved: window.__prefs.edge_buttons,
+    }));
+  /** Moves focus down to the row that starts with `label`. */
+  const down = async (label) => {
+    for (let i = 0; i < 12 && !(await view()).focus?.startsWith(label); i++) await page.keyboard.press('ArrowDown');
+  };
+  const step = async (key, times = 1) => {
+    for (let i = 0; i < times; i++) {
+      await page.keyboard.press(key);
+      await idle(page);
+    }
+  };
+  await page.keyboard.press('c');
+  await idle(page);
+  await down('Controllers');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  let v = await view();
+  const named = ['Left back button', 'Right back button', 'Left Fn button', 'Right Fn button'];
+  check(
+    "the Edge's section has a row per back and Fn button, each Nothing",
+    named.every((label) => v.rows.includes(`${label}Nothing`)) && v.title === 'Controllers',
+    JSON.stringify(v.rows)
+  );
+  await down('Left back button');
+  v = await view();
+  check('a button row changes with ← and →, as the hints say', v.focus === 'Left back buttonNothing' && v.hint.includes('Adjust'), `${v.focus} | ${v.hint}`);
+  await step('ArrowLeft');
+  v = await view();
+  check('← on Nothing, the first choice, sends nothing', v.sent.length === 0 && v.focus === 'Left back buttonNothing', JSON.stringify(v.sent));
+  await step('ArrowRight');
+  v = await view();
+  check('→ gives the left back button Cross, saved through Rust', JSON.stringify(v.sent) === '[{"button":"left_back","target":"cross"}]' && v.saved.left_back === 'cross' && v.focus === 'Left back buttonCross', JSON.stringify(v));
+  await page.keyboard.press('ArrowDown');
+  await step('ArrowRight', 2);
+  v = await view();
+  check('the right back button steps on its own, to Circle', v.saved.right_back === 'circle' && v.saved.left_back === 'cross' && v.focus === 'Right back buttonCircle', JSON.stringify(v));
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await step('ArrowRight', 9);
+  v = await view();
+  check('→ stops at Options, the last choice', v.saved.right_fn === 'options' && v.focus === 'Right Fn buttonOptions' && v.sent.filter((x) => x.button === 'right_fn').length === 7, JSON.stringify(v.sent));
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('c');
+  await idle(page);
+  await down('Controllers');
+  await page.keyboard.press('Enter');
+  await idle(page);
+  v = await view();
+  check(
+    'the choices are there when Settings opens again',
+    ['Left back buttonCross', 'Right back buttonCircle', 'Left Fn buttonNothing', 'Right Fn buttonOptions'].every((r) => v.rows.includes(r)),
+    JSON.stringify(v.rows)
+  );
+  await settled(page);
+  await page.screenshot({ path: path.join(shots, 'settings-edge-buttons.png') });
+  const s = await state(page);
+  check('Edge buttons: no page errors', s.errors.length === 0, JSON.stringify(s.errors));
+  await close(page);
+}
+
 // 12. Store names come from the stores list, which has every store, installed or not: the starting screen says what
 // a game starts through and Details names the store. The pill shows the store's key.
 {

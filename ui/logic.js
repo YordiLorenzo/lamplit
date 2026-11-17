@@ -562,6 +562,23 @@ export function stepTrailers(level, dir) {
   return levels[Math.max(0, Math.min(levels.length - 1, levels.indexOf(level) + dir))];
 }
 
+/** @type {Record<import('./api.js').EdgeTarget, string>} */
+const EDGE_TARGETS = { nothing: 'Nothing', cross: 'Cross', circle: 'Circle', triangle: 'Triangle', square: 'Square', l1: 'L1', r1: 'R1', options: 'Options' };
+
+/** The DualSense Edge's back and Fn buttons, by Sony's names. @type {[import('./api.js').EdgeButton, string][]} */
+const EDGE_BUTTONS = [
+  ['left_back', 'Left back button'],
+  ['right_back', 'Right back button'],
+  ['left_fn', 'Left Fn button'],
+  ['right_fn', 'Right Fn button'],
+];
+
+/** @param {import('./api.js').EdgeTarget} target @param {number} dir */
+export function stepEdgeTarget(target, dir) {
+  const targets = /** @type {import('./api.js').EdgeTarget[]} */ (Object.keys(EDGE_TARGETS));
+  return targets[Math.max(0, Math.min(targets.length - 1, targets.indexOf(target) + dir))];
+}
+
 /**
  * A trailer needs an idle home screen in front, with the player's permission to fetch it.
  * @param {{ mode: string, running: string | null, prefs: import('./api.js').Prefs | null }} state
@@ -775,6 +792,12 @@ export function sectionRows(key, state) {
       const jack = c.headphones;
       const where = !jack ? 'Not plugged in' : bluetooth ? 'Plugged in · sound needs the USB cable' : 'Plugged in';
       rows.push({ label: 'Headphones', value: where, tone: jack && bluetooth ? 'warn' : '' });
+      // One choice per button for every Edge, shown under each.
+      if (c.edge_buttons) {
+        for (const [button, label] of EDGE_BUTTONS) {
+          rows.push({ kind: 'edgebutton', id: c.id, key: button, adjust: true, label, value: EDGE_TARGETS[prefs?.edge_buttons[button] ?? 'nothing'] });
+        }
+      }
       if (bluetooth) rows.push({ kind: 'padoff', id: c.id, label: 'Turn off', value: '' });
     });
   } else if (key === 'popups') {
@@ -849,8 +872,12 @@ export function updateRow(update) {
   return { kind: 'update', label: phase === 'current' ? 'Lamplit is up to date' : 'Check for updates', value: 'Check' };
 }
 
-/** What a focusable row is about, unchanged when the rows around it change. @param {Row} row */
-export const rowKey = (row) => `${row.kind}:${row.id ?? row.store ?? row.key ?? ''}`;
+/**
+ * What a focusable row is about, unchanged when the rows around it change: its device, store or section, and for a
+ * DualSense Edge's button both the controller and the button.
+ * @param {Row} row
+ */
+export const rowKey = (row) => `${row.kind}:${[row.id, row.store, row.key].filter((x) => x != null).join(' ')}`;
 
 /**
  * Where the row with `focus` is now, else the first row that can take focus; -1 when none can.

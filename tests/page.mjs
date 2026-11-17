@@ -69,6 +69,12 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
       window.__prefs.trailers = level;
       return window.__prefs;
     },
+    prefs_set_edge_button: ({ button, target }) => {
+      if (!values.edge_button.includes(button)) throw { kind: 'player', message: 'A DualSense Edge has no such button.' };
+      if (!values.edge_target.includes(target)) throw { kind: 'player', message: 'Choose Nothing, Cross, Circle, Triangle, Square, L1, R1 or Options.' };
+      window.__prefs.edge_buttons[button] = target;
+      return window.__prefs;
+    },
     prefs_hint_shown: ({ name }) => {
       const hint = window.__prefs.hints[name];
       if (!hint) throw { kind: 'player', message: 'That hint is not available.' };
