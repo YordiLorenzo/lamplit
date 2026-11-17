@@ -12,6 +12,9 @@ Every release of Lamplit, newest first. The format follows
   script in its own folder without a console window, and the game counts as running while the programs the script
   started run. When the script opens the game through a program that was already running, such as a store app,
   Lamplit can't tell when the game ends.
+- DualSense Edge: **Settings > Controllers** gives each back button and Fn button a button in Lamplit: Cross,
+  Circle, Triangle, Square, L1, R1 or Options. They do nothing in Lamplit until you choose. Games still get the
+  buttons as before.
 
 ### Fixed
 

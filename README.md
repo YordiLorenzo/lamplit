@@ -258,12 +258,15 @@ game's exe directly, which some of those games refuse.
 | Touchpad as a mouse | Over USB; over Bluetooth usually | No | No |
 | Sound through the headphone jack | Over USB only | No | No |
 | Turn off from Lamplit | Over Bluetooth only | No | No |
+| Back and Fn buttons | DualSense Edge: each can act as a Lamplit button | No | No |
 
 **DualSense and DualSense Edge,** over USB or Bluetooth, read over HID. Over Bluetooth, a DualSense sends its battery
 level and touchpad only after a program has asked for its full reports. Steam usually has done this already. Lamplit
 never asks itself: the switch lasts until the controller turns off, and older games that read the controller through
 DirectInput stop working with it. The sound reaches the headphone jack only over USB, where the controller is a sound
-device.
+device. A DualSense Edge's back buttons and Fn buttons do nothing in Lamplit until you give each one a Lamplit button
+(Cross, Circle, Triangle, Square, L1, R1 or Options) in Settings > Controllers. Over Bluetooth this also needs the
+full reports.
 
 **Xbox controllers, and the many that work like one** (8BitDo, PowerA and others in their X mode), over USB,
 Bluetooth or Microsoft's wireless adapter, read through XInput. The Xbox button belongs to Windows' Game Bar, so hold
@@ -286,7 +289,7 @@ those out, since it reads the real one. Tools such as DS4Windows that add virtua
 one controller count twice; hide the real one from other programs (HidHide does this) or close the tool.
 
 The DualSense is tested over USB and Bluetooth. The DualSense Edge sends the same reports and is read the same way,
-but hasn't been tested. Xbox and other controllers have not yet been tested on real hardware either.
+but hasn't been tested, nor have its back and Fn buttons. Xbox and other controllers have not yet been tested on real hardware either.
 
 ### Headset
 
