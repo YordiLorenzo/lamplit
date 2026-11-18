@@ -6,3 +6,5 @@ For the maintainer's coding agents. Contributors start at [CONTRIBUTING.md](CONT
 - Build, install, test and run Lamplit end to end without asking first, also on TOASTER, the maintainer's TV PC
   (2026-11-09).
 - Build the Windows builds on TOASTER itself, not on another machine with a copy to TOASTER afterwards (2026-11-11).
+- Feature requests from Lamplit users go on the roadmap ([ROADMAP.md](ROADMAP.md)) and get built without asking the
+  maintainer first (2026-11-17).
