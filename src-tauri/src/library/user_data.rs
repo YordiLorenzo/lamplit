@@ -177,8 +177,9 @@ mod tests {
         assert_eq!((game.art_choice, game.manual), (Some(ArtChoice::None), false));
         apply(&mut game, &entries["manual:d:\\old\\old.exe"]);
         assert_eq!((game.art_choice, game.manual), (None, true));
+        // A copy that isn't in the data folder shows nothing in place of the art the game has (own_art.rs).
+        game.own_art.portrait = Some("left from before.png".into());
         apply(&mut game, &entries["gog:2"]);
-        assert!(game.own_art.trailer.as_deref().is_some_and(|t| t.ends_with(r"art\own\trailer-1.mp4")));
-        assert_eq!(game.own_art.portrait, None);
+        assert_eq!(game.own_art, crate::library::OwnArt::default());
     }
 }

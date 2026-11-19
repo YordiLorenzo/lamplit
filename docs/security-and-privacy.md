@@ -49,6 +49,16 @@ releases it after a 200 ms fade. Playback also ends when another screen opens, a
 foreground. Reduce Motion disables trailers.
 The trailer sound preference stays in `prefs.json` and is not sent online.
 
+A trailer of the player's own (Change art) plays from its copy in `art\own\` through the asset protocol, which the
+page's media policy also allows. It sends nothing online and plays with **Find art online** off.
+
+### Your own art
+
+Change art can give a game a cover, background, logo or trailer from a file the player picks on the PC's drives.
+Lamplit lists only folders on drive letters, so browsing never reaches another computer, and copies the chosen file
+into `art\own\` in its data folder. The original is read once and not changed. `games.json` keeps only the copies'
+names. Removing a game added by hand, replacing a file or taking it away deletes the copy.
+
 ### App updates
 
 In **Settings > Check for updates**, the **Check by itself** switch controls automatic checks. It is on by default.

@@ -6,7 +6,7 @@
 use super::{Art, ArtKind, OwnArt};
 use crate::data::data_dir;
 use crate::error::{Error, Result};
-use crate::files::{inside, on_a_drive};
+use crate::files::{inside, nonempty, on_a_drive};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -39,9 +39,13 @@ pub fn paths(names: &BTreeMap<ArtKind, String>) -> OwnArt {
     paths_in(&dir(), names)
 }
 
-/// A name that leads out of `dir` (a games.json edited by hand) counts as none.
+/// A name that leads out of `dir` (a games.json edited by hand) counts as none, and so does a copy that has gone (the
+/// art folder cleared as a cache): the game then shows the art it had before.
 fn paths_in(dir: &Path, names: &BTreeMap<ArtKind, String>) -> OwnArt {
-    let path = |kind| Some(inside(dir, names.get(&kind)?)?.to_string_lossy().into_owned());
+    let path = |kind| {
+        let copy = inside(dir, names.get(&kind)?).filter(|p| nonempty(p))?;
+        Some(copy.to_string_lossy().into_owned())
+    };
     OwnArt {
         portrait: path(ArtKind::Portrait),
         hero: path(ArtKind::Hero),
@@ -123,16 +127,23 @@ mod tests {
     }
 
     #[test]
-    fn names_stay_inside_the_folder() {
-        let dir = Path::new(r"C:\Users\player\AppData\Local\lamplit\art\own");
+    fn names_stay_inside_the_folder_and_need_their_copy() {
+        let root = std::env::temp_dir().join(format!("lamplit-test-own-paths-{}", std::process::id()));
+        let dir = root.join("art").join("own");
+        std::fs::create_dir_all(&dir).unwrap();
+        for file in [dir.join("portrait-1.png"), root.join("elsewhere.png"), root.join("trailer.mp4")] {
+            std::fs::write(file, b"x").unwrap();
+        }
         let names = BTreeMap::from([
             (ArtKind::Portrait, "portrait-1.png".to_string()),
             (ArtKind::Hero, r"..\..\elsewhere.png".to_string()),
-            (ArtKind::Trailer, r"C:\Users\player\Videos\trailer.mp4".to_string()),
+            (ArtKind::Logo, "logo-gone.png".to_string()),
+            (ArtKind::Trailer, root.join("trailer.mp4").to_string_lossy().into_owned()),
         ]);
-        let own = paths_in(dir, &names);
-        assert_eq!(own.portrait.as_deref(), Some(r"C:\Users\player\AppData\Local\lamplit\art\own\portrait-1.png"));
+        let own = paths_in(&dir, &names);
+        assert_eq!(own.portrait, Some(dir.join("portrait-1.png").to_string_lossy().into_owned()));
         assert_eq!((own.hero, own.logo, own.trailer), (None, None, None));
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
