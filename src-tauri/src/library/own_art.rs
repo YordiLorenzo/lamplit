@@ -71,10 +71,12 @@ pub fn copy_in(kind: ArtKind, file: &Path) -> Result<String> {
 /// Each copy has a name of its own, so the page never shows the file it read before under the same address.
 fn copy_into(dir: &Path, kind: ArtKind, file: &Path) -> Result<String> {
     // A path that isn't on a drive letter could reach another computer, which Windows would sign in to.
-    let ext = extension(kind, file).filter(|_| on_a_drive(file) && file.is_file()).ok_or_else(|| {
-        let what = if kind == ArtKind::Trailer { "a video Lamplit can play" } else { "a picture Lamplit can show" };
-        Error::Player(format!("{} isn't {what} on this PC's drives.", file.display()))
-    })?;
+    // An empty file would show nothing, and the copy would count as none (paths_in).
+    let ext =
+        extension(kind, file).filter(|_| on_a_drive(file) && file.is_file() && nonempty(file)).ok_or_else(|| {
+            let what = if kind == ArtKind::Trailer { "a video Lamplit can play" } else { "a picture Lamplit can show" };
+            Error::Player(format!("{} isn't {what} on this PC's drives.", file.display()))
+        })?;
     let millis = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis());
     let name = format!("{}-{millis}.{ext}", format!("{kind:?}").to_lowercase());
     std::fs::create_dir_all(dir)?;
@@ -168,6 +170,8 @@ mod tests {
         };
         let gone = message(copy_into(&own, ArtKind::Trailer, &root.join("gone.mp4")));
         assert!(gone.contains("isn't a video Lamplit can play"), "{gone}");
+        std::fs::write(root.join("empty.mp4"), b"").unwrap();
+        assert!(message(copy_into(&own, ArtKind::Trailer, &root.join("empty.mp4"))).contains("isn't a video"));
         std::fs::write(root.join("clip.mkv"), b"x").unwrap();
         assert!(message(copy_into(&own, ArtKind::Trailer, &root.join("clip.mkv"))).contains("isn't a video"));
         let nas = message(copy_into(&own, ArtKind::Logo, Path::new(r"\\nas\art\logo.png")));
