@@ -1,5 +1,6 @@
-// The games Lamplit shows: found by discover.rs, recently played first, with art from art.rs and what the player
-// keeps per game from user_data.rs, including the games they added by hand (manual.rs). A scan runs at start and
+// The games Lamplit shows: found by discover.rs, recently played first, with art from art.rs (and the player's own
+// files from own_art.rs) and what the player keeps per game from user_data.rs, including the games they added by hand
+// (manual.rs). A scan runs at start and
 // again when Lamplit comes forward, so new installs show up.
 
 mod art;
@@ -9,11 +10,12 @@ mod discover;
 mod game;
 mod manual;
 mod name_match;
+mod own_art;
 mod user_data;
 
 pub use art::{Candidate, candidates as art_candidates};
 pub use details::{Details, get as game_details};
-pub use game::{Art, ArtChoice, Game, Launch};
+pub use game::{Art, ArtChoice, ArtKind, Game, Launch, OwnArt};
 pub use manual::{Folder, Program, browse};
 pub use user_data::UserData;
 
@@ -52,10 +54,11 @@ impl Library {
 
     /// Keeps the list in step with each "art" event, so a page that asks for the games after an event went out
     /// (and so missed it) still gets the art. False, and the list left alone, when the game is gone or the player has
-    /// chosen other art since `g` was read: a pass that started before must not put the old art back.
+    /// chosen other art or files since `g` was read: a pass that started before must not put the old art back.
     fn set_art(&self, g: &Game, art: &Art) -> bool {
         let mut list = self.games.lock();
-        let Some(listed) = list.iter_mut().flatten().find(|l| l.id == g.id && l.art_choice == g.art_choice) else {
+        let same = |l: &&mut Game| l.id == g.id && l.art_choice == g.art_choice && l.own_art == g.own_art;
+        let Some(listed) = list.iter_mut().flatten().find(same) else {
             return false;
         };
         listed.art = art.clone();
@@ -185,9 +188,9 @@ fn change(app: &AppHandle, id: &str, change: impl FnOnce(&mut user_data::Entry))
     let entry = app.state::<UserData>().change(id, change)?;
     if let Some(games) = list.as_mut() {
         if let Some(g) = games.iter_mut().find(|g| g.id == id) {
-            let chosen = g.art_choice;
+            let (chosen, own) = (g.art_choice, g.own_art.clone());
             user_data::apply(g, &entry);
-            if g.art_choice != chosen {
+            if g.art_choice != chosen || g.own_art != own {
                 art::from_disk(std::slice::from_mut(g));
             }
         }
@@ -233,6 +236,29 @@ pub fn set_art(app: &AppHandle, id: &str, choice: Option<ArtChoice>) -> Result<V
         // Lamplit's own match may not be on the PC yet, or not even looked up: a game the player chose art for as
         // soon as it was added.
         scan(app);
+    }
+    Ok(all(app))
+}
+
+/// Gives a game a `kind` of art from `file`, copied into the data folder, or with None takes the player's file of that
+/// kind away again. Returns every game.
+pub fn set_own_art(app: &AppHandle, id: &str, kind: ArtKind, file: Option<&str>) -> Result<Vec<Game>> {
+    let copy = file.map(|f| own_art::copy_in(kind, Path::new(f))).transpose()?;
+    let mut replaced = None;
+    let saved = change(app, id, |e| {
+        replaced = match &copy {
+            Some(name) => e.own_art.insert(kind, name.clone()),
+            None => e.own_art.remove(&kind),
+        };
+    });
+    // The copy that isn't used: the new one when it couldn't be saved, else the one it replaced.
+    if let Some(unused) = if saved.is_err() { &copy } else { &replaced } {
+        own_art::remove(unused);
+    }
+    saved?;
+    match file {
+        Some(file) => log::info!("{id}: own {kind:?} from {file}"),
+        None => log::info!("{id}: own {kind:?} taken away"),
     }
     Ok(all(app))
 }
@@ -296,9 +322,16 @@ pub fn remove_game(app: &AppHandle, id: &str) -> Result<Vec<Game>> {
     }
     // Its favourite, play time and art go with it. Kept as removed: Windows may know its exe as a game by now, and a
     // scan would find it again outside any store.
-    app.state::<UserData>().change(id, |e| *e = user_data::Entry { removed: true, ..Default::default() })?;
+    let mut own = Vec::new();
+    app.state::<UserData>().change(id, |e| {
+        own = std::mem::take(&mut e.own_art).into_values().collect();
+        *e = user_data::Entry { removed: true, ..Default::default() };
+    })?;
     list.iter_mut().for_each(|games| games.retain(|g| g.id != id));
     drop(list);
+    for name in &own {
+        own_art::remove(name);
+    }
     log::info!("{id}: removed");
     // A scan that read the games before would put it back.
     scan(app);
@@ -368,6 +401,12 @@ mod tests {
             Game { art_choice: Some(ArtChoice::None), art: Art::default(), ..game.clone() };
         assert!(!library.set_art(&game, &found));
         assert_eq!(library.game("epic:x").unwrap().art, Art::default());
+        // Or gave it a cover of their own.
+        let own = OwnArt { portrait: Some("mine.png".into()), ..OwnArt::default() };
+        let mine = Art { portrait: own.portrait.clone(), hero: None, logo: None };
+        library.games.lock().as_mut().unwrap()[0] = Game { own_art: own, art: mine.clone(), ..game.clone() };
+        assert!(!library.set_art(&game, &found));
+        assert_eq!(library.game("epic:x").unwrap().art, mine);
         // A game that has left the list.
         assert!(!library.set_art(&Game { id: "gone".into(), ..game }, &found));
     }

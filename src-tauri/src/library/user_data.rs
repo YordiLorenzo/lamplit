@@ -1,8 +1,9 @@
 // What the player keeps per game, in games.json in the data folder: favourites, hidden games, when each game was
-// last played, how long Lamplit has seen it run, the art the player chose, and the games they added by hand. Kept by
+// last played, how long Lamplit has seen it run, the art the player chose or gave it from files, and the games they
+// added by hand. Kept by
 // game id, so it outlives an uninstall and is there again after a reinstall.
 
-use super::{ArtChoice, Game, manual};
+use super::{ArtChoice, ArtKind, Game, manual, own_art};
 use crate::data;
 use crate::error::Result;
 use parking_lot::Mutex;
@@ -27,6 +28,9 @@ pub struct Entry {
     /// None: Lamplit's own match.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub art: Option<ArtChoice>,
+    /// The names of the player's own files for the game, in art\own\ (own_art.rs).
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub own_art: BTreeMap<ArtKind, String>,
     /// The game's name and exe, for a game the player added by hand.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub manual: Option<manual::Manual>,
@@ -98,6 +102,7 @@ pub fn apply(g: &mut Game, entry: &Entry) {
     g.favourite = entry.favourite;
     g.hidden = entry.hidden;
     g.art_choice = entry.art;
+    g.own_art = own_art::paths(&entry.own_art);
     g.manual = entry.manual.is_some();
 }
 
@@ -148,6 +153,10 @@ mod tests {
         let entries = BTreeMap::from([
             ("epic:fn".to_string(), Entry { art: Some(ArtChoice::Steam(1_091_500)), ..Entry::default() }),
             ("gog:1".to_string(), Entry { art: Some(ArtChoice::None), ..Entry::default() }),
+            (
+                "gog:2".to_string(),
+                Entry { own_art: BTreeMap::from([(ArtKind::Trailer, "trailer-1.mp4".into())]), ..Entry::default() },
+            ),
             ("manual:d:\\old\\old.exe".to_string(), Entry { manual: Some(manual.clone()), ..Entry::default() }),
             ("steam:70".to_string(), Entry { favourite: true, ..Entry::default() }),
         ]);
@@ -158,6 +167,7 @@ mod tests {
             serde_json::json!({ "last_played": 0, "play_seconds": 0, "favourite": true, "hidden": false })
         );
         assert_eq!(json["epic:fn"]["art"], serde_json::json!({ "steam": 1_091_500 }));
+        assert_eq!(json["gog:2"]["own_art"], serde_json::json!({ "trailer": "trailer-1.mp4" }));
         assert_eq!(json["manual:d:\\old\\old.exe"]["manual"]["name"], "Old Game");
         let back: BTreeMap<String, Entry> = serde_json::from_value(json).unwrap();
         assert_eq!(back, entries);
@@ -167,5 +177,8 @@ mod tests {
         assert_eq!((game.art_choice, game.manual), (Some(ArtChoice::None), false));
         apply(&mut game, &entries["manual:d:\\old\\old.exe"]);
         assert_eq!((game.art_choice, game.manual), (None, true));
+        apply(&mut game, &entries["gog:2"]);
+        assert!(game.own_art.trailer.as_deref().is_some_and(|t| t.ends_with(r"art\own\trailer-1.mp4")));
+        assert_eq!(game.own_art.portrait, None);
     }
 }

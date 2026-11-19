@@ -23,6 +23,8 @@ pub struct Game {
     pub art: Art,
     /// The art the player chose in Change art; None for Lamplit's own match.
     pub art_choice: Option<ArtChoice>,
+    /// The files the player gave the game in Change art. Each shows in place of the art of its kind (own_art.rs).
+    pub own_art: OwnArt,
     /// Added by hand (Settings > Add a game), so the player can remove it again.
     pub manual: bool,
     /// Store apps that must run and be signed in: the game's own, plus any its publisher adds.
@@ -58,6 +60,26 @@ pub enum ArtChoice {
     None,
 }
 
+/// A kind of art the player can give a game from a file on the PC.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(strum::VariantArray))]
+#[serde(rename_all = "lowercase")]
+pub enum ArtKind {
+    Portrait,
+    Hero,
+    Logo,
+    Trailer,
+}
+
+/// The player's own files for a game: the copies in Lamplit's data folder, as full paths.
+#[derive(Clone, Default, Serialize, PartialEq, Debug)]
+pub struct OwnArt {
+    pub portrait: Option<String>,
+    pub hero: Option<String>,
+    pub logo: Option<String>,
+    pub trailer: Option<String>,
+}
+
 /// How a game (or a store app) is opened: a link its store handles, or an exe.
 #[derive(Clone, PartialEq, Debug)]
 pub enum Launch {
@@ -81,6 +103,7 @@ impl Game {
             hidden: false,
             art: Art::default(),
             art_choice: None,
+            own_art: OwnArt::default(),
             manual: false,
             requires: Vec::new(),
             steam_appid: None,
@@ -123,5 +146,11 @@ mod tests {
         assert_eq!(serde_json::to_value(choices).unwrap(), ipc_fixture!("art-choice"));
         let back: Vec<ArtChoice> = serde_json::from_value(ipc_fixture!("art-choice")).unwrap();
         assert_eq!(back, choices);
+    }
+
+    #[test]
+    fn art_kinds_are_the_values_the_page_sends() {
+        let kinds = <ArtKind as strum::VariantArray>::VARIANTS;
+        assert_eq!(serde_json::to_value(kinds).unwrap(), ipc_fixture!("values")["art_kind"]);
     }
 }

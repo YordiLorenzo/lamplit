@@ -1,10 +1,10 @@
 // Cover, hero and logo art. Steam's own library cache first, then Steam's public store (no key needed) while the
 // player lets Lamplit find art online. Games from other stores are matched to their Steam page by name
 // (name_match.rs), so their names go to Steam's store search. The player can choose another app's art, or none, in
-// Change art. Downloads and lookups are cached in the data folder (art\<appid>\ and art.json).
+// Change art, and give a game files of their own, which show in place of Steam's (own_art.rs). Downloads and lookups are cached in the data folder (art\<appid>\ and art.json).
 
-use super::name_match;
 use super::{Art, ArtChoice, Game};
+use super::{name_match, own_art};
 use crate::data::{self, data_dir};
 use crate::error::{Error, Result};
 use crate::events::{self, Event};
@@ -129,10 +129,11 @@ pub fn from_disk(games: &mut [Game]) {
     let (db, cache) = (load(), steam_library_cache());
     for g in games {
         let known = g.steam_appid.or_else(|| db.lookups.get(&g.id).and_then(|l| l.appid));
-        g.art = match shown_appid(g, known) {
+        let steam = match shown_appid(g, known) {
             Some(appid) => local(cache.as_deref(), appid),
             None => Art::default(),
         };
+        g.art = own_art::over(steam, &g.own_art);
     }
 }
 
@@ -180,9 +181,9 @@ pub fn fetch_missing(app: &AppHandle, games: &[Game]) {
             }
             art.insert(appid, local(cache.as_deref(), appid));
         }
-        let found = &art[&appid];
-        if *found != g.art && app.state::<super::Library>().set_art(g, found) {
-            events::emit(app, Event::Art { id: &g.id, art: found });
+        let found = own_art::over(art[&appid].clone(), &g.own_art);
+        if found != g.art && app.state::<super::Library>().set_art(g, &found) {
+            events::emit(app, Event::Art { id: &g.id, art: &found });
         }
     }
     save(&db);
@@ -558,6 +559,10 @@ mod tests {
         g.art = Art { portrait: Some("old.jpg".into()), hero: None, logo: None };
         from_disk(std::slice::from_mut(&mut g));
         assert_eq!(g.art, Art::default());
+        // But a file of the player's own still shows.
+        g.own_art.logo = Some("logo.png".into());
+        from_disk(std::slice::from_mut(&mut g));
+        assert_eq!(g.art, Art { logo: Some("logo.png".into()), ..Art::default() });
     }
 
     #[test]

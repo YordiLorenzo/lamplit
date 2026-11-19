@@ -121,6 +121,7 @@ pub fn run() {
             commands::library_art_search,
             commands::library_details,
             commands::library_set_art,
+            commands::library_set_own_art,
             commands::library_captures,
             commands::library_programs,
             commands::library_browse,
