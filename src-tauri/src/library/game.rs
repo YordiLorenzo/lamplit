@@ -1,6 +1,7 @@
 // A game as Lamplit shows and launches it.
 
 use crate::stores::Store;
+use crate::system::hdr::Hdr;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -27,6 +28,8 @@ pub struct Game {
     pub manual: bool,
     /// Store apps that must run and be signed in: the game's own, plus any its publisher adds.
     pub requires: Vec<Store>,
+    /// Windows HDR while it runs, from its menu.
+    pub hdr: Hdr,
     #[serde(skip)]
     pub steam_appid: Option<u32>,
     /// Minutes played as the store counts them, play outside Lamplit included; 0 for a store that keeps no count.
@@ -83,6 +86,7 @@ impl Game {
             art_choice: None,
             manual: false,
             requires: Vec::new(),
+            hdr: Hdr::AsItWas,
             steam_appid: None,
             store_minutes: 0,
             launch,

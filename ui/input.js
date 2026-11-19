@@ -12,7 +12,7 @@ import { showHints, toast } from './hints.js';
 import * as keyboard from './keyboard.js';
 import { backToGame, cancelLaunch, play } from './launch.js';
 import { letGo } from './hold.js';
-import { closeDetails, detailChoice, holdChoice, markGame, move, moveDetails, openDetails, showAllGames } from './library.js';
+import { closeDetails, detailChoice, holdChoice, markGame, move, moveDetails, openDetails, showAllGames, stepHdrChoice } from './library.js';
 import { counts, narrowed, nothingSeen, padInUse } from './logic.js';
 import { wake } from './screensaver/index.js';
 import { closeNews } from './news.js';
@@ -96,6 +96,7 @@ export function act(action, source) {
   if (state.mode === 'details') {
     if (action === 'back' || action === 'menu') closeDetails();
     else if (action === 'up' || action === 'down') moveDetails(action === 'up' ? -1 : 1);
+    else if ((action === 'left' || action === 'right') && detailChoice().kind === 'hdr') stepHdrChoice(action === 'left' ? -1 : 1);
     else if (action === 'ok' && detailChoice().kind === 'play') {
       closeDetails();
       play();

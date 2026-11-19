@@ -2,13 +2,13 @@
 // The home screen: the cover row, the hero art, logo and details of the focused game, and its menu, which lifts its
 // cover (lift.js).
 
-import { assetUrl, dockCloseGame, dockState, libraryRemoveGame, librarySetFavourite, librarySetHidden } from './api.js';
+import { assetUrl, displayHdrSupported, dockCloseGame, dockState, libraryRemoveGame, librarySetFavourite, librarySetHdr, librarySetHidden } from './api.js';
 import { readCaptures } from './captures.js';
 import { finishHint, showHints, toast } from './hints.js';
 import { hold, holdRing, letGo } from './hold.js';
 import { backToGame } from './launch.js';
 import { face, lift, lower, settle, showSheet } from './lift.js';
-import { accentOf, detailChoices, folderParts, lightOf, metaParts, narrowed, playTimeText, playedText, rowOf, storeWarning, words } from './logic.js';
+import { accentOf, detailChoices, folderParts, lightOf, metaParts, narrowed, playTimeText, playedText, rowOf, stepHdr, storeWarning, words } from './logic.js';
 import { reduced } from './morph.js';
 import { stageChanged } from './veil.js';
 import { sfx } from './sounds.js';
@@ -170,6 +170,7 @@ export function openDetails() {
   readCloser(g.id);
   state.mode = 'details';
   readCaptures();
+  readHdr();
   showSheet('menu');
   lift(g.id, restingCover(), coverLook(g.name, g.art.portrait));
   layout();
@@ -214,7 +215,7 @@ function closeFaces() {
 }
 
 /** The choices of the focused game's menu. */
-const choices = () => detailChoices(focused(), state.running, state.closer, state.captures.items.length > 0);
+const choices = () => detailChoices(focused(), state.running, state.closer, state.captures.items.length > 0, state.hdrScreen);
 
 /**
  * The choices again, as what they offer changed underneath: the game ended, so Close game goes. Focus stays on a
@@ -243,6 +244,15 @@ async function readCloser(id) {
   renderChoices();
 }
 
+/** Whether Lamplit's screen can show HDR, for the menu's HDR row: a screen can come and go while Lamplit runs. */
+async function readHdr() {
+  const shown = await displayHdrSupported().catch(() => false);
+  if (shown === state.hdrScreen) return;
+  const keep = state.mode === 'details' ? detailChoice().kind : undefined;
+  state.hdrScreen = shown;
+  refreshChoices(keep);
+}
+
 /**
  * The choices in the menu, each with its icon, the focused one marked: Play lit, Favourite's star filled when on.
  * One that can't be taken back says what it does, and has a ring that fills while Cross is held on it (hold.js); a
@@ -263,6 +273,11 @@ function renderChoices() {
       row.setAttribute('aria-pressed', String(g.favourite));
     }
     row.append(glyph(c.icon, !!c.hold), labelled(c.label, c.note));
+    // A choice with a value steps through its values, as a row in Settings does.
+    if (c.value) {
+      row.classList.add('adjust');
+      row.append(Object.assign(document.createElement('span'), { className: 'value', textContent: c.value }));
+    }
     return row;
   });
   els.dChoices.replaceChildren(...rows);
@@ -307,6 +322,33 @@ export function moveDetails(delta) {
   showHints();
 }
 
+/** ← and → on HDR step through its choices. @param {number} dir */
+export async function stepHdrChoice(dir) {
+  const g = focused();
+  try {
+    await setHdr(g, stepHdr(g.hdr, dir));
+  } catch (e) {
+    toast(e.message, { game: g, warn: true });
+  }
+}
+
+/** A held ← or → repeats: presses wait for Rust's answer, so each steps from the choice saved before it. */
+let hdrBusy = false;
+
+/** @param {Shown} g @param {import('./api.js').Hdr} next */
+async function setHdr(g, next) {
+  if (hdrBusy) return;
+  if (next === g.hdr) return sfx.edge();
+  hdrBusy = true;
+  sfx.move();
+  try {
+    setGames(await librarySetHdr(g.id, next));
+    if (state.mode === 'details') renderChoices();
+  } finally {
+    hdrBusy = false;
+  }
+}
+
 /** Cross held on a choice that can't be taken back: it happens once the ring round its icon is full. */
 export function holdChoice() {
   sfx.move();
@@ -318,8 +360,8 @@ export function holdChoice() {
 }
 
 /**
- * The menu's choices other than Play, About and Change art: the focused game in or out of the favourites, hidden, closed
- * while it runs, or, for a game added by hand, removed. The last two come once Cross has been held (holdChoice), on
+ * The menu's choices other than Play, About and Change art: the focused game in or out of the favourites, its HDR
+ * stepped to the next choice, hidden, closed while it runs, or, for a game added by hand, removed. The last two come once Cross has been held (holdChoice), on
  * the game and choice the hold began on.
  * @param {{ g?: Shown, kind?: import('./logic.js').DetailChoice['kind'], closer?: import('./api.js').DockGame | null }} [target]
  */
@@ -337,6 +379,8 @@ export async function markGame({ g = focused(), kind = detailChoice().kind, clos
       // The row moves around the game, and focus stays on it.
       setGames(await librarySetFavourite(g.id, !g.favourite));
       renderChoices();
+    } else if (kind === 'hdr') {
+      await setHdr(g, stepHdr(g.hdr, 1, true));
     } else {
       const at = state.idx;
       closeDetails(true);

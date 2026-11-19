@@ -1,6 +1,6 @@
 // The same ordered restoration for Settings and the uninstaller. Failed steps keep their originals on disk.
 
-use super::{quiet, startup};
+use super::{hdr, quiet, startup};
 use crate::error::Result;
 use crate::prefs;
 use crate::stores::steam::devtools;
@@ -37,6 +37,7 @@ pub fn run(allow_prompt: bool, stop_steam: impl FnOnce() -> Result<bool>, mut re
     };
     let stopped = stop_steam();
     tell("Quiet mode", quiet::restore());
+    tell("HDR", hdr::restore());
     match stopped {
         Ok(opened_port) => match devtools::begin_restore(opened_port) {
             Ok(()) => {

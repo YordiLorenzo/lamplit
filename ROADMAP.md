@@ -8,6 +8,9 @@ undo from the controller, no dialog that needs a mouse, and a TV that is set up 
 
 ## Done
 
+0.6.0 (not released yet) brings HDR per game: on, off or as it was, set in the game's menu, and back to how it was
+when the game closes.
+
 0.5.1 (2026-11-17) brought games that start from a script: Add a game takes a .bat or .cmd file as well as
 an exe. Lamplit also finds each game in a folder that sorts games, such as `Games\PC`, and a DualSense Edge's back
 and Fn buttons can each act as a button in Lamplit.
@@ -46,7 +49,6 @@ Battle.net, the Amazon Games app and itch.io.
 - **Play on TV.** Choose the TV once. Lamplit moves itself and the sound there, switches the desk monitors off if you
   like, and puts the desk back when you leave. Each change asks "Keep this?" and undoes itself after 15 seconds
   without an answer.
-- **HDR per game:** on, off or as it was, and back to how it was when the game closes.
 - **Resolution and refresh rate per game,** chosen from what the TV offers.
 - **Sound by name.** Call outputs "TV" or "Headphones", keep your choice when a device comes and goes, and set the
   game and a voice chat apart in the dock.

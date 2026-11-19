@@ -1,10 +1,11 @@
 // What the player keeps per game, in games.json in the data folder: favourites, hidden games, when each game was
-// last played, how long Lamplit has seen it run, the art the player chose, and the games they added by hand. Kept by
-// game id, so it outlives an uninstall and is there again after a reinstall.
+// last played, how long Lamplit has seen it run, the art the player chose, HDR while it runs, and the games they added
+// by hand. Kept by game id, so it outlives an uninstall and is there again after a reinstall.
 
 use super::{ArtChoice, Game, manual};
 use crate::data;
 use crate::error::Result;
+use crate::system::hdr::Hdr;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -27,6 +28,9 @@ pub struct Entry {
     /// None: Lamplit's own match.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub art: Option<ArtChoice>,
+    /// As it was: Lamplit leaves HDR alone.
+    #[serde(skip_serializing_if = "is_as_it_was")]
+    pub hdr: Hdr,
     /// The game's name and exe, for a game the player added by hand.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub manual: Option<manual::Manual>,
@@ -81,6 +85,11 @@ impl UserData {
     }
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's skip_serializing_if passes a reference
+fn is_as_it_was(hdr: &Hdr) -> bool {
+    *hdr == Hdr::AsItWas
+}
+
 /// games.json's entries, with 0.1.0's last-played times where they are later.
 fn merged(mut entries: BTreeMap<String, Entry>, played: HashMap<String, u64>) -> BTreeMap<String, Entry> {
     for (id, at) in played {
@@ -98,6 +107,7 @@ pub fn apply(g: &mut Game, entry: &Entry) {
     g.favourite = entry.favourite;
     g.hidden = entry.hidden;
     g.art_choice = entry.art;
+    g.hdr = entry.hdr;
     g.manual = entry.manual.is_some();
 }
 
@@ -167,5 +177,18 @@ mod tests {
         assert_eq!((game.art_choice, game.manual), (Some(ArtChoice::None), false));
         apply(&mut game, &entries["manual:d:\\old\\old.exe"]);
         assert_eq!((game.art_choice, game.manual), (None, true));
+    }
+
+    #[test]
+    fn keeps_the_hdr_choice() {
+        let entry = Entry { hdr: Hdr::On, ..Entry::default() };
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json["hdr"], "on");
+        assert_eq!(serde_json::from_value::<Entry>(json).unwrap(), entry);
+        let mut game = Game::new("gog:1".into(), "G".into(), None, PathBuf::new(), Launch::Uri(String::new()));
+        apply(&mut game, &entry);
+        assert_eq!(game.hdr, Hdr::On);
+        // As it was, the default, isn't written.
+        assert!(serde_json::to_value(Entry::default()).unwrap().get("hdr").is_none());
     }
 }

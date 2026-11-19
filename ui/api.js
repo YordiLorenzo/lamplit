@@ -28,6 +28,11 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  */
 
 /**
+ * Windows HDR while a game runs, from its menu: left as it is, on, or off, and back to how it was when it closes.
+ * @typedef {'as_it_was' | 'on' | 'off'} Hdr
+ */
+
+/**
  * @typedef {object} Game
  * @property {string} id
  * @property {string} name
@@ -42,6 +47,7 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {ArtChoice | null} art_choice  null: Lamplit's own match
  * @property {boolean} manual  added by hand, so it can be removed again
  * @property {StoreKey[]} requires  store apps that must run and be signed in for the game
+ * @property {Hdr} hdr  Windows HDR while it runs
  */
 
 /**
@@ -306,6 +312,10 @@ export const libraryRescan = () => call('library_rescan');
 export const librarySetFavourite = (id, on) => call('library_set_favourite', { id, on });
 /** @param {string} id @param {boolean} on @returns {Promise<Game[]>} every game, with the change */
 export const librarySetHidden = (id, on) => call('library_set_hidden', { id, on });
+/** @param {string} id @param {Hdr} choice @returns {Promise<Game[]>} every game, with the change */
+export const librarySetHdr = (id, choice) => call('library_set_hdr', { id, choice });
+/** Whether the screen Lamplit is on can show HDR. @returns {Promise<boolean>} */
+export const displayHdrSupported = () => call('display_hdr_supported');
 /** What Steam's store has for `query`. @param {string} query @returns {Promise<ArtCandidate[]>} */
 export const libraryArtSearch = (query) => call('library_art_search', { query });
 /** @param {string} id @returns {Promise<Capture[]>} newest first, with asset URLs ready to display */
