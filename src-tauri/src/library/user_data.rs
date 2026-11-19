@@ -178,4 +178,17 @@ mod tests {
         apply(&mut game, &entries["manual:d:\\old\\old.exe"]);
         assert_eq!((game.art_choice, game.manual), (None, true));
     }
+
+    #[test]
+    fn keeps_the_hdr_choice() {
+        let entry = Entry { hdr: Hdr::On, ..Entry::default() };
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json["hdr"], "on");
+        assert_eq!(serde_json::from_value::<Entry>(json).unwrap(), entry);
+        let mut game = Game::new("gog:1".into(), "G".into(), None, PathBuf::new(), Launch::Uri(String::new()));
+        apply(&mut game, &entry);
+        assert_eq!(game.hdr, Hdr::On);
+        // As it was, the default, isn't written.
+        assert!(serde_json::to_value(Entry::default()).unwrap().get("hdr").is_none());
+    }
 }
