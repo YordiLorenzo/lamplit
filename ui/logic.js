@@ -189,22 +189,24 @@ export function byPlayed(a, b) {
 /**
  * A choice in a game's menu. `hold`: it can't be taken back, so Cross is held for it, as the hint says; `note` says
  * beforehand what it does.
- * @typedef {{ kind: 'play' | 'about' | 'favourite' | 'art' | 'captures' | 'hide' | 'close' | 'remove', label: string, icon: import('./icons.js').IconId,
- *   hold?: string, note?: string }} DetailChoice
+ * @typedef {{ kind: 'play' | 'about' | 'favourite' | 'art' | 'captures' | 'hdr' | 'hide' | 'close' | 'remove', label: string, icon: import('./icons.js').IconId,
+ *   hold?: string, note?: string, value?: string }} DetailChoice
  */
 
 /**
  * The choices in a game's menu, in order, each with its icon. Favourite is one row that switches, its star filled
  * while the game is one. Hiding can be undone in Settings, so one press does it. While the game runs, and Lamplit knows
  * which programs are its own (`closer`, the dock's reading of it), Close game asks it to close, or Force close ends a
- * game that stopped responding. A game added by hand can be removed again. Both are held.
+ * game that stopped responding. A game added by hand can be removed again. Both are held. HDR, on a screen that can
+ * show it, shows the game's choice and steps to the next.
  * @param {Game} g
  * @param {string | null} running  the id of the game that runs
  * @param {{ id: string, closable: boolean, force_close: boolean } | null} [closer]
  * @param {boolean} [captures] the game has screenshots on the PC
+ * @param {boolean} [hdr] Lamplit's screen can show HDR
  * @returns {DetailChoice[]}
  */
-export function detailChoices(g, running, closer = null, captures = false) {
+export function detailChoices(g, running, closer = null, captures = false, hdr = false) {
   /** @type {DetailChoice[]} */
   const choices = [
     { kind: 'play', label: running === g.id ? 'Back to game' : 'Play', icon: 'i-play' },
@@ -214,6 +216,7 @@ export function detailChoices(g, running, closer = null, captures = false) {
     { kind: 'hide', label: 'Hide this game', icon: 'i-eye-off' },
   ];
   if (captures) choices.splice(4, 0, { kind: 'captures', label: 'Your captures', icon: 'i-camera' });
+  if (hdr) choices.splice(choices.length - 1, 0, { kind: 'hdr', label: 'HDR', icon: 'i-hdr', value: HDR_CHOICES[g.hdr], note: HDR_NOTES[g.hdr] });
   if (running === g.id && closer?.id === g.id && closer.closable) {
     choices.push(
       closer.force_close
@@ -223,6 +226,21 @@ export function detailChoices(g, running, closer = null, captures = false) {
   }
   if (g.manual) choices.push({ kind: 'remove', label: 'Remove from Lamplit', icon: 'i-remove', hold: 'Hold to remove', note: 'Lamplit forgets it. The files stay.' });
   return choices;
+}
+
+/** @type {Record<import('./api.js').Hdr, string>} */
+const HDR_CHOICES = { as_it_was: 'As it was', on: 'On', off: 'Off' };
+/** @type {Record<import('./api.js').Hdr, string>} */
+const HDR_NOTES = { as_it_was: 'Lamplit leaves it as it is', on: 'On while it runs, then as before', off: 'Off while it runs, then as before' };
+
+/**
+ * The HDR choice ← or → steps to; ✕ steps forward and goes round (`wrap`).
+ * @param {import('./api.js').Hdr} choice @param {number} dir @param {boolean} [wrap]
+ */
+export function stepHdr(choice, dir, wrap = false) {
+  const choices = /** @type {import('./api.js').Hdr[]} */ (Object.keys(HDR_CHOICES));
+  const next = choices.indexOf(choice) + dir;
+  return wrap ? choices[(next + choices.length) % choices.length] : choices[Math.max(0, Math.min(choices.length - 1, next))];
 }
 
 /**

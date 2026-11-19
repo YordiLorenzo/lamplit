@@ -56,6 +56,7 @@ windows = { version = "0.62", features = [
   "UI_Composition_Desktop",
   "Win32_Foundation",
   "Win32_Devices_Bluetooth",
+  "Win32_Devices_Display",
   "Win32_Globalization",
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",

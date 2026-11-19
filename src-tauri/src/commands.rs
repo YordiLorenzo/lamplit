@@ -16,7 +16,7 @@ use crate::prefs::{self, Prefs};
 use crate::report;
 use crate::stores::steam::devtools;
 use crate::stores::{self, Store};
-use crate::system::{overlay, power, quiet, restore, setup, startup};
+use crate::system::{hdr, overlay, power, quiet, restore, setup, startup};
 use crate::updates::{self, Updates};
 use crate::win;
 use tauri::{AppHandle, Manager, State};
@@ -56,6 +56,19 @@ pub async fn library_set_favourite(app: AppHandle, id: String, on: bool) -> Resu
 #[tauri::command]
 pub async fn library_set_hidden(app: AppHandle, id: String, on: bool) -> Result<Vec<Game>> {
     blocking(move || library::set_hidden(&app, &id, on)).await?
+}
+
+/// Windows HDR while the game runs: `as_it_was`, `on` or `off`. Returns every game, with the change.
+#[tauri::command]
+pub async fn library_set_hdr(app: AppHandle, id: String, choice: String) -> Result<Vec<Game>> {
+    let choice = hdr::Hdr::parse(&choice)?;
+    blocking(move || library::set_hdr(&app, &id, choice)).await?
+}
+
+/// Whether the screen Lamplit is on can show HDR, for a game's menu.
+#[tauri::command]
+pub async fn display_hdr_supported() -> Result<bool> {
+    blocking(hdr::supported).await
 }
 
 /// What Steam's store has for `query`, for Change art. Goes online.

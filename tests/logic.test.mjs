@@ -36,6 +36,7 @@ import {
   stepAutoOff,
   stepInterfaceSounds,
   stepTrailers,
+  stepHdr,
   stepEdgeTarget,
   letterbox,
   trailerZoom,
@@ -241,6 +242,21 @@ describe('detailChoices', () => {
       assert.ok(!detailChoices(g, running, c).some((x) => x.kind === 'close'), JSON.stringify([running, c]));
     }
     assert.equal(detailChoices(g, null).find((x) => x.kind === 'hide').hold, undefined);
+  });
+  test('HDR comes before hiding, on a screen that can show it, with the game\'s choice as its value', () => {
+    const g = game('a', 'A', { manual: true });
+    assert.ok(!detailChoices(g, null).some((c) => c.kind === 'hdr'));
+    const list = detailChoices(g, 'a', { id: 'a', closable: true, force_close: false }, true, true);
+    assert.deepEqual(list.map((c) => c.kind), ['play', 'about', 'favourite', 'art', 'captures', 'hdr', 'hide', 'close', 'remove']);
+    const row = (hdr) => detailChoices(game('a', 'A', { hdr }), null, null, false, true).find((c) => c.kind === 'hdr');
+    assert.deepEqual(row('as_it_was'), { kind: 'hdr', label: 'HDR', icon: 'i-hdr', value: 'As it was', note: 'Lamplit leaves it as it is' });
+    assert.deepEqual(values.hdr.map((h) => row(h).value), ['As it was', 'On', 'Off']);
+    assert.deepEqual(values.hdr.map((h) => row(h).note), ['Lamplit leaves it as it is', 'On while it runs, then as before', 'Off while it runs, then as before']);
+  });
+  test('← and → step through the HDR choices and stop at the ends; ✕ goes round', () => {
+    assert.deepEqual(values.hdr.map((h) => stepHdr(h, 1)), ['on', 'off', 'off']);
+    assert.deepEqual(values.hdr.map((h) => stepHdr(h, -1)), ['as_it_was', 'as_it_was', 'on']);
+    assert.deepEqual(values.hdr.map((h) => stepHdr(h, 1, true)), ['on', 'off', 'as_it_was']);
   });
 });
 

@@ -19,6 +19,8 @@ pub use user_data::UserData;
 
 use crate::error::{Error, Result};
 use crate::events::{self, Event};
+use crate::launch::Launcher;
+use crate::system::hdr::{self, Hdr};
 use crate::{prefs, stores};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -213,6 +215,20 @@ pub fn set_favourite(app: &AppHandle, id: &str, on: bool) -> Result<Vec<Game>> {
 pub fn set_hidden(app: &AppHandle, id: &str, on: bool) -> Result<Vec<Game>> {
     change(app, id, |e| e.hidden = on)?;
     log::info!("{id}: {}", if on { "hidden" } else { "shown again" });
+    Ok(all(app))
+}
+
+/// Windows HDR for a game while it runs, from its menu: on, off or as it was. A game that runs now gets it at once.
+/// Returns every game.
+pub fn set_hdr(app: &AppHandle, id: &str, choice: Hdr) -> Result<Vec<Game>> {
+    change(app, id, |e| e.hdr = choice)?;
+    log::info!("{id}: HDR {choice:?}");
+    if app.state::<Launcher>().running_id().as_deref() == Some(id) {
+        // The choice is saved either way, and the next start tries again.
+        if let Err(e) = hdr::apply(id, choice) {
+            log::warn!("{id}: Windows didn't switch HDR: {e}");
+        }
+    }
     Ok(all(app))
 }
 

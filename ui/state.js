@@ -141,6 +141,8 @@ export const state = {
   /** ✕ was pressed once on Remove from Lamplit */
   /** @type {import('./api.js').DockGame | null} the running game as the dock reads it, for the game menu's Close game */
   closer: null,
+  /** Lamplit's screen can show HDR, as last read when a game's menu opened: the menu then has HDR */
+  hdrScreen: false,
   /** @type {string | null} the game whose cover is lifted (lift.js); its cover in the row hides meanwhile */
   lifted: null,
   captures: {

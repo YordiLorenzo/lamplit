@@ -16,6 +16,7 @@
     },
     "art_choice": null,
     "manual": false,
-    "requires": ["steam", "ea"]
+    "requires": ["steam", "ea"],
+    "hdr": "as_it_was"
   }
 ]

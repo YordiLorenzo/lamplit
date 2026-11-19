@@ -1346,6 +1346,63 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }])
   await close(page);
 }
 
+// 20b. HDR for a game, from its menu, on a screen that can show HDR: ✕ steps through As it was, On and Off and goes
+// round, ← and → step and stop at the ends, and each change goes to Rust at once.
+{
+  const games = [game(1), game(2)];
+  const page = await open({ games });
+  const menu = () =>
+    page.evaluate(() => ({
+      kinds: [...document.querySelectorAll('#dChoices .row .label')].map((l) => l.firstChild?.textContent),
+      focus: document.querySelector('#dChoices .row.focus .label')?.firstChild?.textContent ?? null,
+      value: document.querySelector('#dChoices .row.focus .value')?.textContent ?? null,
+      note: document.querySelector('#dChoices .row.focus .note')?.textContent ?? null,
+    }));
+  await page.keyboard.press('i');
+  await idle(page);
+  let m = await menu();
+  check('a screen that can\'t show HDR has no HDR in the menu', !m.kinds.includes('HDR'), JSON.stringify(m.kinds));
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => {
+    window.__settings = { display_hdr_supported: true };
+  });
+  await page.keyboard.press('i');
+  await idle(page);
+  m = await menu();
+  check('HDR comes before Hide this game', JSON.stringify(m.kinds) === '["Play","About this game","Favourite","Change art","HDR","Hide this game"]', JSON.stringify(m.kinds));
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
+  m = await menu();
+  let s = await state(page);
+  check('HDR shows the game\'s choice and says what it does', m.focus === 'HDR' && m.value === 'As it was' && m.note === 'Lamplit leaves it as it is' && s.hint.includes('✕Change'), `${JSON.stringify(m)} ${s.hint}`);
+  await page.keyboard.press('Enter');
+  await idle(page);
+  m = await menu();
+  s = await state(page);
+  check('✕ on HDR asks Rust for On, and focus stays on it', JSON.stringify(s.lastCall) === '["library_set_hdr",{"id":"pc:1","choice":"on"}]' && m.focus === 'HDR' && m.value === 'On' && m.note === 'On while it runs, then as before', `${JSON.stringify(s.lastCall)} ${JSON.stringify(m)}`);
+  await page.keyboard.press('ArrowRight');
+  await idle(page);
+  m = await menu();
+  s = await state(page);
+  check('→ steps to Off', JSON.stringify(s.lastCall) === '["library_set_hdr",{"id":"pc:1","choice":"off"}]' && m.value === 'Off', `${JSON.stringify(s.lastCall)} ${m.value}`);
+  const calls = s.calls.length;
+  await page.keyboard.press('ArrowRight');
+  await idle(page);
+  s = await state(page);
+  check('→ at the end asks nothing', s.calls.length === calls, JSON.stringify(s.calls.slice(calls)));
+  await page.keyboard.press('Enter');
+  await idle(page);
+  m = await menu();
+  s = await state(page);
+  check('✕ on Off goes round to As it was', JSON.stringify(s.lastCall) === '["library_set_hdr",{"id":"pc:1","choice":"as_it_was"}]' && m.value === 'As it was', `${JSON.stringify(s.lastCall)} ${m.value}`);
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowRight');
+  await idle(page);
+  s = await state(page);
+  check('→ on another choice changes nothing', s.lastCall[0] !== 'library_set_hdr' || JSON.stringify(s.lastCall) === '["library_set_hdr",{"id":"pc:1","choice":"as_it_was"}]', JSON.stringify(s.lastCall));
+  check('no page errors', s.errors.length === 0, JSON.stringify(s.errors));
+  await close(page);
+}
+
 // 21. Settings > Power: Sleep at one press; Restart and Shut down once Cross is held, which they say before the press,
 // naming a running game that will close. Let go early, nothing happens; a held key's repeat, a mirrored Enter and a
 // click on the cover don't finish a hold.

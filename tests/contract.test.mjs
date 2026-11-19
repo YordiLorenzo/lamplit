@@ -55,6 +55,7 @@ test("the page's types allow exactly the values Rust sends", () => {
     update_phase: 'Update.phase',
     edge_button: 'EdgeButton',
     edge_target: 'EdgeTarget',
+    hdr: 'Hdr',
   };
   for (const [kind, type] of Object.entries(types)) assert.deepEqual(sorted(pageValues(type)), sorted(values[kind]), type);
 });

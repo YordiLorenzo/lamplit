@@ -1,6 +1,7 @@
 // What happens between pressing Play and the game: every store app the game needs is started and signed in
-// (or the player is asked to sign in, and Lamplit carries on once they have), a pending update is announced, then
-// the game opens and watch.rs watches it. Each step is a line on Lamplit's starting screen.
+// (or the player is asked to sign in, and Lamplit carries on once they have), a pending update is announced, HDR is
+// switched as the game's menu says, then the game opens and watch.rs watches it. Each step is a line on Lamplit's
+// starting screen. Once Lamplit stops watching the game, HDR goes back to how it was.
 
 mod handover;
 mod session;
@@ -15,6 +16,7 @@ use crate::files::is_script;
 use crate::library::{Game, Launch};
 use crate::prefs;
 use crate::stores::{self, Account, Processes, Store, steam};
+use crate::system::hdr;
 use crate::win::{
     self,
     process::{Held, keep_awake},
@@ -159,6 +161,11 @@ pub fn start(app: &AppHandle, game: Game) {
                 events::emit(&app, Event::Play(Play::Failed { id: &game.id, message: &message }));
             }
         }
+        // The game has closed, or Lamplit no longer waits for it. When another game was started meanwhile, HDR is that
+        // game's now, and stays.
+        if let Err(e) = hdr::put_back(&game.id) {
+            log::warn!("{}: Windows didn't put HDR back: {e}", game.name);
+        }
         keep_awake(false);
         app.state::<Launcher>().active.fetch_sub(1, Ordering::SeqCst);
     });
@@ -179,8 +186,26 @@ fn prepare(app: &AppHandle, game: &Game, generation: u64) -> Result<Option<Held>
     if !app.state::<Launcher>().is_current(generation) {
         return Err(Stop::Cancelled);
     }
+    switch_hdr(app, game);
     step(app, &game.id, "game", StepState::Busy, &format!("Starting {}", game.name), None);
     Ok(open_game(game)?)
+}
+
+/// HDR on or off as the game's menu says, before the game opens: games look at it as they start. A game that can't
+/// have it starts anyway.
+fn switch_hdr(app: &AppHandle, game: &Game) {
+    let Some(on) = game.hdr.wanted() else { return };
+    let label = if on { "HDR on" } else { "HDR off" };
+    let line = |state, label: &str| step(app, &game.id, "hdr", state, label, None);
+    line(StepState::Busy, &format!("{label}…"));
+    match hdr::apply(&game.id, game.hdr) {
+        Ok(false) if on => line(StepState::Warn, "This screen can't show HDR"),
+        Ok(_) => line(StepState::Ok, label),
+        Err(e) => {
+            log::warn!("{}: Windows didn't switch HDR: {e}", game.name);
+            line(StepState::Warn, &format!("Windows didn't switch {label}"));
+        }
+    }
 }
 
 fn update_text(u: &steam::Update) -> String {

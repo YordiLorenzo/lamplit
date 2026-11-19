@@ -52,9 +52,10 @@ export function showHints() {
       : b('ok', 'Select') + b('square', 'Edit search') + b('back', 'Back');
   } else if (state.mode === 'details') {
     // The choice in focus, or the last one when the one in focus went (a game that ended takes Close game with it).
-    const list = detailChoices(g, state.running, state.closer, state.captures.items.length > 0);
+    const list = detailChoices(g, state.running, state.closer, state.captures.items.length > 0, state.hdrScreen);
     const choice = list[Math.min(state.detailsIdx, list.length - 1)];
-    html = b('ok', choice.kind === 'play' ? choice.label : (choice.hold ?? 'Select')) + b('back', 'Close');
+    const ok = choice.kind === 'play' ? choice.label : choice.kind === 'hdr' ? 'Change' : (choice.hold ?? 'Select');
+    html = b('ok', ok) + b('back', 'Close');
   } else if (state.mode === 'add' && state.add.view === 'name') {
     html = b('ok', 'Select') + b('square', 'Delete') + b('triangle', 'Space') + b('back', 'Back');
   } else if (state.mode === 'add') {

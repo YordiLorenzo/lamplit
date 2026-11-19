@@ -64,6 +64,11 @@ const fakeTauri = ({ games, running = null, launchError = null, earlyGames = nul
       window.__emit('interface-sounds', level);
       return window.__prefs;
     },
+    display_hdr_supported: false,
+    library_set_hdr: ({ id, choice }) => {
+      if (!values.hdr.includes(choice)) throw { kind: 'player', message: 'Choose As it was, On or Off for HDR.' };
+      return ${JSON.stringify(games)}.map((g) => (g.id === id ? { ...g, hdr: choice } : g));
+    },
     prefs_set_trailers: ({ level }) => {
       if (!['off', 'muted', 'with_sound'].includes(level)) throw { kind: 'player', message: 'Choose Off, Muted or With sound for trailers.' };
       window.__prefs.trailers = level;
