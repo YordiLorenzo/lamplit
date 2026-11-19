@@ -187,6 +187,14 @@ not running, Ubisoft Connect open) is made within 10 seconds of becoming possibl
 
 NVIDIA's overlay notifications aren't covered; switch those off in NVIDIA's overlay itself.
 
+## HDR for a game (when you set it in the game's menu)
+
+When a game's **HDR** is On or Off, Lamplit switches Windows HDR (**Settings > System > Display > Use HDR**) on the
+screen Lamplit is on before the game opens, with the same Windows display call that Settings uses. It writes what
+HDR was before, and the screen, to `hdr-saved.json` first, and puts HDR back once the game closes, or once Lamplit
+stops waiting for a game that didn't start. When you switch HDR in Windows while the game runs, Lamplit leaves it as
+you set it. With **As it was**, the default, Lamplit doesn't touch HDR.
+
 ## Sound, controllers and the mouse
 
 - While **Sound follows the headset and controller headphones** is on (the default), Lamplit changes Windows' default
@@ -248,7 +256,7 @@ These don't change any setting, but you may notice them:
 
 ## Removing Lamplit
 
-Hold **Settings > System > Restore Lamplit's changes**. Its report shows quiet mode, Steam's Guide setting,
+Hold **Settings > System > Restore Lamplit's changes**. Its report shows quiet mode, HDR, Steam's Guide setting,
 Steam's DevTools flag, and the sign-in task one by one. It turns quiet mode and Lamplit's two automatic Steam prefs
 off, so the changes stay restored while Lamplit runs. If Lamplit saved a pre-existing DevTools flag, it puts that
 file back; Steam will still open its port as before. Restart Steam to apply any flag change.

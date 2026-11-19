@@ -49,7 +49,7 @@ while you play. When the game closes, Lamplit is back on screen.
 - **Favourites first, then last played,** then by name, so the game you're in the middle of is near the front.
 - **A game's menu.** Options lifts the focused game's cover toward you and blurs the rest of the screen. Beside the
   cover are the game's store, when it was last played, its play time and folder, and its choices: Play, About this
-  game, favourites, Change art, Your captures and Hide this game.
+  game, favourites, Change art, Your captures, HDR and Hide this game.
 - **Trailers.** Stay on a cover for a few seconds and the game's trailer from Steam plays behind it, muted. Any
   button stops it. **Settings > Sound > Trailers** turns the sound on, or trailers off.
 - **About this game,** in a game's menu: Steam's description, the developers and publisher, the release date, genres
@@ -57,6 +57,8 @@ while you play. When the game closes, Lamplit is back on screen.
   online**.
 - **Your captures,** in a game's menu when you have screenshots of the game: the ones Steam, Game Bar and NVIDIA
   saved, newest first. Cross shows one full screen, and Left and Right move through them.
+- **HDR per game.** On a screen that can show HDR, a game's menu has **HDR**: As it was (the default), On or Off.
+  Lamplit switches Windows HDR before the game opens and puts it back to how it was when the game closes.
 - **Favourites and hidden games.** In a game's menu (Options), add it to your favourites to keep it at the front,
   or hide something Lamplit found that isn't a game. **Settings > Hidden games** shows a hidden game again.
 - **Play time** for each game, on the home screen and in its details. For a Steam game it is Steam's own count, which
@@ -409,7 +411,8 @@ it, Cross does what the focused tile says (held, on Close game), and Circle goes
 the name and press
 Enter.
 
-In a game's menu, Up and Down move and Cross picks; Circle or Options closes it. **Remove from Lamplit** asks first:
+In a game's menu, Up and Down move and Cross picks; Circle or Options closes it. On **HDR**, Cross steps to the next
+choice, and Left and Right step too. **Remove from Lamplit** asks first:
 press Cross once more to remove the game. In Change art, the d-pad moves between the covers and the choices below
 them, Cross picks one, Square (X) edits the search, and Circle goes back to the menu.
 
@@ -432,6 +435,7 @@ Change art's covers and Add a game's rows and keys take a click too. A click bes
 | The file `.cef-enable-remote-debugging` in Steam's folder, and Steam started with `-cef-enable-debugging` | While **Steam's DevTools port** is on (off by default) | Switch it off in Settings > Stores and restart Steam to close the port; restore changes or uninstall puts back the flag's saved original state |
 | Steam's **Guide Button Focuses Steam** turned off | While **Keep the Guide button for Lamplit** is on (the default) and Steam's DevTools port is open | Restore changes or uninstall; for changes from before 0.4, check Steam > Settings > Controller yourself |
 | Windows' default sound output and microphone | When chosen in Settings, or when the headset or controller headphones come and go (**Sound follows**, on by default) | Switch **Sound follows** off to stop automatic changes, then choose the devices you want in Settings > Sound |
+| Windows HDR (**Use HDR**) on the screen Lamplit is on | While a game whose menu sets **HDR** to On or Off runs | It goes back to how it was when the game closes; restore changes or uninstall puts it back too |
 | Mouse input from the DualSense touchpad | While **Touchpad as mouse** is on (off by default) | Switch it off in Settings > Controllers |
 | Prefs, favourites, hidden games, play time, the art you chose, the games you added, saved originals, logs and art in `%LOCALAPPDATA%\lamplit` | Always; JSON files keep a previous good `.bak` copy, and a damaged file is kept as `.damaged` | Tick **Delete the application data** when you uninstall; pending restoration keeps these files |
 | A plain-text report in Downloads | When you preview and save it in Settings > System | Delete the report when you no longer need it |

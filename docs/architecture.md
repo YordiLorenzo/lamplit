@@ -27,7 +27,7 @@ src-tauri/
     launch/          starting a game, watching it, handing the screen over to it, and Lamplit's own window
     dock/            the in-game dock: its window over a game, the news it shows, closing the game
     devices/         controllers (pad/), the headset, sound devices, where the sound goes
-    system/          quiet mode, NVIDIA's overlay, sign-in task, repair, restore, sleep, restart and shut down
+    system/          HDR, quiet mode, NVIDIA's overlay, sign-in task, repair, restore, sleep, restart and shut down
     win/             the calls into Windows, and the only place unsafe code is allowed
   capabilities/default.json   what the page may call
   capabilities/dock.json      the same for the in-game dock's page
@@ -117,11 +117,12 @@ Lamplit brings the first one's window forward and exits. Task Scheduler only res
 one that crashes later, which is why the supervisor exists.
 
 Lamplit keeps its files in the data folder, `%LOCALAPPDATA%\lamplit`: `prefs.json`, `games.json` (per game id:
-favourite, hidden, when it was last played, how long Lamplit saw it run, the art the player chose, and for a game
-added by hand its name and exe, or that it was removed again, which keeps it off the row when a scan finds its exe
-outside any store; 0.1.0's `played.json` is still read for the last-played times), `art.json` and
+favourite, hidden, when it was last played, how long Lamplit saw it run, the art the player chose, its HDR choice,
+and for a game added by hand its name and exe, or that it was removed again, which keeps it off the row when a scan
+finds its exe outside any store; 0.1.0's `played.json` is still read for the last-played times), `art.json` and
 `art\<steam appid>\` (art lookups and downloads), `details\<steam appid>.json` (Steam details and their fetch time),
 `art\<steam appid>\screens\` (screenshots and trailer posters), `quiet-saved.json` (the settings quiet mode replaced),
+`hdr-saved.json` (Windows HDR as it was before a game's HDR choice switched it, until it is back),
 `steam-saved.json` (Steam's Guide setting and DevTools flag originals, plus a pending restore), and
 `sound-return.json` (separate output and microphone return endpoints and the last default each was routed
 through), plus the logs. Old `setup.json` files no longer determine startup state. WebView2 keeps its profile in

@@ -4,6 +4,19 @@ Every release of Lamplit, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.6.0 - Unreleased
+
+### Highlights
+
+- HDR per game: on, off or as it was, and back when the game closes.
+
+### Added
+
+- **HDR** in a game's menu, on a screen that can show HDR: As it was (the default), On or Off. Cross steps to the
+  next choice, and Left and Right step too. Lamplit switches Windows HDR before the game opens, which the starting
+  screen shows, and puts it back to how it was when the game closes. When you switch HDR in Windows while the game
+  runs, Lamplit leaves it as you set it. A change while the game runs applies at once.
+
 ## 0.5.1 - 2026-11-17
 
 ### Highlights
