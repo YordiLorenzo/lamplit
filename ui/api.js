@@ -27,6 +27,18 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @typedef {{ steam: number } | 'none'} ArtChoice
  */
 
+/** A kind of art the player can give a game from a file. @typedef {'portrait' | 'hero' | 'logo' | 'trailer'} ArtKind */
+
+/**
+ * The player's own files for a game, copied into Lamplit's data folder: local paths. Each shows in place of the art
+ * of its kind, so `art` has the pictures already; the trailer plays in place of Steam's.
+ * @typedef {object} OwnArt
+ * @property {string | null} portrait
+ * @property {string | null} hero
+ * @property {string | null} logo
+ * @property {string | null} trailer
+ */
+
 /**
  * @typedef {object} Game
  * @property {string} id
@@ -40,6 +52,7 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  * @property {boolean} hidden  left out of the row; Settings lists it
  * @property {Art} art
  * @property {ArtChoice | null} art_choice  null: Lamplit's own match
+ * @property {OwnArt} own_art
  * @property {boolean} manual  added by hand, so it can be removed again
  * @property {StoreKey[]} requires  store apps that must run and be signed in for the game
  */
@@ -74,18 +87,18 @@ const tauri = /** @type {any} */ (window).__TAURI__;
  */
 
 /**
- * A folder of the PC, for Add a game. With no path, it lists the drives.
+ * A folder of the PC, for Add a game or Change art. With no path, it lists the drives.
  * @typedef {object} Folder
  * @property {string | null} path
  * @property {string | null} parent  null at a drive's root: back goes to the drives
- * @property {FolderEntry[]} entries  folders first, then exes and scripts
+ * @property {FolderEntry[]} entries  folders first, then exes and scripts, or the pictures or videos asked for
  */
 
 /**
  * @typedef {object} FolderEntry
  * @property {string} name
  * @property {string} path
- * @property {'drive' | 'folder' | 'exe' | 'script'} kind  a script is a .bat or .cmd file
+ * @property {'drive' | 'folder' | 'exe' | 'script' | 'picture' | 'video'} kind  a script is a .bat or .cmd file
  * @property {string | null} title  for an exe or a script, the name its game would get
  */
 
@@ -317,10 +330,18 @@ export const libraryDetails = (id) => call('library_details', { id });
  * @param {string} id @param {ArtChoice | null} choice @returns {Promise<Game[]>} every game, with the change
  */
 export const librarySetArt = (id, choice) => call('library_set_art', { id, choice });
+/**
+ * Gives a game a kind of art from a file, which Lamplit copies; null takes the player's file of that kind away.
+ * @param {string} id @param {ArtKind} kind @param {string | null} file @returns {Promise<Game[]>} every game, with the change
+ */
+export const librarySetOwnArt = (id, kind, file) => call('library_set_own_art', { id, kind, file });
 /** @returns {Promise<Program[]>} the installed programs that aren't in the library, A to Z */
 export const libraryPrograms = () => call('library_programs');
-/** @param {string | null} path  null for the drives @returns {Promise<Folder>} */
-export const libraryBrowse = (path) => call('library_browse', { path });
+/**
+ * A folder's exes and scripts, or with `art` the files that can be that kind of art.
+ * @param {string | null} path  null for the drives @param {ArtKind | null} art @returns {Promise<Folder>}
+ */
+export const libraryBrowse = (path, art) => call('library_browse', { path, art });
 /** @param {string} exe @param {string} name @returns {Promise<{ id: string, games: Game[] }>} its id, and every game */
 export const libraryAddGame = (exe, name) => call('library_add_game', { exe, name });
 /** A game added by hand leaves the library. @param {string} id @returns {Promise<Game[]>} every game */

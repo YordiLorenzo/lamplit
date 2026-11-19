@@ -459,6 +459,12 @@ describe('finding a game', () => {
       assert.equal(go(3, 'down'), 4);
       assert.equal(go(6, 'up'), 4);
     });
+    test('a tall box goes down to the first of two lines of short choices', () => {
+      // Change art: a cover 300 high, then a line with one choice off to the side, then a line straight below it.
+      const lines = [box(0, 0, 100, 300), box(80, 320, 200, 40), box(0, 400, 60, 40)];
+      assert.equal(nearest(lines[0], lines, 'down'), 1);
+      assert.equal(nearest(lines[2], lines, 'up'), 1);
+    });
   });
 });
 
@@ -832,7 +838,7 @@ describe('Trailers', () => {
       }
     }
   });
-  test('requires the home screen, both online choices, and an unobscured window in front', () => {
+  test('requires the home screen, both online choices (one for an own trailer), and an unobscured window in front', () => {
     const home = { mode: 'browse', running: null, prefs: ipc('prefs') };
     const view = { front: true, reduced: false, saver: false, dock: false };
     assert.equal(trailerAllowed(home, view), true);
@@ -847,6 +853,11 @@ describe('Trailers', () => {
     assert.equal(trailerAllowed({ ...home, prefs: prefs({ trailers: 'off' }) }, view), false);
     assert.equal(trailerAllowed({ ...home, prefs: prefs({ online_art: false }) }, view), false);
     assert.equal(trailerAllowed({ ...home, prefs: prefs({ trailers: 'with_sound' }) }, view), true);
+    // The player's own trailer is on the PC already: only Trailers Off and the rest above stop it.
+    assert.equal(trailerAllowed({ ...home, prefs: prefs({ online_art: false }) }, view, true), true);
+    assert.equal(trailerAllowed({ ...home, prefs: prefs({ online_art: false, trailers: 'off' }) }, view, true), false);
+    assert.equal(trailerAllowed({ ...home, prefs: null }, view, true), false);
+    assert.equal(trailerAllowed({ ...home, mode: 'details' }, view, true), false);
   });
   // A 10 by 20 frame: each row lit (bright grey) or a black bar with codec noise (a channel at 20).
   const frame = (rows) => {

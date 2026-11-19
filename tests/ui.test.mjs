@@ -2214,6 +2214,111 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   await close(page);
 }
 
+// 32b. Change art from files: a cover, background, logo or trailer each chosen in the PC's folders, as Add a game
+// chooses an exe, and shown in place of the art of its kind; the next file starts in the folder of the last; △ takes
+// a file away again; a file Lamplit can't use says why.
+{
+  // First in the row by name, so it is the one in focus.
+  const games = [game(1, { name: 'Another Game', art: noArt }), game(2)];
+  const drive = (letter) => ({ name: `${letter}:`, path: `${letter}:\\`, kind: known('entry_kind', 'drive'), title: null });
+  const entry = (name, kind) => ({ name, path: `D:\\Art\\${name}`, kind: known('entry_kind', kind), title: null });
+  const folders = {
+    '': { path: null, parent: null, entries: [drive('C'), drive('D')] },
+    'D:\\': { path: 'D:\\', parent: null, entries: [{ ...entry('Art', 'folder'), path: 'D:\\Art' }] },
+    'D:\\Art': { path: 'D:\\Art', parent: 'D:\\', entries: [entry('Old', 'folder'), entry('cover.png', 'picture'), entry('broken.png', 'picture')] },
+  };
+  const videos = { ...folders, 'D:\\Art': { ...folders['D:\\Art'], entries: [entry('Old', 'folder'), entry('trailer.mp4', 'video')] } };
+  const page = await open({ games });
+  await page.evaluate(
+    ([list, folders, videos, cover]) => {
+      const s = (window.__settings = { list });
+      s.library_art_search = [];
+      s.library_browse = ({ path, art }) => (art === 'trailer' ? videos : folders)[path ?? ''];
+      /** Rust's answer: every game, the copy on the game and in its art. */
+      s.library_set_own_art = ({ id, kind, file }) => {
+        if (file?.endsWith('broken.png')) throw { kind: 'player', message: `${file} isn't a picture Lamplit can show on this PC's drives.` };
+        const g = s.list.find((x) => x.id === id);
+        const copy = file && (kind === 'portrait' ? cover : `C:\\lamplit\\art\\own\\${kind}-1.${kind === 'trailer' ? 'mp4' : 'png'}`);
+        g.own_art = { ...g.own_art, [kind]: copy };
+        if (kind !== 'trailer') g.art = { ...g.art, [kind]: copy };
+        return s.list;
+      };
+    },
+    [games, folders, videos, art[0].portrait]
+  );
+  const picker = () =>
+    page.evaluate(() => ({
+      browsing: document.getElementById('artPick').classList.contains('browsing'),
+      title: document.getElementById('artTitle').textContent,
+      path: document.getElementById('artPath').textContent,
+      files: [...document.querySelectorAll('#artFiles .choice')].map((c) => c.textContent + (c.classList.contains('on') ? ' (on)' : '')),
+      rows: [...document.querySelectorAll('#artList .row')].map((r) => r.textContent),
+      focus: (document.querySelector('#artPick.browsing #artList .row.focus') ?? document.querySelector('#artPick:not(.browsing) .focus'))?.textContent ?? null,
+      shown: ['artField', 'artFiles', 'artList'].filter((id) => document.getElementById(id).offsetParent),
+      face: document.getElementById('face').style.backgroundImage,
+      hint: document.getElementById('hint').textContent,
+      toast: document.getElementById('gameNews').textContent,
+      lastCall: window.__calls.at(-1),
+    }));
+  const keys = async (...list) => {
+    for (const key of list) {
+      await page.keyboard.press(key);
+      await idle(page);
+    }
+  };
+  await keys('i', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter');
+  let p = await picker();
+  check('Change art offers a cover, background, logo and trailer from a file', JSON.stringify(p.files) === '["Cover","Background","Logo","Trailer"]' && JSON.stringify(p.shown) === '["artField","artFiles"]', JSON.stringify(p));
+  await keys('ArrowDown', 'ArrowDown', 'ArrowLeft');
+  p = await picker();
+  check('a file choice hints Choose a file', p.focus === 'Cover' && p.hint === '✕Choose a file□Edit search○Back', JSON.stringify(p));
+  await keys('Enter');
+  p = await picker();
+  check('✕ looks for a cover on the drives, in place of the choices', p.browsing && p.title === 'Choose a cover' && p.path === 'This PC' && JSON.stringify(p.rows) === '["C:","D:"]' && JSON.stringify(p.shown) === '["artList"]' && JSON.stringify(p.lastCall) === '["library_browse",{"path":null,"art":"portrait"}]', JSON.stringify(p));
+  await keys('ArrowDown', 'Enter', 'ArrowRight');
+  p = await picker();
+  check('→ opens a folder as ✕ does, listing its pictures', p.path === 'D:\\Art' && JSON.stringify(p.rows) === '["Old","cover.png","broken.png"]' && p.focus === 'Old' && p.hint === '✕Open○Back', JSON.stringify(p));
+  await keys('ArrowDown', 'ArrowDown');
+  p = await picker();
+  check('a picture hints Choose', p.focus === 'broken.png' && p.hint === '✕Choose○Back', JSON.stringify(p));
+  await keys('Enter');
+  p = await picker();
+  check('a file Lamplit can\'t use says why, and the folder stays', p.browsing && p.toast.includes("isn't a picture Lamplit can show") && p.focus === 'broken.png', JSON.stringify(p));
+  await settled(page);
+  await page.screenshot({ path: path.join(shots, 'change-art-folder.png') });
+  await keys('ArrowUp', 'Enter');
+  p = await picker();
+  check('✕ on a picture saves it as the cover', JSON.stringify(p.lastCall) === '["library_set_own_art",{"id":"pc:1","kind":"portrait","file":"D:\\\\Art\\\\cover.png"}]', JSON.stringify(p.lastCall));
+  check('then the choices again, Cover marked, the lifted card showing it, and △ Remove offered', !p.browsing && p.files[0] === 'Cover (on)' && p.focus === 'Cover' && p.face.includes(encodeURIComponent(art[0].portrait)) && p.hint === '✕Choose a file△Remove□Edit search○Back', JSON.stringify(p));
+  await keys('ArrowRight', 'Enter');
+  p = await picker();
+  check('the next file starts in the folder of the last', p.title === 'Choose a background' && p.path === 'D:\\Art' && JSON.stringify(p.lastCall) === '["library_browse",{"path":"D:\\\\Art","art":"hero"}]', JSON.stringify(p));
+  await keys('Escape');
+  p = await picker();
+  check('○ goes up a folder, focus on the one it came from', p.path === 'D:\\' && p.focus === 'Art', JSON.stringify(p));
+  await keys('ArrowLeft');
+  p = await picker();
+  check('← goes up as ○ does', p.path === 'This PC' && p.focus === 'D:', JSON.stringify(p));
+  await keys('Escape');
+  p = await picker();
+  check('○ at the drives goes back to the choices, focus where it was', !p.browsing && p.title === 'Change art' && p.focus === 'Background', JSON.stringify(p));
+  await keys('ArrowRight', 'ArrowRight', 'Enter', 'ArrowDown');
+  p = await picker();
+  check('a trailer is looked for among videos', p.title === 'Choose a trailer' && JSON.stringify(p.rows) === '["Old","trailer.mp4"]' && JSON.stringify(p.lastCall) === '["library_browse",{"path":"D:\\\\Art","art":"trailer"}]', JSON.stringify(p));
+  await keys('Enter');
+  p = await picker();
+  check('✕ on a video saves it as the trailer', p.files[3] === 'Trailer (on)' && JSON.stringify(p.lastCall) === '["library_set_own_art",{"id":"pc:1","kind":"trailer","file":"D:\\\\Art\\\\trailer.mp4"}]', JSON.stringify(p));
+  await settled(page);
+  await page.screenshot({ path: path.join(shots, 'change-art-files.png') });
+  await keys('ArrowLeft', 'ArrowLeft', 'ArrowLeft', 'c');
+  p = await picker();
+  check('△ on Cover takes the file away again', p.files[0] === 'Cover' && JSON.stringify(p.lastCall) === '["library_set_own_art",{"id":"pc:1","kind":"portrait","file":null}]' && p.hint === '✕Choose a file□Edit search○Back', JSON.stringify(p));
+  await keys('ArrowRight', 'c');
+  p = await picker();
+  check('△ on a kind without a file does nothing', p.focus === 'Background' && JSON.stringify(p.lastCall) === '["library_set_own_art",{"id":"pc:1","kind":"portrait","file":null}]', JSON.stringify(p));
+  await close(page);
+}
+
 // 33. Add a game: a program Lamplit passed over, or an exe browsed for on the drives, named on the keyboard, then its
 // art; a game added by hand can be removed again. With nothing found at all, ✕ on the empty row adds one.
 {
@@ -2307,7 +2412,7 @@ for (const vp of [{ width: 1920, height: 1080 }, { width: 3840, height: 2160 }, 
   await page.keyboard.press('Enter');
   await idle(page);
   a = await add();
-  check('Browse starts at the drives', a.title === "Choose the game's exe or script" && a.path === 'This PC' && JSON.stringify(a.rows) === '["C:","D:"]' && JSON.stringify(a.lastCall) === '["library_browse",{"path":null}]', JSON.stringify(a));
+  check('Browse starts at the drives', a.title === "Choose the game's exe or script" && a.path === 'This PC' && JSON.stringify(a.rows) === '["C:","D:"]' && JSON.stringify(a.lastCall) === '["library_browse",{"path":null,"art":null}]', JSON.stringify(a));
   // A folder with nothing to open or choose: ✕ does nothing there.
   await page.keyboard.press('Enter');
   await idle(page);

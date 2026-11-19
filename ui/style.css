@@ -676,13 +676,16 @@ body.launching .cover.focus { scale: 1.1; }
 #viewerCaption { text-align: center; font-size: 2.2vh; color: var(--ink-dim); }
 #viewerError { position: absolute; top: 40%; width: 100%; text-align: center; font-size: 2.6vh; }
 
-/* Change art: the search, then Steam's matches as a row of covers, then no art and back to automatic. */
+/* Change art: the search, then Steam's matches as a row of covers, then no art and back to automatic, then a file of
+   each kind; or a folder of the PC, looked through for a file as Add a game does. */
 #artPick h2 { margin-bottom: 2.4vh; }
 #artField.focus { background: rgb(255 255 255 / .14); box-shadow: inset 0 0 0 .25vh #fff; }
 #artPick:not(.editing) #artQuery::after { display: none; }
 #artKeys { display: none; }
 #artPick.editing #artKeys { display: grid; }
-#artPick.editing :is(#artStatus, #artTiles, #artChoices) { display: none; }
+#artPick.editing :is(#artStatus, #artTiles, #artChoices, #artFilesTitle, #artFiles) { display: none; }
+#artPick:not(.browsing) :is(#artPath, #artList),
+#artPick.browsing :is(#artField, #artStatus, #artTiles, #artChoices, #artFilesTitle, #artFiles) { display: none; }
 /* Searching, or nothing found: as tall as the row of covers, so the sheet keeps its size. */
 #artStatus { display: grid; place-items: center; min-height: 31vh; font-size: 2.4vh; color: var(--ink-dim); text-align: center; }
 #artStatus:empty, #artTiles:empty { display: none; }
@@ -754,7 +757,8 @@ body.launching .cover.focus { scale: 1.1; }
   animation: spin 900ms linear infinite;
 }
 #artChoices { margin-top: .6vh; }
-#artChoices .choice { letter-spacing: 0; text-transform: none; font-size: 2.2vh; }
+:is(#artChoices, #artFiles) .choice { letter-spacing: 0; text-transform: none; font-size: 2.2vh; }
+#artFilesTitle { margin-bottom: 1.2vh; }
 
 /* About keeps its screenshots in reach while long store descriptions can scroll above them. */
 #aboutStatus { font-size: 2.4vh; color: var(--ink-dim); padding: 6vh 0; text-align: center; }
@@ -874,7 +878,7 @@ body:has(#settings.on) #empty { opacity: 0; }
   padding: .4vh;
   scrollbar-width: none;
 }
-#settingsList h3, #addList h3 {
+#settingsList h3, #addList h3, #artFilesTitle {
   margin-top: 2vh;
   font-size: 1.8vh;
   font-weight: 650;
@@ -1091,8 +1095,8 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
   transition: opacity 120ms ease, translate var(--tap-ms) var(--tap);
 }
 #add.on, #report.on { opacity: 1; translate: 0; pointer-events: auto; transition: opacity 160ms ease 100ms, translate var(--tap-ms) var(--tap); }
-#addPath { margin: -1.6vh 0 2.2vh; font-size: 2vh; color: var(--ink-dim); overflow-wrap: anywhere; }
-#addList {
+#addPath, #artPath { margin: -1.6vh 0 2.2vh; font-size: 2vh; color: var(--ink-dim); overflow-wrap: anywhere; }
+#addList, #artList {
   display: grid;
   align-content: start;
   gap: .6vh;
@@ -1102,7 +1106,7 @@ body:has(#find.on) #filters { opacity: 0; transition: none; }
   padding: .4vh;
   scrollbar-width: none;
 }
-#addList .row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(#addList, #artList) .row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #addList .row .value { flex: 0 1 45%; text-align: right; }
 #addField, #addKeys { display: none; }
 #add.naming #addList { display: none; }

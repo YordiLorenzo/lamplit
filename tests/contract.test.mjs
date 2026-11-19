@@ -50,6 +50,7 @@ test("the page's types allow exactly the values Rust sends", () => {
     connection: 'Controller.connection',
     battery_level: 'BatteryLevel',
     entry_kind: 'FolderEntry.kind',
+    art_kind: 'ArtKind',
     dock_icon: 'DockIcon',
     dock_release: 'DockRelease',
     update_phase: 'Update.phase',
