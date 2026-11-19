@@ -8,6 +8,9 @@ undo from the controller, no dialog that needs a mouse, and a TV that is set up 
 
 ## Done
 
+0.6.0 (not released yet) brings your own art: a cover, background, logo and trailer for any game, each from a file
+on the PC.
+
 0.5.1 (2026-11-17) brought games that start from a script: Add a game takes a .bat or .cmd file as well as
 an exe. Lamplit also finds each game in a folder that sorts games, such as `Games\PC`, and a DualSense Edge's back
 and Fn buttons can each act as a button in Lamplit.
@@ -64,7 +67,7 @@ Battle.net, the Amazon Games app and itch.io.
 - **More places games come from:** Heroic, the Riot Client, and Legacy Games, whose store closes on 2026-12-31 while
   its installed games keep running.
 - **One game, one cover.** A game installed from two stores shows once, and its menu picks which one to start.
-- **Your own art:** a cover, background or logo from a file on the PC, and the art you set for your Steam shortcuts.
+- **Your Steam shortcuts' art:** the cover, background and logo you set for them in Steam.
 - **Recently played and recently installed,** and a few collections of your own, all made with the controller.
 - **Play together:** the games with local co-op or versus, from Steam's store pages, shown only where it's known.
 - **New games show up at once,** while their art still downloads.

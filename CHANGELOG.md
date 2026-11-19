@@ -4,6 +4,23 @@ Every release of Lamplit, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and version numbers follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.6.0 - Unreleased
+
+### Highlights
+
+- Your own art: a cover, background, logo and trailer from files on the PC.
+
+### Added
+
+- Your own art, in **Change art > From a file on this PC**: Cover, Background, Logo and Trailer. Each opens the PC's
+  drives and folders, as Add a game does, and lists the pictures (jpg, png, webp, avif, gif, bmp) or the videos (mp4,
+  webm, m4v, mov) in them. Lamplit copies the file you choose into its data folder, so moving or deleting the
+  original changes nothing. Each file shows in place of the art of its kind; what you don't set keeps the art it had.
+  Choosing the next file starts in the folder of the last, and △ takes a file away again.
+- Your own trailer plays where a trailer from Steam would: stay on the cover for 2.5 seconds, as set in **Settings >
+  Sound > Trailers**, its first minute on a loop. It doesn't need **Find art online**. It plays in a format WebView2
+  plays, such as H.264, VP9 or AV1.
+
 ## 0.5.1 - 2026-11-17
 
 ### Highlights
