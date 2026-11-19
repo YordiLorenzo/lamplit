@@ -2,7 +2,7 @@
 // found by browsing the PC's drives for an exe or a script. They are kept in games.json, and launched by their exe
 // like games outside any store, or by cmd.exe running their script.
 
-use super::{Game, Launch};
+use super::{ArtKind, Game, Launch, own_art};
 use crate::error::{Error, Result};
 use crate::files::{file_name, folder_key, is_script, on_a_drive};
 use crate::stores::Installed;
@@ -92,7 +92,7 @@ pub fn programs(games: &[Game]) -> Vec<Program> {
         .collect()
 }
 
-/// One folder of the PC, as the player browses for a game's exe.
+/// One folder of the PC, as the player browses for a game's exe, or for a file of art in Change art.
 #[derive(Serialize)]
 pub struct Folder {
     /// None for the list of drives.
@@ -120,11 +120,15 @@ pub enum EntryKind {
     Exe,
     /// A .bat or .cmd file.
     Script,
+    /// A picture or a video, for Change art.
+    Picture,
+    Video,
 }
 
-/// The folders, exes and scripts in `path`, folders first, each A to Z; with no path, the PC's fixed drives. Hidden and
-/// system files and folders are left out, as Explorer does.
-pub fn browse(path: Option<&str>) -> Result<Folder> {
+/// The folders, exes and scripts in `path`, folders first, each A to Z; with no path, the PC's fixed drives. With
+/// `art`, the files that can be that kind of art take the place of exes and scripts. Hidden and system files and
+/// folders are left out, as Explorer does.
+pub fn browse(path: Option<&str>, art: Option<ArtKind>) -> Result<Folder> {
     let Some(path) = path else {
         let entries = win::drives::fixed()
             .into_iter()
@@ -147,28 +151,27 @@ pub fn browse(path: Option<&str>) -> Result<Folder> {
     }
     let listing = std::fs::read_dir(&dir).map_err(|e| Error::Player(format!("Can't open {path}: {e}")))?;
     let mut entries: Vec<FolderEntry> =
-        listing.flatten().filter_map(|e| entry(&e.path(), &e.metadata().ok()?)).collect();
+        listing.flatten().filter_map(|e| entry(&e.path(), &e.metadata().ok()?, art)).collect();
     entries.sort_by_cached_key(|e| (e.kind != EntryKind::Folder, e.name.to_lowercase()));
     Ok(Folder { path: Some(path.into()), parent: dir.parent().map(path_string), entries })
 }
 
-fn entry(path: &Path, meta: &std::fs::Metadata) -> Option<FolderEntry> {
+fn entry(path: &Path, meta: &std::fs::Metadata, art: Option<ArtKind>) -> Option<FolderEntry> {
     const HIDDEN: u32 = 0x2;
     const SYSTEM: u32 = 0x4;
     if meta.file_attributes() & (HIDDEN | SYSTEM) != 0 {
         return None;
     }
     let exe = path.extension().is_some_and(|x| x.eq_ignore_ascii_case("exe"));
-    let kind = if meta.is_dir() {
-        EntryKind::Folder
-    } else if exe {
-        EntryKind::Exe
-    } else if is_script(path) {
-        EntryKind::Script
-    } else {
-        return None;
+    let kind = match art {
+        _ if meta.is_dir() => EntryKind::Folder,
+        None if exe => EntryKind::Exe,
+        None if is_script(path) => EntryKind::Script,
+        Some(ArtKind::Trailer) if own_art::takes(ArtKind::Trailer, path) => EntryKind::Video,
+        Some(kind) if kind != ArtKind::Trailer && own_art::takes(kind, path) => EntryKind::Picture,
+        _ => return None,
     };
-    let title = (kind != EntryKind::Folder).then(|| name_for(path));
+    let title = matches!(kind, EntryKind::Exe | EntryKind::Script).then(|| name_for(path));
     Some(FolderEntry { name: file_name(path), path: path_string(path), kind, title })
 }
 
@@ -295,7 +298,9 @@ mod tests {
         fs::create_dir_all(root.join("Secret")).unwrap();
         let secret = std::process::Command::new("attrib").arg("+h").arg(root.join("Secret")).status().unwrap();
         assert!(secret.success());
-        let folder = browse(Some(&path_string(&root))).unwrap();
+        file(root.join("cover.png"));
+        file(root.join("trailer.MP4"));
+        let folder = browse(Some(&path_string(&root)), None).unwrap();
         let listed: Vec<(&str, EntryKind)> = folder.entries.iter().map(|e| (e.name.as_str(), e.kind)).collect();
         assert_eq!(
             listed,
@@ -309,17 +314,30 @@ mod tests {
             ]
         );
         assert_eq!(folder.parent, root.parent().map(path_string));
+        // Change art lists the pictures or the videos instead.
+        let files = |art| {
+            let folder = browse(Some(&path_string(&root)), Some(art)).unwrap();
+            folder
+                .entries
+                .into_iter()
+                .filter(|e| e.kind != EntryKind::Folder)
+                .map(|e| (e.name, e.kind))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(files(ArtKind::Portrait), [("cover.png".to_string(), EntryKind::Picture)]);
+        assert_eq!(files(ArtKind::Trailer), [("trailer.MP4".to_string(), EntryKind::Video)]);
         // The title an exe in its own folder gets is the folder's.
-        let zed = browse(Some(&path_string(&root.join("Zed")))).unwrap();
+        let zed = browse(Some(&path_string(&root.join("Zed"))), None).unwrap();
         assert_eq!(zed.entries[0].title.as_deref(), Some("Zed"));
         // A script's too, and right in a folder that holds other programs, the script's own.
         file(root.join(r"Zed\z.bat"));
-        let zed = browse(Some(&path_string(&root.join("Zed")))).unwrap();
+        let zed = browse(Some(&path_string(&root.join("Zed"))), None).unwrap();
         assert_eq!(zed.entries.iter().find(|e| e.name == "z.bat").unwrap().title.as_deref(), Some("Zed"));
         let games = file(root.join(r"Games\RetroArcade.bat"));
-        assert_eq!(entry(&games, &fs::metadata(&games).unwrap()).unwrap().title.as_deref(), Some("Retro Arcade"));
-        assert!(browse(Some(r"\\nas\games")).is_err());
-        let drives = browse(None).unwrap();
+        let meta = fs::metadata(&games).unwrap();
+        assert_eq!(entry(&games, &meta, None).unwrap().title.as_deref(), Some("Retro Arcade"));
+        assert!(browse(Some(r"\\nas\games"), None).is_err());
+        let drives = browse(None, None).unwrap();
         assert!(drives.path.is_none() && drives.entries.iter().any(|d| d.name == "C:" && d.kind == EntryKind::Drive));
         let _ = fs::remove_dir_all(root);
     }

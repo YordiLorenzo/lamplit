@@ -5,15 +5,16 @@
 
 import * as api from './api.js';
 import { openArt } from './art.js';
+import { clickedRow, drawRows, folderRows } from './folders.js';
 import { showHints, toast } from './hints.js';
 import { clickable, moveKey, nameField, pressKey, setText } from './keyboard.js';
 import { focusGame, openDetails, render as renderRow, setGames } from './library.js';
 import { grow } from './morph.js';
 import { fitPlate, turnPlate } from './settings.js';
 import { sfx } from './sounds.js';
-import { els, icon, state } from './state.js';
+import { els, state } from './state.js';
 
-/** @typedef {typeof state.add.rows[number]} AddRow */
+/** @typedef {import('./folders.js').Row} AddRow */
 
 const field = nameField(els.addKeys, els.addName, 40);
 
@@ -74,7 +75,7 @@ async function browse(path) {
   const from = state.add.folder?.path;
   state.add.busy = true;
   try {
-    const folder = await api.libraryBrowse(path);
+    const folder = await api.libraryBrowse(path, null);
     if (asked !== listings || state.mode !== 'add') return;
     Object.assign(state.add, { view: 'browse', folder, idx: Math.max(0, folder.entries.findIndex((e) => e.path === from)) });
     sfx.move();
@@ -89,10 +90,7 @@ async function browse(path) {
 /** @returns {AddRow[]} */
 function rows() {
   const { view, programs, folder } = state.add;
-  if (view === 'browse') {
-    const entries = folder.entries.map((e) => ({ kind: e.kind, label: e.name, path: e.path, title: e.title ?? '' }));
-    return entries.length ? entries : [{ kind: '', label: 'No folders, exes or scripts here' }];
-  }
+  if (view === 'browse') return folderRows(folder, 'No folders, exes or scripts here');
   /** @type {AddRow[]} */
   const list = [{ kind: 'browse', label: 'Browse drives and folders' }, { heading: 'Programs on this PC' }];
   if (!programs) list.push({ kind: '', label: 'Looking for programs…' });
@@ -100,9 +98,6 @@ function rows() {
   else list.push(...programs.map((p) => ({ kind: 'program', label: p.name, value: p.folder, path: p.exe, title: p.name })));
   return list;
 }
-
-/** Icons in front of a row, by its kind. */
-const ICONS = { browse: 'i-drive', drive: 'i-drive', folder: 'i-folder', exe: 'i-app', script: 'i-app', program: 'i-app' };
 
 function render() {
   const a = state.add;
@@ -112,28 +107,8 @@ function render() {
     a.view === 'browse' ? (a.folder.path ?? 'This PC') : a.view === 'name' ? a.exe : 'A program on this PC, or an exe or script on its drives';
   if (a.view !== 'name') {
     a.rows = rows();
-    const focusable = a.rows.filter((r) => r.kind);
-    a.idx = Math.min(a.idx, focusable.length - 1);
-    els.addList.replaceChildren(
-      ...a.rows.map((r) => {
-        if (r.heading) {
-          const h = document.createElement('h3');
-          h.textContent = r.heading;
-          return h;
-        }
-        const row = document.createElement('div');
-        const focus = r.kind && focusable.indexOf(r) === a.idx;
-        row.className = `row ${r.kind || 'info'}${focus ? ' focus' : ''}`;
-        const label = document.createElement('span');
-        label.append(...(ICONS[r.kind] ? [icon(ICONS[r.kind])] : []), r.label);
-        const value = document.createElement('span');
-        value.className = 'value';
-        value.textContent = r.value ?? '';
-        row.append(label, value);
-        if (focus) requestAnimationFrame(() => row.scrollIntoView({ block: 'nearest' }));
-        return row;
-      })
-    );
+    a.idx = Math.min(a.idx, a.rows.filter((r) => r.kind).length - 1);
+    drawRows(els.addList, a.rows, a.idx);
   }
   showHints();
 }
@@ -262,11 +237,8 @@ clickable(field, () => state.mode === 'add' && state.add.view === 'name' && !sta
 
 // A click on a row focuses and opens it.
 els.addList.addEventListener('click', (e) => {
-  const row = /** @type {Element} */ (e.target).closest('.row');
-  if (!row || state.mode !== 'add' || state.add.busy) return;
-  const k = [...els.addList.querySelectorAll('.row')].indexOf(row);
-  const target = state.add.rows.filter((r) => r.heading === undefined)[k];
-  if (!target?.kind) return;
+  const target = clickedRow(els.addList, state.add.rows, e);
+  if (!target || state.mode !== 'add' || state.add.busy) return;
   state.add.idx = state.add.rows.filter((r) => r.kind).indexOf(target);
   press();
 });

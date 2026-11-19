@@ -1,7 +1,11 @@
 // Trailer page checks, called by ui.test.mjs. tests/media/trailer, a 4-second DASH trailer in Steam's layout, exercises
-// the page's own player (ui/dash.js) and the browser's actual media element.
+// the page's own player (ui/dash.js) and the browser's actual media element. Its video stream in one file stands in
+// for a trailer of the player's own.
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ipc } from './fixtures.mjs';
+import { fileURLToPath } from 'node:url';
+import { ipc, like } from './fixtures.mjs';
 import { assetOrigin, emit, idle } from './page.mjs';
 
 const read = (page) => page.evaluate(() => {
@@ -197,6 +201,39 @@ export async function trailerTests({ browser, open, close, game, check, shots, h
       await page.screenshot({ path: path.join(shots, 'trailer-letterbox.png') });
     }
     await close(page);
+  }
+
+  // The player's own trailer (Change art), from its file: no details asked for, Find art online off, and the same rest,
+  // fade and input as Steam's. It plays its first minute on a loop.
+  {
+    const media = path.join(path.dirname(fileURLToPath(import.meta.url)), 'media', 'trailer', 'dash_h264');
+    const dir = mkdtempSync(path.join(tmpdir(), 'lamplit-own-trailer-'));
+    const file = path.join(dir, 'trailer 1.mp4');
+    const parts = ['init-stream0.m4s', ...[1, 2, 3, 4].map((n) => `chunk-stream0-0000${n}.m4s`)];
+    writeFileSync(file, Buffer.concat(parts.map((part) => readFileSync(path.join(media, part)))));
+    const own = [like(games[0], { own_art: { ...games[0].own_art, trailer: file } }), games[1]];
+    const page = await start({ games: own, prefs: { ...ipc('prefs'), online_art: false } });
+    await page.clock.runFor(2400);
+    check('an own trailer also waits for 2.5 seconds of rest', !(await read(page)).exists);
+    let v = await playing(page);
+    check('an own trailer plays its file muted, with Find art online off and no details asked for', v.shown && !v.paused && v.muted && v.loop && v.requests.length === 0 && v.source === `${assetOrigin}/${encodeURIComponent(file)}` && v.size[0] === 640, JSON.stringify(v));
+    check('an own trailer is logged as the game\'s own file', JSON.stringify(v.logs) === `["info trailer: playing ${games[0].id} (own file)"]`, JSON.stringify(v.logs));
+    const loop = await page.evaluate(() => {
+      const video = document.querySelector('#trailer');
+      let seek = null;
+      Object.defineProperty(video, 'currentTime', { configurable: true, get: () => 61, set: (t) => { seek = t; } });
+      video.dispatchEvent(new Event('timeupdate'));
+      delete video.currentTime;
+      return seek;
+    });
+    check('an own trailer goes back to its start after a minute', loop === 0, JSON.stringify(loop));
+    await emit(page, 'pad', 'right');
+    v = await read(page);
+    check('input stops an own trailer as it stops Steam\'s', v.paused && !v.shown && v.fade === '0.2s', JSON.stringify(v));
+    await page.clock.runFor(2700);
+    check('the next cover, without a trailer of its own, plays nothing while Find art online is off', !(await read(page)).exists && (await read(page)).requests.length === 0);
+    await close(page);
+    rmSync(dir, { recursive: true, force: true });
   }
 
   {

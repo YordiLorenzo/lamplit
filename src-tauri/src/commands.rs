@@ -11,7 +11,7 @@ use crate::dock;
 use crate::error::{Error, Result};
 use crate::events::{self, Event};
 use crate::launch::{self, Launcher};
-use crate::library::{self, ArtChoice, Details, Game, Library};
+use crate::library::{self, ArtChoice, ArtKind, Details, Game, Library};
 use crate::prefs::{self, Prefs};
 use crate::report;
 use crate::stores::steam::devtools;
@@ -76,6 +76,13 @@ pub async fn library_set_art(app: AppHandle, id: String, choice: Option<ArtChoic
     blocking(move || library::set_art(&app, &id, choice)).await?
 }
 
+/// Gives a game a `kind` of art from the file `file`, which Lamplit copies, or with None takes it away again. Returns
+/// every game, with the change.
+#[tauri::command]
+pub async fn library_set_own_art(app: AppHandle, id: String, kind: ArtKind, file: Option<String>) -> Result<Vec<Game>> {
+    blocking(move || library::set_own_art(&app, &id, kind, file.as_deref())).await?
+}
+
 /// The game's screenshots already on the PC, newest first.
 #[tauri::command]
 pub async fn library_captures(app: AppHandle, id: String) -> Result<Vec<library::captures::Capture>> {
@@ -88,10 +95,11 @@ pub async fn library_programs(app: AppHandle) -> Result<Vec<library::Program>> {
     blocking(move || library::programs(&app)).await
 }
 
-/// A folder's subfolders and exes, or the drives with no path, for Add a game.
+/// A folder's subfolders and exes, or the drives with no path, for Add a game; with `art`, its pictures or videos for
+/// Change art.
 #[tauri::command]
-pub async fn library_browse(path: Option<String>) -> Result<library::Folder> {
-    blocking(move || library::browse(path.as_deref())).await?
+pub async fn library_browse(path: Option<String>, art: Option<ArtKind>) -> Result<library::Folder> {
+    blocking(move || library::browse(path.as_deref(), art)).await?
 }
 
 /// Adds the game an exe starts, with the name the player gave it. Returns its id and every game.

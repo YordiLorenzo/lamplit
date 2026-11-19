@@ -1,8 +1,9 @@
 // @ts-check
-// An idle cover can show its trailer. Input cancels both playback and any details still on their way.
+// An idle cover can show its trailer: the player's own file (Change art), else Steam's. Input cancels both playback
+// and any details still on their way.
 
 import * as api from './api.js';
-import { playDash } from './dash.js';
+import { TRAILER_SECONDS, playDash } from './dash.js';
 import { letterbox, trailerAllowed, trailerZoom } from './logic.js';
 import { reduced } from './morph.js';
 import { screensaverShowing } from './screensaver/index.js';
@@ -25,11 +26,11 @@ let fetches = new AbortController();
 let objectUrl = '';
 
 function target() {
+  const g = focused();
   const allowed = trailerAllowed(state, {
     front: !document.hidden && document.hasFocus(), reduced: reduced(), saver: screensaverShowing(), dock,
-  });
-  const id = focused()?.id;
-  return allowed && id ? `${id}|${state.prefs.trailers}` : '';
+  }, !!g?.own_art.trailer);
+  return allowed && g ? `${g.id}|${state.prefs.trailers}|${g.own_art.trailer ?? ''}` : '';
 }
 
 function stop() {
@@ -87,12 +88,14 @@ function fitter(next) {
   };
 }
 
-/** @param {string} id @param {string} expected */
-async function play(id, expected) {
+/** @param {import('./api.js').Game} g @param {string} expected */
+async function play(g, expected) {
   const mine = generation;
-  const details = await api.libraryDetails(id).catch(() => null);
+  const own = g.own_art.trailer;
+  const details = own ? null : await api.libraryDetails(g.id).catch(() => null);
   // A cover can lose focus and regain it while Steam answers. Only the same uninterrupted rest counts.
-  if (mine !== generation || target() !== expected || !details?.trailer) return;
+  if (mine !== generation || target() !== expected || !(own || details?.trailer)) return;
+  const what = own ? `${g.id} (own file)` : details.appid;
   const next = document.createElement('video');
   next.id = 'trailer';
   next.setAttribute('aria-hidden', 'true');
@@ -100,13 +103,15 @@ async function play(id, expected) {
   next.playsInline = true;
   next.muted = state.prefs.trailers !== 'with_sound';
   next.volume = 0.4;
-  next.poster = details.trailer.poster;
+  // The letterbox check reads the own file's frames, which a page may do only with the asset protocol's CORS header.
+  if (own) next.crossOrigin = 'anonymous';
+  else next.poster = details.trailer.poster;
   video = next;
   fetches = new AbortController();
   const drop = () => { if (video === next) stop(); };
   // A report then says why a game's trailer didn't play. Stopping on input aborts the downloads, which isn't a failure.
   const failed = (/** @type {any} */ e) => {
-    if (e?.name !== 'AbortError') api.log.warn(`trailer: ${details.appid} ${e?.message ?? e}`);
+    if (e?.name !== 'AbortError') api.log.warn(`trailer: ${what} ${e?.message ?? e}`);
     drop();
   };
   let logged = false;
@@ -118,18 +123,28 @@ async function play(id, expected) {
     if (mine !== generation || target() !== expected) return drop();
     clearTimeout(stalledTimer);
     stalledTimer = 0;
-    if (!logged) api.log.info(`trailer: playing ${details.appid}`);
+    if (!logged) api.log.info(`trailer: playing ${what}`);
     logged = true;
     // A cached video can play before its first paint. Commit its hidden style so it still fades in.
     getComputedStyle(next).opacity;
     next.classList.add('on');
   };
   next.onerror = () => failed(new Error(`media error ${next.error?.code ?? 'unknown'}`));
-  next.ontimeupdate = fitter(next);
+  const fit = fitter(next);
+  next.ontimeupdate = () => {
+    // The first minute on a loop, as Lamplit plays Steam's: an own file can be any length.
+    if (next.currentTime >= TRAILER_SECONDS) next.currentTime = 0;
+    fit();
+  };
   next.onwaiting = stalled;
   next.onstalled = stalled;
   els.stage.querySelector('.shade').before(next);
   stalled();
+  if (own) {
+    next.src = api.assetUrl(own);
+    next.play().catch(failed);
+    return;
+  }
   playDash(next, details.trailer.url, !next.muted, fetches.signal).then((url) => {
     if (video !== next) return URL.revokeObjectURL(url);
     objectUrl = url;
@@ -145,7 +160,7 @@ function check() {
   }
   if (!next || attempted || performance.now() - idleAt < IDLE_MS) return;
   attempted = true;
-  play(focused().id, next);
+  play(focused(), next);
 }
 
 /** The same input that wakes the screensaver cancels a trailer, including keys with no home-screen action. */

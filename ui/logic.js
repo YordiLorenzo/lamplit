@@ -466,12 +466,15 @@ export function nearest(from, boxes, dir) {
     .map((b, i) => {
       const [x, y] = centre(b);
       const along = { left: fx - x, right: x - fx, up: fy - y, down: y - fy }[dir];
-      return { i, along, across: sideways ? Math.abs(y - fy) : Math.abs(x - fx) };
+      // Boxes of one row: centres closer than half the lower of the two boxes. A tall cover over two lines of short
+      // choices reaches only the first.
+      const row = Math.min(from.height, b.height) / 2;
+      return { i, along, row, across: sideways ? Math.abs(y - fy) : Math.abs(x - fx) };
     })
     .filter((b) => b.along > 1 && (!sideways || b.across < from.height / 2));
   if (!ahead.length) return -1;
   const next = Math.min(...ahead.map((b) => b.along));
-  return ahead.filter((b) => b.along < next + from.height / 2).reduce((a, b) => (b.across < a.across ? b : a)).i;
+  return ahead.filter((b) => b.along < next + b.row).reduce((a, b) => (b.across < a.across ? b : a)).i;
 }
 
 // ---------- quiet mode ----------
@@ -580,13 +583,15 @@ export function stepEdgeTarget(target, dir) {
 }
 
 /**
- * A trailer needs an idle home screen in front, with the player's permission to fetch it.
+ * A trailer needs an idle home screen in front, with the player's permission to fetch it: Find art online, unless
+ * the trailer is the player's own file (`own`).
  * @param {{ mode: string, running: string | null, prefs: import('./api.js').Prefs | null }} state
  * @param {{ front: boolean, reduced: boolean, saver: boolean, dock: boolean }} view
+ * @param {boolean} [own]
  */
-export function trailerAllowed(state, view) {
-  return state.mode === 'browse' && !state.running && !!state.prefs?.online_art && state.prefs.trailers !== 'off'
-    && view.front && !view.reduced && !view.saver && !view.dock;
+export function trailerAllowed(state, view, own = false) {
+  return state.mode === 'browse' && !state.running && !!state.prefs && (own || state.prefs.online_art)
+    && state.prefs.trailers !== 'off' && view.front && !view.reduced && !view.saver && !view.dock;
 }
 
 /** Brightest channel value (0 to 255) a row of a trailer frame may reach and still be a black bar: H.264 leaves noise. */

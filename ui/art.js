@@ -2,9 +2,11 @@
 // Change art, from a game's menu: Steam's store searched for the game's name, the matches shown as covers to pick
 // from, and no art at all, which shows the game's name; Back to automatic gives the game Lamplit's own match again.
 // The lifted cover (lift.js) shows the art in focus before it is picked. The search can be edited on the names
-// keyboard.
+// keyboard. Below, a cover, a background, a logo and a trailer each from a file on the PC, chosen in its folders as
+// Add a game chooses an exe; each shows in place of the art of its kind.
 
 import * as api from './api.js';
+import { clickedRow, drawRows, folderRows } from './folders.js';
 import { showHints, toast } from './hints.js';
 import { clickable, moveKey, nameField, pressKey, setText } from './keyboard.js';
 import { face, showSheet } from './lift.js';
@@ -19,11 +21,18 @@ const field = nameField(els.artKeys, els.artQuery, 40);
 
 /** Searches asked for so far: the answer to an older one, after the player searched again, is dropped. */
 let searches = 0;
+/** Folder listings asked for so far, dropped in the same way. */
+let listings = 0;
+/** The folder the last file came from: choosing the next one starts there. @type {string | null} */
+let lastFolder = null;
+
+/** @type {[import('./api.js').ArtKind, string, string][]} the kinds of art a file can be: label, and what to choose */
+const FILES = [['portrait', 'Cover', 'a cover'], ['hero', 'Background', 'a background'], ['logo', 'Logo', 'a logo'], ['trailer', 'Trailer', 'a trailer']];
 
 /** Opens Change art for the game whose menu is open, searching for its name. */
 export function openArt() {
   const g = byId(/** @type {string} */ (state.lifted));
-  state.art = { ...state.art, open: true, id: g.id, query: g.name, found: null, error: '', focus: 'search', editing: false, saving: false };
+  state.art = { ...state.art, open: true, id: g.id, query: g.name, found: null, error: '', focus: 'search', editing: false, saving: false, browsing: null, folder: null };
   showSheet('art');
   sfx.open();
   search();
@@ -60,6 +69,9 @@ function render() {
   const { art } = state;
   const g = byId(art.id);
   els.artPick.classList.toggle('editing', art.editing);
+  els.artPick.classList.toggle('browsing', !!art.browsing);
+  if (art.browsing) return renderFolder();
+  els.artTitle.textContent = 'Change art';
   // While the player types, the field shows what the keyboard holds, which Done searches for.
   els.artQuery.textContent = art.editing ? field.text : art.query;
   els.artStatus.textContent = art.error
@@ -94,6 +106,13 @@ function render() {
       return el;
     })
   );
+  els.artFiles.replaceChildren(
+    ...FILES.map(([kind, label]) => {
+      const el = div(g.own_art[kind] ? 'choice on' : 'choice', label);
+      el.dataset.id = `file:${kind}`;
+      return el;
+    })
+  );
   // A focused cover that a new search took away hands focus to the search field.
   if (!art.editing && !targets().some((t) => t.dataset.id === art.focus)) art.focus = 'search';
   for (const t of targets()) {
@@ -107,7 +126,103 @@ function render() {
 
 /** What focus can move between, outside the keyboard. */
 const targets = () =>
-  /** @type {HTMLElement[]} */ ([...els.artPick.querySelectorAll('#artField, #artTiles .tile, #artChoices .choice')]);
+  /** @type {HTMLElement[]} */ ([...els.artPick.querySelectorAll('#artField, #artTiles .tile, #artChoices .choice, #artFiles .choice')]);
+
+/** The folder being looked through for a file, with its pictures or videos. */
+function renderFolder() {
+  const { art } = state;
+  const [, , what] = /** @type {[string, string, string]} */ (FILES.find(([kind]) => kind === art.browsing));
+  els.artTitle.textContent = `Choose ${what}`;
+  els.artPath.textContent = art.saving ? 'Copying the file…' : (art.folder.path ?? 'This PC');
+  art.rows = folderRows(art.folder, art.browsing === 'trailer' ? 'No folders or videos here' : 'No folders or pictures here');
+  art.idx = Math.min(art.idx, art.rows.filter((r) => r.kind).length - 1);
+  drawRows(els.artList, art.rows, art.idx);
+  showHints();
+}
+
+/** The focused row of the folder. */
+const artRow = () => state.art.rows.filter((r) => r.kind)[state.art.idx];
+
+/**
+ * Lists a folder, or the drives with null, for a `kind` of file. Focus goes to the folder the player came up from.
+ * @param {string | null} path @param {import('./api.js').ArtKind} kind
+ */
+async function list(path, kind) {
+  const asked = ++listings;
+  const { art } = state;
+  const from = art.folder?.path;
+  art.saving = true;
+  try {
+    const folder = await api.libraryBrowse(path, kind);
+    if (asked !== listings || !art.open) return;
+    Object.assign(art, { browsing: kind, folder, idx: Math.max(0, folder.entries.findIndex((e) => e.path === from)) });
+    sfx.move();
+  } catch (e) {
+    if (asked !== listings || !art.open) return;
+    // The folder of the last file has gone since: the drives instead.
+    if (!art.browsing && path !== null) {
+      lastFolder = null;
+      return list(null, kind);
+    }
+    toast(e.message, { game: byId(art.id), warn: true });
+  } finally {
+    if (asked === listings) art.saving = false;
+  }
+  render();
+}
+
+/**
+ * Gives the game a `kind` of art from `file`, or with null takes the player's file of that kind away; then the
+ * choices again, with focus on that kind.
+ * @param {import('./api.js').ArtKind} kind @param {string | null} file
+ */
+async function setFile(kind, file) {
+  const { art } = state;
+  art.saving = true;
+  sfx.open();
+  render();
+  try {
+    setGames(await api.librarySetOwnArt(art.id, kind, file));
+    if (art.open) Object.assign(art, { browsing: null, folder: null, focus: `file:${kind}` });
+  } catch (e) {
+    toast(e.message, { game: byId(art.id), warn: true });
+  } finally {
+    art.saving = false;
+    if (art.open) render();
+  }
+}
+
+/** ✕ on a folder's row: a folder opens, a file is used. */
+function pressRow() {
+  const row = artRow();
+  const kind = /** @type {import('./api.js').ArtKind} */ (state.art.browsing);
+  // A folder with nothing to open or choose has only a line saying so.
+  if (!row) return;
+  if (row.kind === 'drive' || row.kind === 'folder') list(row.path ?? null, kind);
+  else {
+    lastFolder = state.art.folder.path;
+    setFile(kind, row.path ?? null);
+  }
+}
+
+/** ○ in a folder: up a level, and from the drives back to the choices. */
+function upFolder() {
+  const { art } = state;
+  if (art.folder.path !== null) return list(art.folder.parent, /** @type {import('./api.js').ArtKind} */ (art.browsing));
+  Object.assign(art, { browsing: null, folder: null });
+  sfx.back();
+  render();
+}
+
+/** @param {number} delta */
+function moveRow(delta) {
+  const { art } = state;
+  const next = Math.max(0, Math.min(art.rows.filter((r) => r.kind).length - 1, art.idx + delta));
+  if (next === art.idx) return sfx.edge();
+  art.idx = next;
+  sfx.move();
+  render();
+}
 
 /** The card shows the focused cover, or the game's name for No art; elsewhere, and while typing, the game's own art. */
 function preview() {
@@ -160,7 +275,15 @@ function press() {
   if (id === 'search') return edit();
   if (id === 'none') return choose('none');
   if (id === 'auto') return choose(null);
+  if (id.startsWith('file:')) return list(lastFolder, /** @type {import('./api.js').ArtKind} */ (id.slice('file:'.length)));
   choose({ steam: Number(id.slice('app:'.length)) });
+}
+
+/** The kind of art whose file choice has focus, when the game has a file of that kind. */
+function focusedFile() {
+  const { art } = state;
+  const kind = /** @type {import('./api.js').ArtKind} */ (art.focus.slice('file:'.length));
+  return art.focus.startsWith('file:') && byId(art.id).own_art[kind] ? kind : null;
 }
 
 /** @param {ArtChoice | null} choice */
@@ -206,11 +329,23 @@ export function actArt(action) {
     }
     return;
   }
+  // As in Add a game, a folder takes no input while it lists or a file is copied.
+  if (art.browsing) {
+    const row = artRow();
+    if (art.saving) return;
+    if (action === 'back' || action === 'left') upFolder();
+    else if (action === 'ok' || (action === 'right' && (row?.kind === 'drive' || row?.kind === 'folder'))) pressRow();
+    else if (action === 'up' || action === 'down') moveRow(action === 'up' ? -1 : 1);
+    else if (action === 'l1' || action === 'r1') moveRow(action === 'l1' ? -8 : 8);
+    return;
+  }
   // Back leaves while Steam's store is still being asked; the answer then changes the art behind the menu.
   if (action === 'back') return close();
   if (art.saving) return;
+  const removable = focusedFile();
   if (action === 'ok') press();
   else if (action === 'square') edit();
+  else if (action === 'triangle' && removable) setFile(removable, null);
   else if (action === 'up' || action === 'down' || action === 'left' || action === 'right') move(action);
 }
 
@@ -222,4 +357,12 @@ els.artPick.addEventListener('click', (e) => {
   if (!target || !state.art.open || state.art.editing || state.art.saving || els.artKeys.contains(target)) return;
   state.art.focus = /** @type {string} */ (target.dataset.id);
   press();
+});
+// A click on a folder's row focuses and opens it.
+els.artList.addEventListener('click', (e) => {
+  const { art } = state;
+  const target = clickedRow(els.artList, art.rows, e);
+  if (!target || !art.open || !art.browsing || art.saving) return;
+  art.idx = art.rows.filter((r) => r.kind).indexOf(target);
+  pressRow();
 });

@@ -65,10 +65,14 @@ export const els = {
   dDir: $('dDir'),
   dChoices: $('dChoices'),
   artPick: $('artPick'),
+  artTitle: $('artTitle'),
   artQuery: $('artQuery'),
   artStatus: $('artStatus'),
   artTiles: $('artTiles'),
   artChoices: $('artChoices'),
+  artFiles: $('artFiles'),
+  artPath: $('artPath'),
+  artList: $('artList'),
   artKeys: $('artKeys'),
   capturesFace: $('capturesFace'),
   captureGrid: $('captureGrid'),
@@ -161,7 +165,8 @@ export const state = {
   },
   /**
    * Change art (art.js), over a game's menu. `found` is null while Steam's store is searched; `focus` is the data-id
-   * of the focused cover or choice.
+   * of the focused cover or choice. While the player looks for a file, `browsing` is its kind, `folder` the folder
+   * shown, `rows` its rows and `idx` the focused one.
    */
   art: {
     open: false,
@@ -173,6 +178,13 @@ export const state = {
     focus: 'search',
     editing: false,
     saving: false,
+    /** @type {import('./api.js').ArtKind | null} */
+    browsing: null,
+    /** @type {import('./api.js').Folder | null} */
+    folder: null,
+    /** @type {import('./folders.js').Row[]} */
+    rows: [],
+    idx: 0,
   },
   /**
    * Add a game (add.js): the list of programs, a folder of the PC, or naming the exe picked. `rows` are what the list
@@ -185,11 +197,7 @@ export const state = {
     programs: null,
     /** @type {import('./api.js').Folder | null} */
     folder: null,
-    /**
-     * A heading, or a row: `kind` is what ✕ does there ('browse', 'program', 'drive', 'folder', 'exe', 'script'; ''
-     * for none), `path` the exe, script or folder, `title` the name its game would get.
-     * @type {{ heading?: string, kind?: string, label?: string, value?: string, path?: string, title?: string }[]}
-     */
+    /** @type {import('./folders.js').Row[]} */
     rows: [],
     idx: 0,
     exe: '',

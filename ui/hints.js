@@ -5,7 +5,7 @@
 import { buttonFace, detailChoices, narrowed, returnHint } from './logic.js';
 import * as api from './api.js';
 import { fillPill } from './pill.js';
-import { actionableStep, els, focused, state, storeName } from './state.js';
+import { actionableStep, byId, els, focused, state, storeName } from './state.js';
 
 /**
  * The PlayStation symbols as drawn shapes (index.html): as text, each font puts ✕, △, □ and ≡ at its own size and
@@ -46,10 +46,17 @@ export function showHints() {
     if (state.about.fullscreen) html = b('adjust', 'Browse');
     else if (state.about.data?.screenshots.length) html = b('adjust', 'Screenshots') + b('ok', 'Full screen');
     html += b('back', 'Back');
+  } else if (state.mode === 'details' && state.art.open && state.art.browsing) {
+    const kind = state.art.rows.filter((r) => r.kind)[state.art.idx]?.kind;
+    if (kind) html += b('ok', kind === 'picture' || kind === 'video' ? 'Choose' : 'Open');
+    html += b('back', 'Back');
   } else if (state.mode === 'details' && state.art.open) {
+    // A file choice: the game's file of that kind, if it has one, can be removed.
+    const [file, kind] = state.art.focus.split(':');
+    const own = file === 'file' && byId(state.art.id).own_art[kind];
     html = state.art.editing
       ? b('ok', 'Select') + b('square', 'Delete') + b('triangle', 'Space') + b('back', 'Cancel')
-      : b('ok', 'Select') + b('square', 'Edit search') + b('back', 'Back');
+      : b('ok', file === 'file' ? 'Choose a file' : 'Select') + (own ? b('triangle', 'Remove') : '') + b('square', 'Edit search') + b('back', 'Back');
   } else if (state.mode === 'details') {
     // The choice in focus, or the last one when the one in focus went (a game that ended takes Close game with it).
     const list = detailChoices(g, state.running, state.closer, state.captures.items.length > 0);

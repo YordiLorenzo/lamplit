@@ -41,14 +41,16 @@ ui/
   state.js         the page's state and its elements
   input.js         controller, keyboard and mouse as one set of actions
   library.js       the cover row, the focused game and its menu
-  trailer.js       the focused game's trailer, after 2.5 s without input on the home screen
+  trailer.js       the focused game's trailer, after 2.5 s without input on the home screen: the player's own file,
+                   else Steam's
   dash.js          plays Steam's DASH trailers through Media Source Extensions: the 720p stream, its first minute
   lift.js          a game's menu lifting its cover over the blurred screen, with one plate beside it that grows out
                    of the card's edge and holds the menu, About, Change art and Your captures as faces
   veil.js          the game menu's veil: what was behind it, drawn once small, blurred and dimmed, and scaled up,
                    from art decoded and scaled off the page's thread; and once the menu rests, the hero and its shade
                    under it held still as one opaque copy, which the veil fades out over as the menu closes
-  art.js           Change art, in a game's menu
+  art.js           Change art, in a game's menu: Steam's art, no art, or a file of the player's own of each kind
+  folders.js       the rows of a list the d-pad moves through, for Add a game's and Change art's folder browsing
   captures.js      Your captures, on the game's plate: a thumbnail grid
   details.js       About this game, on the same plate: Steam's description, details and a row of screenshots
   viewer.js        a capture or a screenshot full screen, with its caption
@@ -117,11 +119,13 @@ Lamplit brings the first one's window forward and exits. Task Scheduler only res
 one that crashes later, which is why the supervisor exists.
 
 Lamplit keeps its files in the data folder, `%LOCALAPPDATA%\lamplit`: `prefs.json`, `games.json` (per game id:
-favourite, hidden, when it was last played, how long Lamplit saw it run, the art the player chose, and for a game
+favourite, hidden, when it was last played, how long Lamplit saw it run, the art the player chose, the names of the
+player's own art files, and for a game
 added by hand its name and exe, or that it was removed again, which keeps it off the row when a scan finds its exe
 outside any store; 0.1.0's `played.json` is still read for the last-played times), `art.json` and
 `art\<steam appid>\` (art lookups and downloads), `details\<steam appid>.json` (Steam details and their fetch time),
-`art\<steam appid>\screens\` (screenshots and trailer posters), `quiet-saved.json` (the settings quiet mode replaced),
+`art\<steam appid>\screens\` (screenshots and trailer posters), `art\own\` (copies of the files the player gave
+games in Change art, which Lamplit can't download again), `quiet-saved.json` (the settings quiet mode replaced),
 `steam-saved.json` (Steam's Guide setting and DevTools flag originals, plus a pending restore), and
 `sound-return.json` (separate output and microphone return endpoints and the last default each was routed
 through), plus the logs. Old `setup.json` files no longer determine startup state. WebView2 keeps its profile in
@@ -535,7 +539,9 @@ minute gets a numbered suffix. These commands send no network requests and emit 
 ## Home-screen trailers
 
 `ui/trailer.js` asks `library_details(id)` after the same cover has rested for 2.5 seconds. It uses that command's
-nullable `trailer: { url, poster }`. The poster is a local asset URL and the video streams directly from Steam.
+nullable `trailer: { url, poster }`. The poster is a local asset URL and the video streams directly from Steam. A game
+with a trailer of the player's own (`own_art.trailer`) plays that file from the asset protocol instead, without the
+details request and without Find art online; it plays its first minute on a loop, as Steam's do.
 The video sits over the hero art and below its shade,
 loops, and fades in over 600 ms only after `playing`. Muted is the default; With sound uses 40% volume.
 
